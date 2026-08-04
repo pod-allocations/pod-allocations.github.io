@@ -5426,7 +5426,12 @@ function renderSettings(){
     save("Grade default: " + g + " " + labelOf(k) + " turned " + (on ? "on" : "off"));
     renderSettings();
   };
-  for (const g of GRADES) {
+  /* Consultants are not listed. Their skills are the Consultant Rota's business, not this
+     board's — this board allocates residents, and a CON row here was a row nobody would ever
+     edit sitting above the fifteen that matter (Ali, 6 Aug). They are still supernumerary by
+     default in GRADE_DEFAULTS, which is what stops them being counted in pod numbers; that is
+     a counting rule, not a skill, and it stays. */
+  for (const g of GRADES.filter(g => g !== "CON")) {
     const cur = gradeDefaults(g) || {};
     const has = keys.filter(k => cur[k]);
     const chips = el("div", { style: "flex:1;display:flex;gap:.3rem;flex-wrap:wrap;align-items:center" });
@@ -5777,10 +5782,15 @@ function switchTab(tab){
 }
 document.querySelectorAll("aside button[data-tab], #teamPanel .tpi").forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 $("#btnTeam").onclick = () => { document.body.classList.remove("railback"); switchTab("team"); };
+/* Who can… is for everybody, every day — it answers "who is on right now who can do X". It was
+   wired INSIDE the TESTMODE block below, so on rota.salford.icu the button drew, looked
+   clickable, and did nothing at all (Ali, 6 Aug). Nothing failed loudly because nothing ran.
+   Anything that is not specific to the test site belongs out here. */
+$("#btnWhoCan").onclick = whoCanDialog;
+
 if (TESTMODE) {
   document.body.classList.add("testmode");
   $("#testbar").style.display = "flex";
-  $("#btnWhoCan").onclick = whoCanDialog;
   $("#btnTestReset").onclick = async () => {
     if (!(await uiConfirm("Throw away the rota changes made on this test site and load a fresh copy of the live rota data? Only the data is replaced — the real rota is not touched.", { title: "Reload live rota data?", okLabel: "Reload", danger: true }))) return;
     try { localStorage.removeItem(TEST_KEY); } catch(e){}
