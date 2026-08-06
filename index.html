@@ -325,6 +325,7 @@ td.col-A{background:var(--podA)} td.col-B{background:var(--podB)} td.col-C{backg
 .sttab.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 .sttabn{background:var(--hair);color:var(--muted);border-radius:999px;font-size:.68rem;padding:.02rem .38rem}
 .sttab.on .sttabn{background:var(--accent-bg);color:var(--accent)}
+.attnact{margin-left:auto;align-self:center;flex-shrink:0;font-size:.76rem;padding:.25rem .7rem}
 .wkpick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem;margin:.2rem 0 .5rem}
 .wkbtn{display:flex;flex-direction:column;align-items:center;gap:.15rem;padding:.5rem .2rem;border:1px solid var(--hair);
   border-radius:8px;background:var(--card);cursor:pointer;text-align:center;line-height:1.25;font:inherit}
@@ -6096,6 +6097,33 @@ function attentionItems(){
     body: unver.slice(0, 6).map(s => s.name).join(", ") + (unver.length > 6 ? " and " + (unver.length - 6) + " more" : "") + " — added automatically from Optima. Confirm their skills are right.",
     go: () => switchTab("staff") });
 
+  /* Two records for one person is not a tidiness problem: the rules live on one of them while the
+     rota is written against the other, so a supernumerary neurology registrar ends up counted in a
+     pod and nothing on screen explains why. It goes near the top because everything downstream of
+     it is wrong while it stays true. */
+  for (const d of suspectedDuplicates()) {
+    out.push({ n: 1,
+      title: d.dup.name + " and " + d.keep.name + " look like the same person",
+      body: "They are " + d.why + ". \u201c" + d.dup.name + "\u201d came from the Optima import as a "
+          + "one-off locum, so it carries no grade and no skills — anything set against "
+          + d.keep.name + " is being ignored when the rota is worked out.",
+      actLabel: "Merge them",
+      act: async () => {
+        if (!(await uiConfirm("\u201c" + d.dup.name + "\u201d becomes an alias of " + d.keep.name
+            + ", every shift moves across, and the duplicate record goes. The rota itself does not change.",
+            { title: "Merge into " + d.keep.name + "?", okLabel: "Merge" }))) return;
+        if (!EDIT_MODE && !(await enterEdit())) return;
+        const r = mergeStaff(d.keep.id, d.dup.id);
+        if (!r) { toast("Could not merge — one of the records has gone"); return; }
+        const swept = sweepSupernumeraries();
+        markDirty(); recomputeHistoric(); renderAll();
+        toast(d.dup.name + " merged into " + d.keep.name + " — " + r.moved + " allocation"
+          + (r.moved === 1 ? "" : "s") + " moved"
+          + (swept ? ", " + swept + " day" + (swept === 1 ? "" : "s") + " tidied" : ""));
+      },
+      go: () => switchTab("staff") });
+  }
+
   /* One row per person, not one row listing everybody. The old wording led with what the
      software was doing ("New skills auto-fill isn't using yet") and buried the person, the skill
      and the date in a sentence at the end — Ali, 4 Aug: "This isnt clear at all". A reader wants
@@ -6283,6 +6311,11 @@ function renderAttention(){
     const row = el("button", { class: "attnrow", onclick: it.go },
       el("span", { class: "n" }, String(it.n)),
       el("span", { class: "tx" }, el("b", {}, it.title), el("span", {}, it.body)));
+    /* Some rows can fix the thing they are describing. The button sits inside the row but stops
+       the click bubbling, so reading the row still takes you to the page and pressing the button
+       does the work — one row, two intentions, neither stealing the other. */
+    if (it.act) row.append(el("button", { class: "btn attnact", onclick: e => { e.stopPropagation(); it.act(); } },
+      it.actLabel || "Fix"));
     box.append(row);
   }
 }
@@ -6462,6 +6495,124 @@ function keyDialog(){
 function srDateLabel(iso){
   try { return new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }); }
   catch(e){ return iso; }
+}
+/* ── Two records, one person ──────────────────────────────────────────────────────────────────
+   The Optima import matches on name. When the spelling differs by even one letter it does not
+   recognise somebody already on the list and mints a fresh AD-HOC LOCUM instead — a record with
+   no grade, no skills and no history. That is how "Arron Cook" came to sit in Pod D's counted
+   numbers on 10 Aug while "Aaron Cook", carrying Neurology and supernumerary, sat in Historic
+   having never been rostered (Ali, 5 Aug: "hes a neurolog SPR, handled a bit differently").
+
+   Nothing was wrong with the neurology rule. The rules were on the record Optima does not use.
+
+   The signal that finds this reliably is narrow on purpose: ONE side ad-hoc and the other not.
+   Across 121 real people it returns exactly the Cook pair. Two near-misses it correctly ignores:
+   "Jack Roddy" and "Jack Hodd" are two letters apart but both real staff, and "ICU zLocum1" and
+   "ICU zLocum2" are identical once digits are stripped but both deliberate placeholders. Name
+   similarity alone would have flagged both. */
+function nameKey(n){
+  return String(n || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+}
+function nameWords(n){ return nameKey(n).split(" ").filter(Boolean).sort().join(" "); }
+function nameDistance(a, b){
+  const x = nameKey(a), y = nameKey(b);
+  if (Math.abs(x.length - y.length) > 3) return 99;
+  const d = Array.from({ length: x.length + 1 }, (_, i) => { const r = new Array(y.length + 1).fill(0); r[0] = i; return r; });
+  for (let j = 0; j <= y.length; j++) d[0][j] = j;
+  for (let i = 1; i <= x.length; i++)
+    for (let j = 1; j <= y.length; j++)
+      d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (x[i-1] === y[j-1] ? 0 : 1));
+  return d[x.length][y.length];
+}
+function suspectedDuplicates(){
+  const st = (data && data.staff || []).filter(x => x && x.name);
+  const out = [];
+  for (let i = 0; i < st.length; i++) for (let j = i + 1; j < st.length; j++) {
+    const a = st[i], b = st[j];
+    if (!a.adhoc === !b.adhoc) continue;            // both real, or both placeholders — not this
+    let why = null;
+    if (nameKey(a.name) === nameKey(b.name)) why = "the same name";
+    else if (nameWords(a.name) === nameWords(b.name)) why = "the same words in a different order";
+    else { const d = nameDistance(a.name, b.name); if (d <= 2) why = d === 1 ? "one letter apart" : "two letters apart"; }
+    if (!why) continue;
+    const dup = a.adhoc ? a : b, keep = a.adhoc ? b : a;
+    out.push({ keep: keep, dup: dup, why: why });
+  }
+  return out;
+}
+/* Every place a staff id can hide, in one list, so a merge cannot miss one. Kept beside
+   srRemoveFromDay deliberately — that function is the same map for a different purpose, and two
+   copies drifting apart is how somebody ends up half-merged. */
+function remapStaffId(from, to){
+  let n = 0;
+  const swapArr = arr => { if (!arr) return; for (let i = 0; i < arr.length; i++) if (arr[i] === from) { arr[i] = to; n++; } };
+  const swapObjArr = arr => { if (!arr) return; for (const x of arr) if (x && x.id === from) { x.id = to; n++; } };
+  for (const [key, wk] of Object.entries((data && data.weeks) || {})) {
+    if (wk && wk.roster) for (const day of Object.values(wk.roster)) {
+      if (day && day[from]) { day[to] = day[from]; delete day[from]; n++; }
+    }
+    for (const day of ((wk && wk.days) || [])) {
+      if (!day) continue;
+      for (const p of PODS) {
+        if (!day.pods || !day.pods[p]) continue;
+        swapObjArr(day.pods[p].assign);
+        swapArr(day.pods[p].super);
+        if (day.pods[p].student === from) { day.pods[p].student = to; n++; }
+        if (day.pods[p].cons === from) { day.pods[p].cons = to; n++; }
+      }
+      if (day.phone === from) { day.phone = to; n++; }
+      if (day.phoneSup === from) { day.phoneSup = to; n++; }
+      if (day.nightCons === from) { day.nightCons = to; n++; }
+      swapArr(day.shadow); swapArr(day.removed); swapArr(day.fghRemoved);
+      swapObjArr(day.extras); swapObjArr(day.fghExtras);
+      if (day.night) {
+        if (day.night.phone === from) { day.night.phone = to; n++; }
+        for (const k of ["AB", "CDE", "E", "super"]) swapArr(day.night[k]);
+      }
+      if (day.superShift && day.superShift[from]) { day.superShift[to] = day.superShift[from]; delete day.superShift[from]; n++; }
+    }
+  }
+  for (const o of ((data && data.overrides) || [])) if (o && o.id === from) { o.id = to; n++; }
+  for (const x of ((data && data.pendingSkills) || [])) if (x && x.id === from) { x.id = to; n++; }
+  return n;
+}
+/* Fold the locum into the real person: their name becomes an ALIAS so the next import matches
+   instead of minting another one, every reference points at the kept record, and only then is the
+   duplicate removed. Order matters — nothing is deleted until everything has been moved. */
+function mergeStaff(keepId, dupId){
+  const keep = staffById(keepId), dup = staffById(dupId);
+  if (!keep || !dup || keepId === dupId) return null;
+  const moved = remapStaffId(dupId, keepId);
+  keep.aliases = keep.aliases || [];
+  for (const nm of [dup.name].concat(dup.aliases || [])) {
+    if (nm && !keep.aliases.some(x => nameKey(x) === nameKey(nm))) keep.aliases.push(nm);
+  }
+  data.staff = data.staff.filter(x => x.id !== dupId);
+  logEntry(dup.name + " merged into " + keep.name + " — " + moved + " allocation" +
+    (moved === 1 ? "" : "s") + " moved, and \u201c" + dup.name + "\u201d kept as an alias so the " +
+    "next Optima import matches instead of adding them again", "manual", null, null,
+    { act: "fix", n: moved, label: moved + " moved" });
+  return { moved: moved, alias: dup.name };
+}
+/* Days already written do not fix themselves. normalizePods runs when a week is drawn, but only
+   for weeks somebody opens, and only in memory — so a supernumerary sitting in a pod's counted
+   numbers stays there until that week happens to be looked at AND saved. This walks every stored
+   week once. Ali, 5 Aug: "sort out ones that already exist, not just future events". */
+function sweepSupernumeraries(){
+  let days = 0;
+  for (const wk of Object.values((data && data.weeks) || {})) {
+    for (const day of ((wk && wk.days) || [])) {
+      if (!day || !day.pods) continue;
+      const before = PODS.map(p => (day.pods[p].assign || []).map(a => a.id).join(",")).join("|");
+      normalizePods(day);
+      if (PODS.map(p => (day.pods[p].assign || []).map(a => a.id).join(",")).join("|") !== before) days++;
+    }
+  }
+  if (days) logEntry("Supernumeraries moved out of the counted numbers on " + days + " day" +
+    (days === 1 ? "" : "s") + " already written", "manual", null, null,
+    { act: "fix", n: days, label: days + " day" + (days === 1 ? "" : "s") });
+  return days;
 }
 function srRemoveFromDay(day, sid){
   const hits = [];
