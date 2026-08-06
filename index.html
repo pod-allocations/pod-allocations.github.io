@@ -353,7 +353,10 @@ td.col-A{background:var(--podA)} td.col-B{background:var(--podB)} td.col-C{backg
 .funpop{position:absolute;z-index:40;background:var(--card);border:1px solid var(--line);border-radius:10px;
   box-shadow:0 8px 24px rgba(29,31,36,.12);padding:.5rem .6rem;font-size:.8rem;min-width:150px}
 .funpop label{display:flex;align-items:center;gap:.45rem;padding:.15rem 0;white-space:nowrap;cursor:pointer}
-.funpop .fbot{border-top:1px solid var(--hair);margin-top:.4rem;padding-top:.35rem;color:var(--accent);cursor:pointer}
+.funpop .fbot{border-top:1px solid var(--hair);margin-top:.45rem;padding-top:.45rem;display:flex;gap:.35rem}
+.funpop .fbtn{flex:1;border:1px solid var(--hair);background:var(--card);color:var(--ink);border-radius:7px;
+  padding:.25rem .1rem;font:inherit;font-size:.74rem;cursor:pointer;text-align:center}
+.funpop .fbtn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
 #staffTable th{position:sticky;top:0;background:var(--card);font-size:.6rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);text-align:left;padding:.5rem .55rem;border-bottom:1px solid var(--line);z-index:5;font-weight:700}
 #staffTable td{padding:.45rem .55rem;border-bottom:1px solid var(--hair);vertical-align:middle}
 #staffTable tr:hover td{background:#fbfbf9}
@@ -757,8 +760,6 @@ details.steps summary{cursor:pointer;font-weight:600;color:var(--ink)}
       <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;margin-bottom:.6rem">
         <h2 style="margin:0">Staff list</h2>
         <button class="btn" id="btnAddStaff">+ Add person</button>
-        <label style="font-size:.82rem;display:flex;align-items:center;gap:.35rem"><input type="checkbox" id="showInactive"> Show expired/inactive</label>
-        <span style="font-size:.78rem;color:var(--muted)">People past their end date drop out automatically.</span>
       </div>
       <!-- Only ever populated when a filter is on: a filtered table looks identical to a full
            one, and that is how somebody concludes a person has left the unit. -->
@@ -2254,16 +2255,26 @@ function stFunnel(anchor, title, items, isOn, toggle, onAll, onNone){
   document.querySelectorAll(".funpop").forEach(x => x.remove());
   const pop = el("div", { class: "funpop" });
   pop.append(el("div", { style: "font-size:.7rem;color:var(--muted);margin-bottom:.25rem" }, title));
+  /* Keep hold of the boxes. All and None used to change the filter and call renderStaff(), which
+     repaints the TABLE — but this popup is appended to document.body and is not part of that
+     redraw, so every tick box kept whatever it showed before and None looked like it had done
+     nothing (Ali, 5 Aug: "when click none the boxes dont untick"). The list moved underneath; the
+     control lied about itself. */
+  const boxes = [];
   for (const [val, label, count] of items) {
     const cb = el("input", { type: "checkbox" });
     cb.checked = isOn(val);
     cb.onchange = () => { toggle(val, cb.checked); renderStaff(); };
+    boxes.push([val, cb]);
     pop.append(el("label", {}, cb, label,
       el("span", { style: "color:var(--muted);margin-left:auto" }, String(count))));
   }
+  const sync = () => { for (const [val, cb] of boxes) cb.checked = isOn(val); };
   pop.append(el("div", { class: "fbot" },
-    el("span", { onclick: () => { onAll(); renderStaff(); } }, "All"), " · ",
-    el("span", { onclick: () => { onNone(); renderStaff(); } }, "None")));
+    el("button", { type: "button", class: "fbtn",
+      onclick: () => { onAll(); sync(); renderStaff(); } }, "Select all"),
+    el("button", { type: "button", class: "fbtn",
+      onclick: () => { onNone(); sync(); renderStaff(); } }, "Clear")));
   document.body.append(pop);
   const r = anchor.getBoundingClientRect();
   pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + "px";
@@ -2281,7 +2292,6 @@ function renderStaff(){
   body.innerHTML = ""; if (head) head.innerHTML = "";
   if (!data) return;
   recomputeHistoric();
-  const showInactive = $("#showInactive").checked;
   const today = todayISO();
 
   /* Two tabs rather than a filter chip: Historic is a different question from "show me people
@@ -2289,7 +2299,7 @@ function renderStaff(){
   const tabs = $("#staffTabs"); const note = $("#histNote");
   if (tabs) {
     tabs.innerHTML = ""; if (note) note.innerHTML = "";
-    const nHist = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isHistoric(x.id)).length;
+    const nHist = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && !isActiveOn(x, today)).length;
     const mk = (key, label, n) => {
       const b = el("button", { class: "sttab" + (staffTab === key ? " on" : ""),
         onclick: () => { staffTab = key; renderStaff(); } }, label);
@@ -2301,13 +2311,21 @@ function renderStaff(){
     if (nHist || staffTab === "historic") tabs.append(mk("historic", "Historic ", nHist));
     if (staffTab === "historic" && note)
       note.append(el("div", { style: "font-size:.78rem;color:var(--muted);margin:0 0 .7rem;line-height:1.5" },
-        "Nothing down for them anywhere in the four weeks pulled from Allocate. They keep their record and their history, and come back on their own the moment a shift appears."));
+        "Nothing down for them in the four weeks pulled from Allocate, past their end date, or marked inactive by hand. They keep their record and their history, and anyone the rota picks up again comes back on their own."));
   }
   // Consultants only feed the cover dropdowns, and one-off locums are per-day — keep both off the
   // list. Consultants' skills are the Consultant Rota's business, not this board's.
   const everyone = [...data.staff].filter(s => s.grade !== "CON" && !s.adhoc)
-    .filter(s => staffTab === "historic" ? isHistoric(s.id)
-                                         : (isActiveOn(s, today) || showInactive));
+    /* Current and Historic between them must account for EVERY person on the list, or somebody
+       is on neither tab and has simply vanished. So the split is the one question the rest of the
+       app already asks — isActiveOn — rather than a second, narrower rule.
+
+       That matters for the case the old "Show expired/inactive" tick box covered: somebody marked
+       inactive by hand who is still rostered is not historic (they have shifts), but they are not
+       current either. Keying both tabs off isActiveOn puts them in Historic, where they can be
+       found, instead of nowhere at all. The tick box is gone because these two tabs are what it
+       was for (Ali, 5 Aug). */
+    .filter(s => staffTab === "historic" ? !isActiveOn(s, today) : isActiveOn(s, today));
   const list = stFiltered(everyone).sort(stCmp);
 
   /* ---- the header ------------------------------------------------------------------------ */
@@ -6736,7 +6754,6 @@ $("#btnToday").onclick = () => { currentWeekKey = mondayOf(todayISO()); renderWe
 $("#btnAutoFill").onclick = autoFillWeek;
 $("#btnFixWeek").onclick = fixWeekDialog;
 $("#btnAddStaff").onclick = () => staffModal(null);
-$("#showInactive").onchange = renderStaff;
 $("#modalBg").onclick = e => { if (e.target.id === "modalBg") closeModal(); };
 $("#wOpen").onclick = openFile;
 $("#wNew").onclick = e => { e.preventDefault(); newFile(); };
