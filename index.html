@@ -1185,6 +1185,7 @@ function recomputeHistoric(){
   const out = new Set();
   for (const st of (data.staff || [])) {
     if (!st || st.keepCurrent) continue;
+    if (!rosterDecides(st)) continue;             // the roster cannot answer for this person
     if (ahead.has(st.id)) continue;               // on the coming rota — plainly still here
     /* "Never rostered" is NOT evidence of being new, and treating it that way was a real bug
        (Ali, 5 Aug: "there are people in active staff i know have left, like ali legett... kieran
@@ -1200,6 +1201,21 @@ function recomputeHistoric(){
     out.add(st.id);
   }
   HISTORIC = out;
+}
+/* Whether the OPTIMA ROSTER is authoritative about whether this person is still here.
+
+   The historic rule reads "no pod duty in the four pulled weeks" as evidence somebody has gone.
+   That inference only holds for people the roster would list at all. Consultants are never in
+   it — they come from the consultant rota workbook, and this board only holds their names to
+   fill the pod dropdowns. So their absence says nothing, and treating it as evidence classed
+   all 34 of them as historic, made them inactive, and emptied every consultant dropdown on the
+   live board (Ali, 8 Aug: "the consultant names no longer showing").
+
+   Named rather than written inline as `grade !== "CON"` because consultants are not the only
+   case: anyone arriving by a different route has the same problem. For those, keepCurrent is
+   the per-person answer. */
+function rosterDecides(s){
+  return !!s && s.grade !== "CON";
 }
 function isHistoric(id){ return !!(HISTORIC && HISTORIC.has(id)); }
 /* The date matters now. Somebody historic is gone from today onwards, but a week they actually
