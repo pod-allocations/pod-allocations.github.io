@@ -30,6 +30,7 @@ function loadApp() {
     mondayOf, todayISO, addDays, poolFor, staffById, canHoldPhone, isPhoneShadow,
     isPhoneSupervisor, isActiveOn, currentAssignShift, inFairfield, addToFairfield,
     fghMembers, countsInNumbers, poolState, removeAssign, attentionItems, srDetectGhosts, srRemoveFromDay,
+    planDayFix: typeof planDayFix !== "undefined" ? planDayFix : null,
     skillHeldBack: typeof skillHeldBack !== "undefined" ? skillHeldBack : null,
     migratePendingSkills: typeof migratePendingSkills !== "undefined" ? migratePendingSkills : null,
     aggregateOverrides: typeof aggregateOverrides !== "undefined" ? aggregateOverrides : null,
@@ -1021,6 +1022,56 @@ async function main() {
            rows.length === 1 && !!rows[0].d.to, JSON.stringify((rows[0] || {}).d));
       }
     }
+  }
+
+  /* AIRWAY SPREAD IS SOMETHING FIX DAY CAN NOW ACT ON — 11 Aug 2026.
+     Ali moved somebody B->D by hand to give D airway presence and asked why it was neither
+     suggested nor done. The amber check already existed; the planner had never heard of airway.
+     Both halves are held here: it makes the move when there is a genuine spare, and it stays out
+     of the way when moving anyone would break something that matters more. */
+  console.log("Airway spread");
+  {
+    const { day } = seedDay(api, 1, [
+      { shift: "LD", airway: true,  phoneHolder: true },   // 0  A - holds the phone, must not move
+      { shift: "SD", airway: true },                        // 1  A - the genuine spare
+      { shift: "SD", airway: false },                       // 2  A - keeps A at minimum afterwards
+      { shift: "LD", airway: true },                        // 3  B - already covered
+      { shift: "SD", airway: false },                       // 4  B
+      { shift: "LD", airway: true },                        // 5  C - already covered
+      { shift: "SD", airway: false },                       // 6  C
+      { shift: "LD", airway: false },                       // 7  D - the gap
+      { shift: "SD", airway: false },                       // 8  D
+      { shift: "LD", airway: false }                        // 9  E
+    ]);
+    const m = day.extras.map(x => x.id);
+    const put = (q, ids) => { day.pods[q].assign = ids.map(i => ({ id: m[i], shift: day.extras[i].code })); };
+    put("A", [0,1,2]); put("B", [3,4]); put("C", [5,6]); put("D", [7,8]); put("E", [9]);
+    day.phone = m[0];
+    const plan = api.planDayFix(1);
+    const air = q => (plan.fixed ? plan.fixed.pods[q].assign : []).filter(a => a.id && api.staffById(a.id).airway).length;
+    const cnt = q => (plan.fixed ? plan.fixed.pods[q].assign : []).filter(a => a.id).length;
+    ok("Fix day gives a pod with no airway cover one, from a pod that has two", air("D") === 1,
+       "D=" + air("D") + " A=" + air("A"));
+    ok("...leaving the donor one, rather than moving the problem", air("A") === 1);
+    ok("...as a SWAP, so no pod changes size and step 3c cannot drag the phone across",
+       cnt("A") === 3 && cnt("D") === 2, "A=" + cnt("A") + " D=" + cnt("D"));
+    ok("...and never the phone holder", (plan.fixed ? plan.fixed.phone : null) === m[0]);
+  }
+  {
+    const { day } = seedDay(api, 2, [
+      { shift: "LD", airway: true }, { shift: "SD", airway: false },
+      { shift: "LD", airway: false }, { shift: "SD", airway: false },
+      { shift: "LD", airway: false }, { shift: "SD", airway: false },
+      { shift: "LD", airway: false }, { shift: "SD", airway: false },
+      { shift: "LD", airway: false }
+    ]);
+    const m = day.extras.map(x => x.id);
+    const put = (q, ids) => { day.pods[q].assign = ids.map(i => ({ id: m[i], shift: day.extras[i].code })); };
+    put("A", [0,1]); put("B", [2,3]); put("C", [4,5]); put("D", [6,7]); put("E", [8]);
+    day.phone = m[0];
+    const plan = api.planDayFix(2);
+    const airA = (plan.fixed ? plan.fixed.pods.A.assign : []).filter(a => a.id && api.staffById(a.id).airway).length;
+    ok("with only one airway person on the unit it moves nobody", airA === 1, "A=" + airA);
   }
 
   // ---- summary --------------------------------------------------------------------------
