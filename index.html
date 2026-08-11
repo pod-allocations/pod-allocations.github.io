@@ -534,6 +534,21 @@ body.testmode main{padding-bottom:4rem}
 .dlg-body{font-size:.88rem;color:var(--muted);line-height:1.55;white-space:pre-line}
 .dlg input{width:100%;margin-top:.9rem;font-size:.95rem;padding:.55rem .7rem}
 .dlg-btns{display:flex;gap:.6rem;justify-content:flex-end;margin-top:1.2rem}
+/* The person sheet stacks its actions full width instead of lining them up bottom-right. At 5am,
+   on a phone, held in one hand, the thing you want has to be a thumb-sized target in the middle of
+   the screen — not a small button in a corner beside a similar-looking one. Order is deliberate:
+   the destructive-sounding action is the one people actually came for, so it leads. */
+.sheetbtn{display:block;width:100%;margin-top:.55rem;padding:.75rem;font-size:.92rem;justify-content:center}
+/* The consequence card's lines. Colour carries the same meaning it does everywhere else on the
+   board — red is broken, amber is an aim, green is fine — so nothing new has to be learned. */
+.cc-line{display:flex;gap:.5rem;align-items:flex-start;border-radius:9px;padding:.45rem .55rem;margin-top:.4rem;font-size:.82rem;line-height:1.45}
+.cc-line .cc-tag{font-size:.56rem;font-weight:700;letter-spacing:.06em;background:#fff;border-radius:4px;padding:.08rem .3rem;flex:none;margin-top:.12rem}
+.cc-line.hard{background:#FCEBEB;color:#A32D2D}
+.cc-line.soft{background:#FAEEDA;color:#854F0B}
+.cc-line.ok{background:#EAF3DE;color:#3B6D11}
+.cc-sub{font-size:.72rem;color:var(--muted);margin:.6rem 0 .3rem;line-height:1.5}
+.sheetbtn.plain{border-color:transparent;background:transparent;color:var(--muted)}
+.sheetbtn.plain:hover{background:var(--hair);color:var(--ink)}
 .combolist{max-height:190px;overflow:auto;border:1px solid var(--line,#e2e4e8);border-radius:10px;margin-top:.5rem}
 .comboopt{padding:.55rem .8rem;cursor:pointer;font-size:.9rem;border-bottom:1px solid var(--line,#eef0f3)}
 .comboopt:last-child{border-bottom:none}
@@ -1116,7 +1131,19 @@ button.btn,.hbtn{white-space:nowrap}
 const PODS = ["A","B","C","D","E"];
 const DAYNAMES = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const GRADES = ["CON","ACCP","SCF","JCF","RCF","ST","CT","ACCS","IMT","FY1","FY2","ICM","Anaes","ED","Neurology","Other"];
-const RULE_DEFAULTS = { podMin: 2, podEMin: 1, nightMin: 4, transferAim: 4, neuroTarget: 70, retentionDays: 400 };
+/* spreadMax / spreadE are the SPREAD rule, added 11 Aug. They are not minimums — a day can pass
+   every minimum and still be badly split, which is exactly what happened when Jamiu Aliu came off
+   and left 4·4·4·3·2 with no complaint from anything. Ali's rule: "2 on pod E is fine unless other
+   pods >4… if removing somebody from a day and theres a better spread need to suggest. dont move
+   people for the sake if it otherwise will annoy."
+   Both are the gap at which it SPEAKS, not the gap it tolerates:
+     spreadMax 2  fullest of A–D minus thinnest of A–D is 2 or more → suggest.
+     spreadE   3  fullest pod minus E is 3 or more → suggest. So E may sit 2 light without
+                  comment, because it is a smaller pod by design (its own minimum is 1 against 2).
+   Both editable in Settings — hard rule 1. Drop spreadE to 2 and today's 4·4·4·3·2 starts
+   suggesting a move; raise it to 4 and E goes quiet almost always. */
+const RULE_DEFAULTS = { podMin: 2, podEMin: 1, nightMin: 4, transferAim: 4, neuroTarget: 70, retentionDays: 400,
+                        spreadMax: 2, spreadE: 3 };
 /* Every number the checks argue about, editable from Settings — hard rule 1. The table above is
    only the FALLBACK, so a board nobody has touched behaves exactly as it always did. */
 function rule(k){
@@ -3006,7 +3033,37 @@ function idListEditor(container, dateISO, arr, filter, addLabel, day){
     }
     return;
   }
+  /* ...AND THE SAME IS TRUE WHILE EDITING (11 Aug). The 8 Aug fix above only covered reading, so
+     in edit mode a filled Super slot was still a full-width <select> sitting under a row of
+     compact chips — Ali again, looking at Pod D: "why aaron cooke still rendering weird".
+     He is right, and the dropdown was never earning its place: nobody edits a pod member by
+     picking a different name from a list attached to them, they take one out and put another in.
+     So a FILLED slot is a chip, exactly like the pod above it — same shift pill, same ✕, same
+     press-and-hold. The <select> survives only for an EMPTY slot, which is the one moment it is
+     actually doing something: choosing who goes in. "+ super" pushes an empty slot, so adding
+     still works the way it always did. */
+  const superDi = (() => { try { return getWeek(currentWeekKey).days.indexOf(day); } catch (e) { return null; } })();
   arr.forEach((id, i) => {
+    if (id && staffById(id)) {
+      const st = staffById(id);
+      const sh = day ? superShiftOf(day, id) : null;
+      container.append(chip(st, {
+        day, di: (superDi != null && superDi >= 0) ? superDi : null, tag: sh || null,
+        tagClick: sh ? async () => {
+          const next = sh === "LD" ? "SD" : "LD";
+          if (!(await uiConfirm(st.name + ": " + (next === "LD" ? "standard day → long day (8–8)?" : "long day → standard day (8–4)?"),
+                { title: "Change shift?", okLabel: "Change to " + next }))) return;
+          setSuperShift(day, id, next);
+          logEntry(st.name + ": " + (next === "LD" ? "SD → LD" : "LD → SD") + " (supernumerary)" + dayOfWeekName(day),
+            "manual", dateOfDay(day), null,
+            { act: "set", subj: st.name, facet: "shift", from: sh, to: next });
+          markDirty(); renderWeek();
+        } : null,
+        removeTitle: "Remove",
+        onRemove: () => { arr.splice(i, 1); if (day) pruneSuperShift(day); markDirty(); renderWeek(); }
+      }));
+      return;
+    }
     const row = el("div", { class: "slotrow" });
     row.append(personSelect(dateISO, id, v => {
       if (v) { if (day && arr[i] && arr[i] !== v) setSuperShift(day, v, superShiftOf(day, arr[i])); arr[i] = v; }
@@ -3221,7 +3278,21 @@ function poolFor(day, dateISO){
 }
 // Take someone off a single day. Rostered people go on a per-day "off" list
 // so they vanish from the bench and the checks; manually-added extras are simply dropped.
+/* Where somebody is standing on a day, as a From value for the log. Read BEFORE anything is
+   cleared, or the row records a dash and the reader cannot see what the removal actually cost. */
+function placeOnDay(day, id){
+  for (const p of PODS) {
+    if (day.pods[p].assign.some(a => a.id === id)) return p;
+    if ((day.pods[p].super || []).includes(id)) return p;
+  }
+  if (day.night.AB.includes(id)) return "A&B night";
+  if (day.night.CDE.includes(id)) return "C&D night";
+  if ((day.night.E || []).includes(id)) return "night Pod E";
+  if (day.night.phone === id) return "night";
+  return "bench";
+}
 function takeOffDay(day, di, id){
+  const was = placeOnDay(day, id);
   const p = poolFor(day, addDays(currentWeekKey, di))[id];
   if (p && p.extra) { day.extras = (day.extras || []).filter(x => x.id !== id); }
   else { day.removed = day.removed || []; if (!day.removed.includes(id)) day.removed.push(id); }
@@ -3229,9 +3300,229 @@ function takeOffDay(day, di, id){
   if (day.phone === id) day.phone = null;
   if (day.night.phone === id) day.night.phone = null;
   day.shadow = (day.shadow || []).filter(x => x !== id);
-  logEntry((staffById(id) ? staffById(id).name : id) + " taken off " + dayShort(di), "manual", dateOfDi(di));
+  const nm = staffById(id) ? staffById(id).name : id;
+  /* Passing `d` matters more than it looks. Without it this row is free text, which is exactly
+     what the five entries from the morning of 11 Aug were — no From, no thread, nothing for
+     group-by-person to hang on. `from` is where they actually were; there is no `why` and there
+     must never be one (hard rule 6). */
+  logEntry(nm + " taken off " + dayShort(di), "manual", dateOfDi(di), null,
+    { act: "off", subj: nm, from: was === "bench" ? "" : was, bench: was === "bench" });
 }
 function putBackOnDay(day, id){ day.removed = (day.removed || []).filter(x => x !== id); }
+
+/* ── THE PERSON SHEET ──────────────────────────────────────────────────────────────────────────
+   Built 11 Aug 2026, out of what happened at 05:45 that morning. The night reg needed one thing —
+   somebody is not in — and the log shows him doing this instead:
+
+     05:45  Removed Jamiu Aliu from Pod D     (out of the pod; still on the day, still on the bench)
+     05:45  Jamiu Aliu taken off Tue          (right thing)
+     05:45  Jamiu Aliu put back on Tue        (undone, one minute later)
+     05:52  allocate sync → Pod E             (correct behaviour: he WAS on)
+     07:00  Removed Jamiu Aliu from Pod E     (out of the pod again, still on the day)
+
+   Three separate traps, none of them his fault. The ✕ on a pod chip is the nearest control and it
+   means "out of this pod", which leaves the person on the bench where the allocator shops — so
+   they come back, in a different pod. Taking off is a silent toggle, so a second tap reverses the
+   first with no warning. And nothing on the board said anything was wrong afterwards, because with
+   podMin 2 and podEMin 1 nothing WAS wrong by the rules — Fix week would have found nothing to do.
+
+   So the fix is not a warning and not a new rule. It is one control that says what a person
+   actually means, reachable from the name itself rather than from whichever pod they happen to be
+   sitting in. Press and hold.
+
+   It never asks why, and there is nowhere to record one — hard rule 6. Sickness, a swap, a family
+   emergency and a rota error all produce the identical record. */
+let sheetClosedAt = 0;
+
+/* ── THE SPREAD CHECK ──────────────────────────────────────────────────────────────────────────
+   Taking somebody off can leave a day that breaks no rule and is still lopsided. On 11 Aug it left
+   4·4·4·3·2 and every check stayed silent, because minimums were met — so nobody knew there was
+   anything to think about. This is the thing that was missing, and it is deliberately NOT a new
+   minimum: it compares pods with each other rather than with a floor.
+
+   Ali's constraint, and it shapes the whole function: "dont move people for the sake if it
+   otherwise will annoy." So it proposes at most ONE move, only when that move genuinely closes the
+   gap, and only when the person is really free to go. Anything else and it says so plainly. */
+function podCounts(day){
+  const { perPod } = dayCountables(day);
+  const o = {}; for (const p of PODS) o[p] = (perPod[p] || []).length;
+  return o;
+}
+/* Who may be moved out of a pod without breaking something else. Not a preference list — each of
+   these is a rule the board already enforces elsewhere, restated here so a suggestion can never
+   propose a move the checks would immediately complain about. */
+function canLeavePod(day, p, a){
+  const s = staffById(a.id);
+  if (!s) return false;
+  if (day.phone === a.id || day.night.phone === a.id) return false;      // the phone stays put
+  if (isSupernumerary(s)) return false;                                  // supers are not counted, so moving one changes nothing
+  if (isNeuroReg && isNeuroReg(s)) return false;                         // neuro regs are tied to C and D
+  const lds = day.pods[p].assign.filter(x => x.shift === "LD" && countsInNumbers(x.id));
+  if (a.shift === "LD" && lds.length <= 1) return false;                 // every pod needs a long day
+  return true;
+}
+/* One sentence about the spread, or nothing at all. Deliberately NOT a check in checkDay: plenty of
+   perfectly good days are uneven, and an amber dot on all of them would be ignored inside a
+   fortnight — so this speaks only in the card below, when you have just caused the split yourself.
+   It is an AIM, never an issue: it can suggest, it can never block. */
+function spreadNote(day){
+  const c = podCounts(day);
+  const ad = ["A", "B", "C", "D"];
+  const maxAD = Math.max(...ad.map(p => c[p]));
+  const minAD = Math.min(...ad.map(p => c[p]));
+  const thinAD = ad.find(p => c[p] === minAD);
+  if (maxAD - minAD >= rule("spreadMax"))
+    return "Pod " + thinAD + " has " + minAD + " while the fullest has " + maxAD + ".";
+  if (maxAD - c.E >= rule("spreadE"))
+    return "Pod E has " + c.E + " while the fullest has " + maxAD + ".";
+  return null;
+}
+
+/* ── WHAT THE CHANGE COST ──────────────────────────────────────────────────────────────────────
+   Shown after anybody is taken off a day. Ali, 11 Aug: "it did the not in this pod but didnt
+   suggest any changes or say no changes needed. big issue" — and then, when I answered that with a
+   head-count: "fixing the day isnt just about pod numbers is it. weve spent weeks going through
+   skill mix phone airway etc and now seems like youre truting to super simplofy."
+
+   Both fair. So this adds almost no logic of its own: it runs the checks that already exist and the
+   planner that already exists, and its only judgement is which button leads.
+
+     something broken   →  Apply leads. Airway cover, phone training, phone supervision, a pod with
+                           no long day — these are the things that actually make a day unsafe, and
+                           none of them are visible in a head-count.
+     only aims left     →  Done leads, evening up is the quiet secondary. "dont move people for the
+                           sake if it otherwise will annoy" — get this backwards and everyone taps
+                           the top button on reflex, including on the days it matters.
+     nothing at all     →  say what was checked. Silence and "I looked, it is fine" must not look
+                           the same at five in the morning.
+     broken, unfixable  →  say so, and offer a way to go and look. planDayFix already returns
+                           `unresolved`; showing an empty plan instead of that is a lie of omission. */
+function afterChangeCard(di, headline){
+  const wk = getWeek(currentWeekKey), day = wk.days[di];
+  const issues = checkDay(day, addDays(currentWeekKey, di), di, wk)
+    .filter(i => !i.empty && !isAccepted(wk, di, i.msg));
+  const hard = issues.filter(i => i.hard);
+  const soft = issues.filter(i => !i.hard && !i.info);
+  const spread = spreadNote(day);
+  let plan = { changes: [], unresolved: [] };
+  try { plan = planDayFix(di); } catch (e) {}
+
+  const bg  = el("div", { class: "dlg-bg" });
+  const box = el("div", { class: "dlg" });
+  const shut = () => { sheetClosedAt = Date.now(); bg.remove(); window.removeEventListener("keydown", esc); };
+  const esc = e => { if (e.key === "Escape") shut(); };
+  box.append(el("div", { class: "dlg-title" }, headline),
+             el("div", { class: "dlg-body" }, "The sync won't put them back."));
+
+  const line = (kind, txt) => el("div", { class: "cc-line " + kind },
+    el("span", { class: "cc-tag" }, kind === "hard" ? "ISSUE" : kind === "soft" ? "AIM" : "OK"),
+    el("span", {}, txt));
+  hard.forEach(i => box.append(line("hard", i.msg)));
+  soft.forEach(i => box.append(line("soft", i.msg)));
+  if (spread) box.append(line("soft", spread));
+
+  if (!hard.length && !soft.length && !spread) {
+    box.append(line("ok", "Every check passes. Nothing to move."),
+      el("div", { class: "cc-sub" }, "Airway, phone, phone supervision, long days, transfers and pod numbers all still hold."));
+    box.append(el("button", { class: "btn sheetbtn", onclick: shut }, "Done"));
+  } else if (plan.changes.length) {
+    box.append(el("div", { class: "cc-sub" }, "The fewest changes that clear it — everyone else stays put"));
+    const list = el("div", { class: "fixlist" });
+    plan.changes.forEach(c => list.append(fixChangeRow(c)));
+    box.append(list);
+    const apply = el("button", { class: "btn sheetbtn", onclick: () => {
+        shut(); applyFixedDay(di, plan.fixed, plan.changes);
+        toast("Fixed " + DAYNAMES[di].slice(0,3) + " — Undo reverses it");
+      } }, "Apply " + plan.changes.length + " change" + (plan.changes.length > 1 ? "s" : ""));
+    const done = el("button", { class: "btn sec sheetbtn plain", onclick: shut }, "Leave it as it is");
+    /* Which one leads is the whole argument of this function. */
+    if (hard.length) box.append(apply, done);
+    else { done.textContent = "Done"; done.className = "btn sheetbtn";
+           apply.textContent = "Even the pods up anyway"; apply.className = "btn sec sheetbtn plain";
+           box.append(done, apply); }
+  } else {
+    box.append(el("div", { class: "cc-sub" },
+      plan.unresolved.length ? "Nothing can be moved to fix this — " + plan.unresolved[0]
+                             : "Nothing can be moved to fix this automatically."));
+    box.append(el("button", { class: "btn sheetbtn", onclick: shut }, "Done"),
+      el("button", { class: "btn sec sheetbtn plain", onclick: () => { shut(); checksDialog(di); } }, "Show me the day's checks"));
+  }
+  bg.append(box);
+  bg.onclick = e => { if (e.target === bg) shut(); };
+  window.addEventListener("keydown", esc);
+  document.body.append(bg);
+}
+
+/* What the ✕ on a pod chip opens. Two outcomes, and the difference between them is the entire
+   lesson of 11 Aug: "not in today" writes to day.removed and merge.py honours it, so nobody puts
+   them back; "just out of this pod" leaves them on the bench, available, which is right when you
+   are reshuffling and wrong when someone has gone home. The old ✕ silently did the second whatever
+   you meant. Naming both and letting the person pick costs one tap and removes the trap. */
+function podRemoveSheet(day, di, p, a){
+  const s = staffById(a.id);
+  if (!s) return;
+  const bg  = el("div", { class: "dlg-bg" });
+  const box = el("div", { class: "dlg" });
+  const shut = () => { sheetClosedAt = Date.now(); bg.remove(); window.removeEventListener("keydown", esc); };
+  const esc = e => { if (e.key === "Escape") shut(); };
+  box.append(
+    el("div", { class: "dlg-title" }, s.name),
+    el("div", { class: "dlg-body" }, [a.shift, "Pod " + p, DAYNAMES[di]].filter(Boolean).join(" · ")),
+    el("button", { class: "btn sheetbtn", onclick: () => {
+        shut();
+        takeOffDay(day, di, a.id);
+        markDirty(); renderWeek();
+        afterChangeCard(di, s.name + " is off today.");
+      } }, "Not in today"),
+    el("button", { class: "btn sec sheetbtn", onclick: () => {
+        shut();
+        day.pods[p].assign = day.pods[p].assign.filter(x => x !== a);
+        logEntry(s.name + " → bench (" + dayShort(di) + ")", "manual", dateOfDi(di), null,
+          { act: "move", subj: s.name, from: p, to: "", bench: true });
+        markDirty(); renderWeek();
+        afterChangeCard(di, s.name + " is on the bench, still on today.");
+      } }, "Just out of this pod"),
+    el("button", { class: "btn sec sheetbtn plain", onclick: shut }, "Cancel"));
+  bg.append(box);
+  bg.onclick = e => { if (e.target === bg) shut(); };
+  window.addEventListener("keydown", esc);
+  document.body.append(bg);
+}
+
+function personSheet(s, di, day){
+  const bg  = el("div", { class: "dlg-bg" });
+  const box = el("div", { class: "dlg" });
+  const shut = () => { sheetClosedAt = Date.now(); bg.remove(); window.removeEventListener("keydown", esc); };
+  const esc = e => { if (e.key === "Escape") shut(); };
+  const where = placeOnDay(day, s.id);
+  const shift = (() => {
+    for (const p of PODS) { const a = day.pods[p].assign.find(x => x.id === s.id); if (a) return a.shift; }
+    return null;
+  })();
+  box.append(
+    el("div", { class: "dlg-title" }, s.name),
+    el("div", { class: "dlg-body" },
+      [shift, where === "bench" ? "on the bench" : where === "A&B night" || where === "C&D night" || where === "night Pod E" ? where : "Pod " + where,
+       DAYNAMES[di]].filter(Boolean).join(" · ")),
+    /* The primary action is the one somebody reaches for at 5am, and it is the DAY not the pod. */
+    el("button", { class: "btn sheetbtn", onclick: () => {
+        shut();
+        takeOffDay(day, di, s.id);
+        markDirty(); renderWeek();
+        afterChangeCard(di, s.name + " is off today.");
+      } }, "Not in today"),
+    el("button", { class: "btn sec sheetbtn", onclick: () => {
+        shut();
+        tapPick = { id: s.id, di }; tapPhone = null;
+        renderWeek();
+        toast("Now tap the pod to move " + s.name.split(" ")[0] + " to");
+      } }, "Move to another pod"),
+    el("button", { class: "btn sec sheetbtn plain", onclick: shut }, "Cancel"));
+  bg.append(box);
+  bg.onclick = e => { if (e.target === bg) shut(); };
+  window.addEventListener("keydown", esc);
+  document.body.append(bg);
+}
 /* ── Neurology registrars ─────────────────────────────────────────────────────────────────────
    Ali, 4 Aug 2026: "set a firm rule that neurology registrars are supernumerary and only ever
    allocated to C & D". Firm, not a lean — he asked for a hard block, so a drag onto A, B or E is
@@ -3397,8 +3688,31 @@ function chip(s, opts){
   if (opts.onRemove) c.append(el("button", { class: "x", title: opts.removeTitle || "Remove", onclick: e => { e.stopPropagation(); opts.onRemove(); } }, "✕"));
   if (tapPick && tapPick.id === s.id && tapPick.di === opts.di) c.classList.add("selected");
   if (tapPhone && day && tapPhone.di === opts.di) c.classList.add("phonehover");
+  /* PRESS AND HOLD OPENS THE PERSON SHEET — see personSheet() for why this exists at all.
+     Held to 500ms and cancelled by any real movement, because the same gesture starts a drag and
+     a drag must always win: somebody moving a chip has already said what they want. The 10px
+     slop is there because a thumb never holds perfectly still. contextmenu gets the same sheet so
+     it is reachable with a mouse without holding the button down. */
+  if (canEdit() && opts.di != null && day) {
+    let timer = null, sx = 0, sy = 0;
+    const stop = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    c.addEventListener("pointerdown", e => {
+      if (e.target.closest(".tagx") || e.target.closest(".x") || e.target.closest(".phoneicon")) return;
+      sx = e.clientX; sy = e.clientY;
+      stop();
+      timer = setTimeout(() => { timer = null; personSheet(s, opts.di, day); }, 500);
+    });
+    c.addEventListener("pointermove", e => {
+      if (timer && (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10)) stop();
+    });
+    ["pointerup", "pointercancel", "pointerleave", "dragstart"].forEach(ev => c.addEventListener(ev, stop));
+    c.addEventListener("contextmenu", e => { e.preventDefault(); stop(); personSheet(s, opts.di, day); });
+  }
   c.addEventListener("click", async e => {
     if (!canEdit() || Date.now() - dragEndedAt < 400) return;
+    /* A hold ends in a pointerup, which the browser then reports as a click — without this the
+       sheet opens and the chip is picked up underneath it. */
+    if (Date.now() - sheetClosedAt < 400 || document.querySelector(".dlg-bg")) return;
     if (e.target.closest(".tagx") || e.target.closest(".x") || e.target.closest(".phoneicon")) return;
     if (tapPhone && day && tapPhone.di === opts.di) { await assignPhoneTo(day, tapPhone.type, s); return; }
     if (opts.di == null) return;
@@ -3726,12 +4040,26 @@ function renderDayRow(day, di, dateISO, issues){
     const addIn = el("input", { class: "addsearch-input", list: dlId, placeholder: "Type a name…", title: "Type a staff name — or a locum/bank name not on the list" });
     const wrap = el("div", { class: "addmenu-wrap" });
     const close = () => wrap.className = "addmenu-wrap";
-    addIn.onchange = () => {
+    addIn.onchange = async () => {
       const v = addIn.value.trim(); if (!v) { close(); return; }
       const s = activeStaff(dateISO).find(x => x.name === v && !pool[x.id]);
       if (s) {
         day.extras = day.extras || [];
-        if ((day.removed || []).includes(s.id)) { putBackOnDay(day, s.id); logEntry(s.name + " put back on " + dayShort(di), "manual", dateOfDi(di)); }
+        /* ASK BEFORE REINSTATING SOMEBODY WHO WAS TAKEN OFF (11 Aug). This box is how the morning
+           of the 11th went wrong: the night reg took Jamiu Aliu off at 05:45 and, a minute later,
+           picked the same name in here — which silently put him back on, so the 05:52 sync quite
+           correctly placed him in a pod again. Nothing on screen said the name he was choosing was
+           the name he had just removed. Adding a stranger is still one action; only undoing your
+           own removal stops to ask, and the question names the person so it cannot be waved
+           through by reflex. It does not ask why, and it never records one. */
+        if ((day.removed || []).includes(s.id)) {
+          const yes = await uiConfirm(s.name + " was taken off " + dayShort(di) + " earlier today. Put them back on?",
+            { title: "Put " + s.name.split(" ")[0] + " back on?", okLabel: "Put back on" });
+          if (!yes) { addIn.value = ""; return; }
+          putBackOnDay(day, s.id);
+          logEntry(s.name + " put back on " + dayShort(di), "manual", dateOfDi(di), null,
+            { act: "on", subj: s.name, to: "" });
+        }
         else { day.extras.push({ id: s.id, kind: "day" }); logEntry(s.name + " added to bench (" + dayShort(di) + ")", "manual", dateOfDi(di)); }
         addIn.value = ""; markDirty(); renderWeek();
       } else { const nm = v; addIn.value = ""; adhocDialog(di, nm); }
@@ -3852,7 +4180,20 @@ function renderDayRow(day, di, dateISO, issues){
           if (day.phone === a.id && next !== "LD") { day.phone = null; toast("Phone taken off " + staffById(a.id).name + " — a long day is needed to hold it"); }
           markDirty(); renderWeek();
         },
-        onRemove: () => { pod.assign = pod.assign.filter(x => x !== a); logEntry("Removed " + staffById(a.id).name + " from Pod " + p + " (" + dayShort(di) + ")", "manual", dateOfDi(di)); markDirty(); renderWeek(); } }));
+        /* THE ✕ ASKS NOW (11 Aug, second pass). It used to empty the pod slot on the spot, which
+           dropped the person on the bench — off the left edge of a scrolled board, so it read as
+           nothing having happened at all, and left them where the allocator would pick them up
+           again. That is the whole of what went wrong at 05:45.
+
+           My first attempt put the good path behind a press-and-hold and left this alone. Ali:
+           "it should have done the nice popup box workflow... why didnt it". Right — a hidden
+           good path next to a visible bad one is not a fix. The ambiguous control is this one, so
+           this one is where the question belongs.
+
+           Both answers stay one tap away, and neither is preselected, because the board genuinely
+           cannot tell which was meant. It does not ask why, and there is nowhere to record one. */
+        removeTitle: "Take out of this pod",
+        onRemove: () => podRemoveSheet(day, di, p, a) }));
     }
     if (!pod.assign.length) col.append(el("div", { class: "hint" }, "drop staff here"));
     // Only say "Super" when someone actually is one here. In edit mode the empty box still
@@ -5792,6 +6133,57 @@ function planDayFix(di){
         day.pods[p].assign.push({ id: ld.id, shift: "LD" });
         if (sd) { day.pods[p].assign = day.pods[p].assign.filter(x => x !== sd); day.pods[donor].assign.push({ id: sd.id, shift: sd.shift }); }
       } else unresolved.push("Pod " + p + " has no long-day person and none can be spared.");
+    }
+  }
+
+  /* 3a) SPREAD THE AIRWAY COVER — added 11 Aug 2026.
+
+     Ali moved Bruce Liu from B to D by hand to give D airway presence, and asked why the board had
+     neither suggested it nor done it. The check for this already existed and had fired — amber:
+     "Pod D has nobody airway-trained while another pod has 2." What did not exist was any way to
+     ACT on it: this planner only ever moved people for pod minimums and long-day cover, so Fix day
+     would not have made that move. It was not declining; the possibility never occurred to it.
+
+     The trigger is deliberately the clinically meaningful case and no wider — a pod with NOBODY
+     airway-trained while some other pod has TWO or more. One each is the aim; taking the only
+     airway person out of a pod to give another one is not a fix, it is the same problem moved.
+     So the donor must keep at least one, which is what `> 1` guarantees.
+
+     Everything already established stays established: never a third pod in a week, never strand a
+     pod below its minimum, never move the phone holder, and never take a pod's only long day.
+     Those are the rules that make the day work at all; airway is an aim, and an aim never gets to
+     break an issue to satisfy itself. If no move clears all of them, this says nothing and the
+     amber stands — the honest outcome, and the same shape as the pod-spread logic. */
+  {
+    const airwayIn = p => day.pods[p].assign.filter(a => a.id && countsIn(a.id) && (staffById(a.id) || {}).airway).length;
+    const AD = PODS.filter(p => p !== "E");
+    for (const p of AD) {
+      if (guard++ > 160) break;
+      if (podCount(p) === 0 || airwayIn(p) > 0) continue;
+      const donor = AD.find(q => q !== p && airwayIn(q) >= 2);
+      if (!donor) continue;                       // nobody has a spare — leave the amber alone
+      /* A SWAP, NOT A MOVE, and the difference is not cosmetic. The first version moved the spare
+         across, which made the receiving pod the biggest on the unit — and step 3c then pulls the
+         PHONE HOLDER into the biggest pod, dragging the donor's other airway person with them. Net
+         result: both airway people ended up in the same pod and the donor had none, which is the
+         very fault this step exists to fix. Swapping keeps every pod's headcount and long-day count
+         exactly as they were, so nothing downstream has anything to react to. */
+      const spare = day.pods[donor].assign.find(a =>
+        a.id && countsIn(a.id) && (staffById(a.id) || {}).airway &&
+        a.id !== day.phone &&                                  // the phone stays where it is
+        !(a.shift === "LD" && podLDs(donor) <= 1) &&            // never the donor's only long day
+        !wouldBeThirdPod(a.id, p));
+      if (!spare) continue;
+      // Same shift, so long-day cover on both sides is untouched. No same-shift partner, no swap.
+      const back = day.pods[p].assign.find(a =>
+        a.id && countsIn(a.id) && !(staffById(a.id) || {}).airway &&
+        a.id !== day.phone && a.shift === spare.shift &&
+        !wouldBeThirdPod(a.id, donor));
+      if (!back) continue;
+      day.pods[donor].assign = day.pods[donor].assign.filter(x => x !== spare);
+      day.pods[p].assign     = day.pods[p].assign.filter(x => x !== back);
+      day.pods[p].assign.push({ id: spare.id, shift: spare.shift });
+      day.pods[donor].assign.push({ id: back.id, shift: back.shift });
     }
   }
 
