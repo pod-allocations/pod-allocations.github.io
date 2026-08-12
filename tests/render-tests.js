@@ -267,6 +267,21 @@ const SEED = `(function(){
   await settle();
   ok("...asked once per visit, so a refusal doesn't nag on every tab",
      w.eval("window.__armed") === 1, "asked " + w.eval("window.__armed") + " times");
+  /* A RENAME MUST NOT ORPHAN SOMEBODY FROM THE SYNC. merge.py matches an Optima row on the name
+     plus the aliases, so tidying "Thomas Mckernan" to "Tom McKernan" without keeping the old one
+     means the next pull does not recognise him and appends a SECOND record with the same id.
+     Found 12 Aug while fixing the save bug; fixed on both sides, asserted on this one. */
+  w.eval("EDIT_MODE = true; saveFile = function(){ return Promise.resolve(); };" +
+         "window.__was = data.staff[0].name; data.staff[0].aliases = [];" +
+         "staffModal(data.staff[0]);" +
+         "(function(){ var i = document.querySelector('#modal input[type=text]'); i.value = 'Renamed Person';" +
+         "var b = [].slice.call(document.querySelectorAll('#modal .modalbtns button')); b[b.length-1].click(); })();");
+  ok("renaming somebody keeps the name the Optima sync knows them by",
+     JSON.parse(w.eval("JSON.stringify(data.staff[0].aliases)")).includes(w.eval("normName(window.__was)")),
+     w.eval("JSON.stringify(data.staff[0].aliases)"));
+  ok("...and the new name is the one on the record",
+     w.eval("data.staff[0].name") === "Renamed Person");
+  w.eval("data.staff[0].name = window.__was; data.staff[0].aliases = [];");
   w.eval("enterEdit = window.__realEnter; saveFile = window.__realSave;" +
          "EDIT_MODE = false; teamEditTried = true; data.staff[0].verified = true;" +
          "switchTab('staff'); renderStaff();");
