@@ -492,7 +492,9 @@ aside button .ic{position:relative}
 @media (max-width:640px){
   .attnrow{flex-wrap:wrap}
   .attnsort,.attnact,.attnwho{margin-left:calc(26px + .7rem);align-self:flex-start;margin-top:.5rem}
-  .attnsort{min-height:32px}
+  /* 44px floor, measured rather than assumed: at 390px the button came out 34px tall, which is
+     under the touch target this project holds itself to (rule 14). */
+  .attnsort{min-height:44px;padding:.5rem .9rem}
 }
 .attnclear{text-align:center;padding:2.4rem 1rem;color:var(--muted)}
 .attnclear b{display:block;font-size:1rem;color:var(--ink);margin-bottom:.3rem}
