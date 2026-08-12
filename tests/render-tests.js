@@ -998,6 +998,62 @@ const SEED = `(function(){
        !/why:\s*["'](sick|rota)["']/.test(coreCode));
   }
 
+  /* ---- ATTENTION: ONE RULE FOR EVERY ROW ---------------------------------------------------
+     Ali, 11 Aug (for Cover) and again on 12 Aug when the resident board still did not have it:
+     "when i say ive checked that should just grey out and badge drop". The lifecycle has four
+     moments and each one is a way of getting it wrong, so each one is asserted: the press does
+     the work and saves, the badge drops immediately, the row STAYS greyed rather than vanishing,
+     and on the fourth day a live condition that is still true comes back while a record of
+     something that happened stays gone. */
+  console.log("\n-- Attention: press it, it greys, the badge drops --");
+  {
+    const settle2 = () => new Promise(r => setTimeout(r, 40));
+    w.eval("window.__re2 = enterEdit; window.__rs2 = saveFile; window.__saved2 = 0;" +
+           "saveFile = function(){ window.__saved2++; return Promise.resolve(); };" +
+           "enterEdit = function(){ EDIT_MODE = true; return Promise.resolve(); };" +
+           "data.sorted = {}; data.pendingSkills = []; data.staff[0].verified = false;" +
+           "data.staff[0].active = true; renderAll();");
+    const sid = w.eval("data.staff[0].id");
+    const row = "unver:" + sid;
+    const rows = () => w.eval("JSON.stringify(attentionItems().map(function(x){ return [x.id, !!x.done]; }))");
+    const live = () => w.eval("attentionItems().reduce(function(a,x){ return a + (x.done ? 0 : x.n); }, 0)");
+    const find = id => JSON.parse(rows()).find(r => r[0] === id);
+    ok("an unchecked person gets a row of their own, not a lump of six names", !!find(row), rows());
+    ok("...and it offers Checked rather than a generic Sorted",
+       w.eval("(attentionItems().find(function(x){ return x.id === '" + row + "'; })||{}).sortLabel") === "Checked");
+    const before = live();
+    await w.eval("markSorted('" + row + "')");
+    await settle2();
+    ok("pressing it does the work — they are actually checked", w.eval("data.staff[0].verified") === true);
+    ok("...and it is saved, not just held in memory", w.eval("window.__saved2") >= 1);
+    ok("the badge drops at once", live() === before - 1, before + " -> " + live());
+    const after = find(row);
+    ok("but the row is STILL THERE, greyed — not vanished", !!after && after[1] === true, rows());
+    w.eval("renderTeamGate();");
+    ok("...and the page draws it greyed, with no buttons left to press",
+       w.eval("(function(){ var r = document.querySelector('#attnList .attnrow.done');" +
+              "return !!r && !r.querySelector('.attnsort') && /Checked by|Checked/.test(r.textContent); })()") === true);
+    /* Three days up. */
+    w.eval("data.sorted['" + row + "'].t = new Date(Date.now() - 4 * 86400000).toISOString();" +
+           "data.staff[0].verified = true;");
+    ok("after three days a dealt-with row drops off", !find(row), rows());
+    w.eval("data.staff[0].verified = false;");
+    const back = find(row);
+    ok("...but a LIVE condition that is still true comes back, counting again",
+       !!back && back[1] === false, rows());
+    /* A historical fact — a skill that starts on a date — stays dealt with. */
+    w.eval("data.staff[0].verified = true; data.sorted = {};" +
+           "data.pendingSkills = [{ id: data.staff[1].id, name: data.staff[1].name, add: { airway: true }, from: todayISO(), applied: true }];");
+    const pend = "pend:" + w.eval("data.staff[1].id") + ":" + w.eval("todayISO()");
+    ok("a skill starting on a date raises a row too", !!find(pend), rows());
+    await w.eval("markSorted('" + pend + "')");
+    await settle2();
+    w.eval("data.sorted['" + pend + "'].t = new Date(Date.now() - 9 * 86400000).toISOString();");
+    ok("and once somebody has said they have dealt with it, it stays gone", !find(pend), rows());
+    w.eval("enterEdit = window.__re2; saveFile = window.__rs2; EDIT_MODE = false; teamEditTried = true;" +
+           "data.sorted = {}; data.pendingSkills = []; data.staff[0].verified = true; renderAll();");
+  }
+
   /* THE TABLE'S OWN SCROLL PANE, AND THE BUTTON BAR.
      Ali, 9 Aug: "the scroll to see the oncall/fgh is glitchy. Scrolls the whole page and the top
      header doesnt extend that far - surely would be better if it was just the table that scrolled
