@@ -1214,6 +1214,10 @@ const SELF_NAME = (() => { try { const n = decodeURIComponent(location.pathname.
 const VIEW_ONLY = (() => { try { localStorage.getItem("_probe"); return false; } catch(e){ return true; } })();
 let EDIT_MODE = false;
 const canEdit = () => EDIT_MODE;
+/* Asked once per visit to the rota-team pages — see switchTab(). Declining "Who's editing?"
+   must not put the question up again on every tab click; leaving edit mode clears it so the
+   next visit arms again. */
+let teamEditTried = false;
 
 const $ = s => document.querySelector(s);
 const el = (tag, attrs={}, ...kids) => {
@@ -1770,6 +1774,7 @@ async function exitEdit(){
     updateSaveState("saved");
   }
   EDIT_MODE = false;
+  teamEditTried = false;   // the next walk into the rota-team pages arms editing again
   document.body.classList.add("viewmode");
   tapPick = null; tapPhone = null;
   renderAll();
@@ -1872,7 +1877,17 @@ let suppressDirty = false;
 function rotaSig(d){ try { const c = JSON.parse(JSON.stringify(d)); delete c.savedAt; delete c.savedBy; delete c.editLock; delete c.log; delete c.logSeen;
   try { (c.feedback || []).forEach(f => { delete f.read; }); } catch(e){} return JSON.stringify(c); } catch(e){ return "sig" + Math.random(); } }
 function markDirty(){
-  if (!EDIT_MODE || suppressDirty) return;
+  /* Returning silently here is how the Staff page lost Tom McKernan's skills twice over
+     (Ali, 12 Aug: "ive done it twice and they dont seem to have saved"). The row re-rendered,
+     the tick appeared, the badge dropped — and because nothing was marked dirty, the 3-minute
+     syncLatest() poll pulled the shared copy back over the top. Anything that CHANGES the rota
+     must arm edit mode first; this line says so out loud when something doesn't, so the next
+     one of these is found in the console instead of on the ward. */
+  if (!EDIT_MODE && !suppressDirty) {
+    try { console.warn("markDirty ignored — not in edit mode, so that change was NOT saved"); } catch(e){}
+    return;
+  }
+  if (suppressDirty) return;
   const snap = JSON.stringify(data);
   // Only add an undo point when the snapshot actually changed — stops lock heartbeats and repeat
   // calls piling up identical snapshots (which made one Undo click look like it did nothing).
@@ -2624,8 +2639,13 @@ function renderStaff(){
     const vcell = el("td", { class: "vcell" });
     const pend = (data.pendingSkills || []).filter(x => x.id === s.id);
     if (s.verified === false) {
-      vcell.append(el("button", { class: "rowbtn check", title: "Confirm their skills are right", onclick: () => {
-        s.verified = true; logEntry("Checked new starter: " + s.name); markDirty(); renderStaff(); updateTeamBadge();
+      /* Arms editing itself and saves on the spot. Entering the rota-team pages normally does
+         this already, but edit mode closes after 5 idle minutes — and reading a staff list is
+         mostly idle. That is the state Ali kept clicking Check in. */
+      vcell.append(el("button", { class: "rowbtn check", title: "Confirm their skills are right", onclick: async () => {
+        if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+        s.verified = true; logEntry("Checked new starter: " + s.name);
+        markDirty(); saveFile(true); renderStaff(); updateTeamBadge();
       }}, "Check"));
     } else vcell.append(el("span", { class: "muted-sm" }, "✓"));
     for (const x of pend) vcell.append(el("span", { class: "pendpill", title: Object.keys(x.add || {}).map(k => SKILL_SHORT[k] || k).join(", ") + " — ticked and live now; auto-fill starts using it " + niceDate(x.from) }, "auto-fill " + niceDate(x.from)));
@@ -2638,17 +2658,26 @@ function renderStaff(){
       const last = lastRosteredDay(s.id);
       if (last) acts.append(el("span", { class: "muted-sm", style: "margin-right:.5rem" }, "last " + niceDate(last)));
       acts.append(el("button", { class: "rowbtn", title: "Put them back in the pick-lists now, without waiting for a shift to appear",
-        onclick: () => { s.keepCurrent = true;
+        onclick: async () => {
+          if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+          s.keepCurrent = true;
           logEntry(s.name + " brought back to the current staff list", "manual");
-          markDirty(); recomputeHistoric(); renderStaff(); renderWeek(); updateTeamBadge();
+          markDirty(); saveFile(true); recomputeHistoric(); renderStaff(); renderWeek(); updateTeamBadge();
           toast(s.name + " is back on the current list"); } }, "Bring back"));
     }
     acts.append(
-      el("button", { class: "rowbtn edit", title: "Edit this person's details", onclick: () => staffModal(s) }, "Edit"),
+      el("button", { class: "rowbtn edit", title: "Edit this person's details", onclick: async () => {
+        if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+        staffModal(s);
+      } }, "Edit"),
+      /* The lock is taken BEFORE the question is asked. Outside edit mode this used to remove the
+         person from the screen and save nothing at all — they were back the next morning, which
+         is a worse lie than refusing outright. */
       el("button", { class: "rowbtn del", title: "Remove from the pick-lists", onclick: async () => {
+        if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
         if (!(await uiConfirm("This removes " + s.name + " from the staff list and future pick-lists. Rotas already saved keep their name. This can't be undone from here.", { title: "Delete " + s.name + "?", okLabel: "Delete", cancelLabel: "Keep", danger: true }))) return;
         data.staff = data.staff.filter(x => x.id !== s.id);
-        logEntry("Deleted staff: " + s.name); markDirty(); renderStaff(); renderWeek();
+        logEntry("Deleted staff: " + s.name); markDirty(); saveFile(true); renderStaff(); renderWeek();
       }}, "Delete")
     );
     tr.append(acts);
@@ -2822,6 +2851,10 @@ function profileEditor(box, s){
       lbl("About"), about, msg, started,
       el("div", { style: "margin-top:.8rem" }, lbl("Educational supervisor"), sup))));
 }
+/* Editing is armed by the buttons that OPEN this sheet, not in here. Two reasons: the
+   "Who's editing?" question is itself a dialog, and asking it on top of a half-filled person
+   sheet is how you lose what was typed; and this function stays synchronous, which is how the
+   render tests drive it. */
 function staffModal(s){
   const isNew = !s;
   s = s || { id: uid(), name:"", grade:"", airway:false, phoneHolder:false, phoneSupervisor:false, phoneShadow:false, nights:false, fgh:false, transfer:false, supernum:false, start:null, end:null, active:true, startAuto:true, aliases:[] };
@@ -2905,7 +2938,7 @@ function staffModal(s){
       // Untick someone's phone skill and they let go of every phone they were holding.
       const freed = sweepInvalidPhones();
       if (freed) logEntry("Released " + freed + " phone allocation" + (freed === 1 ? "" : "s") + " after the skills change", "auto");
-      markDirty(); closeModal(); renderStaff(); renderWeek(); updateTeamBadge();
+      markDirty(); saveFile(true); closeModal(); renderStaff(); renderWeek(); updateTeamBadge();
       if (added.length) queueSkillGain(s, added, addMap);
     }}, isNew ? "Add" : "Save")
   ));
@@ -7954,6 +7987,17 @@ function switchTab(tab){
   if (tab === "settings") renderSettingsGate();
   if (tab === "overrides") renderOverridesGate();
   if (tab === "feedback") { renderFeedback(); markFeedbackRead(); }
+  /* PAST THE SHIELD IS EDITING (Ali, 12 Aug: "if somebody logs into the rota team bit past the
+     shield it should enter edit mode and block others from saving until theyve stopped using").
+     The rota-team password and edit mode were two separate ideas, and the gap between them is
+     where changes went to die: unlock the staff list, tick something, and markDirty() returns
+     without a word. Arming here also takes the editor lock, which is the "block others" half of
+     the same sentence — and the existing 5-minute idle timer is the "until theyve stopped".
+     Last in the function so the page is already drawn behind the "Who's editing?" question. */
+  if (TEAM_TABS.includes(tab) && data && !EDIT_MODE && !VIEW_ONLY && !teamEditTried) {
+    teamEditTried = true;
+    Promise.resolve(enterEdit()).catch(() => {});   // navigation must never die on a failed unlock
+  }
 }
 document.querySelectorAll("aside button[data-tab], #teamPanel .tpi").forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 $("#btnTeam").onclick = () => { document.body.classList.remove("railback"); switchTab("team"); };
@@ -8005,7 +8049,10 @@ $("#btnNextWeek").onclick = () => { currentWeekKey = addDays(currentWeekKey, 7);
 $("#btnToday").onclick = () => { currentWeekKey = mondayOf(todayISO()); renderWeek(); };
 $("#btnAutoFill").onclick = autoFillWeek;
 $("#btnFixWeek").onclick = fixWeekDialog;
-$("#btnAddStaff").onclick = () => staffModal(null);
+$("#btnAddStaff").onclick = async () => {
+  if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+  staffModal(null);
+};
 $("#modalBg").onclick = e => { if (e.target.id === "modalBg") closeModal(); };
 $("#wOpen").onclick = openFile;
 $("#wNew").onclick = e => { e.preventDefault(); newFile(); };
