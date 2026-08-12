@@ -2941,7 +2941,18 @@ function staffModal(s){
     el("button", { class: "btn sec", onclick: closeModal }, "Cancel"),
     el("button", { class: "btn", onclick: () => {
       if (!name.value.trim()) { name.style.borderColor = "var(--red)"; nameMsg.textContent = "A name is required."; name.focus(); return; }
+      const wasCalled = s.name;
       s.name = name.value.trim(); s.grade = grade.value;
+      /* A RENAME MUST NOT ORPHAN THEM FROM THE SYNC. merge.py matches an Optima row on the name
+         plus the aliases, so the name somebody arrived under has to stay somewhere — tidy
+         "Thomas Mckernan" to "Tom McKernan" without this and the next pull does not recognise
+         him, adds a SECOND record, and the rules sit on one while the rota is written against the
+         other (found 12 Aug, alongside the Staff page save bug). Aliases are stored normalised,
+         which is the form the matcher compares. */
+      if (!isNew && wasCalled && normName(wasCalled) !== normName(s.name)) {
+        s.aliases = s.aliases || [];
+        if (!s.aliases.includes(normName(wasCalled))) s.aliases.push(normName(wasCalled));
+      }
       /* Every tick lands NOW — the pills, the checker and anything granted by hand all see it
          immediately (Ali, 31 Jul). For skills GAINED by an existing person we then ask when the
          allocator should start USING them, so boards already written aren't churned. */
