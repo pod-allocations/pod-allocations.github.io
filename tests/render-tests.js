@@ -228,6 +228,49 @@ const SEED = `(function(){
   ok("and the filter bar disappears when nothing is filtered",
      w.eval("document.getElementById('staffFilters').textContent").trim() === "");
 
+  /* ---- the Staff page saves what it says it saved ----------------------------------------
+     12 Aug: Check, the person sheet's Save, Bring back and Delete all called markDirty() and
+     nothing else — and markDirty() returns without a word outside edit mode. The tick appeared,
+     the badge dropped, the next 3-minute sync pulled the shared copy back over the top, and Tom
+     McKernan needed checking a third time. Two halves to assert: the button arms editing itself,
+     and the change is WRITTEN OUT rather than left sitting in memory. */
+  console.log("\n-- the Staff page saves what it says it saved --");
+  const clickCheck = () => w.eval("(function(){ var b = document.querySelector('#staffBody .rowbtn.check');" +
+    "if (!b) return false; b.click(); return true; })()");   // el() binds with addEventListener, so .onclick is null
+  const settle = () => new Promise(r => setTimeout(r, 40));
+  w.eval("window.__realEnter = enterEdit; window.__realSave = saveFile;" +
+         "window.__armed = 0; window.__saved = 0;" +
+         "saveFile = function(){ window.__saved++; return Promise.resolve(); };" +
+         "stGrades = null; stSkills = new Set();" +
+         "EDIT_MODE = false; teamEditTried = false; data.staff[0].verified = false;" +
+         // stands in for a refusal: asked for, not granted
+         "enterEdit = function(){ window.__armed++; return Promise.resolve(); };" +
+         "renderStaff();");
+  ok("an unchecked new starter still gets a Check button", clickCheck() === true);
+  await settle();
+  ok("clicking it asks for edit mode instead of assuming it", w.eval("window.__armed") === 1);
+  ok("and when editing is refused the tick is NOT quietly set anyway",
+     w.eval("data.staff[0].verified") === false);
+  ok("...and nothing was saved", w.eval("window.__saved") === 0);
+  w.eval("enterEdit = function(){ window.__armed++; EDIT_MODE = true; return Promise.resolve(); }; renderStaff();");
+  clickCheck();
+  await settle();
+  ok("with editing armed the tick lands", w.eval("data.staff[0].verified") === true);
+  ok("and it is written out there and then, not left in memory to be lost",
+     w.eval("window.__saved") >= 1);
+  /* Ali, 12 Aug: "if somebody logs into the rota team bit past the shield it should enter edit
+     mode and block others from saving until theyve stopped using". */
+  w.eval("EDIT_MODE = false; teamEditTried = false; window.__armed = 0; switchTab('staff');");
+  await settle();
+  ok("walking in past the shield arms editing by itself", w.eval("window.__armed") === 1);
+  w.eval("switchTab('fair'); switchTab('log');");
+  await settle();
+  ok("...asked once per visit, so a refusal doesn't nag on every tab",
+     w.eval("window.__armed") === 1, "asked " + w.eval("window.__armed") + " times");
+  w.eval("enterEdit = window.__realEnter; saveFile = window.__realSave;" +
+         "EDIT_MODE = false; teamEditTried = true; data.staff[0].verified = true;" +
+         "switchTab('staff'); renderStaff();");
+
   console.log("\n-- the profile panel --");
   ok("the twist opens it",
      (function(){ try {
