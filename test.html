@@ -477,6 +477,23 @@ aside button .ic{position:relative}
 .attnrow .n{min-width:26px;height:26px;border-radius:8px;background:var(--red-bg);color:var(--red);font-size:.8rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .attnrow .tx b{display:block;font-size:.88rem;margin-bottom:.1rem}
 .attnrow .tx span{font-size:.78rem;color:var(--muted);line-height:1.5}
+/* A dealt-with row. Still there, plainly done — muted rather than hidden, because the question
+   this page answers is "did somebody deal with that?" and a row that vanishes answers it with
+   silence. It loses its hover and its pointer too: there is nothing left to press. */
+.attnrow.done{background:#fbfbfa;box-shadow:none;cursor:default}
+.attnrow.done:hover{border-color:rgba(29,31,36,.06)}
+.attnrow.done .n{background:#eef0ec;color:#5f7a54}
+.attnrow.done .tx b{color:var(--muted);font-weight:600}
+.attnsort{margin-left:auto;align-self:center;flex-shrink:0;font-size:.76rem;padding:.25rem .7rem;white-space:nowrap}
+.attnact+.attnsort{margin-left:.4rem}
+.attnwho{margin-left:auto;align-self:center;flex-shrink:0;font-size:.72rem;color:var(--muted);white-space:nowrap}
+/* On a phone the title and a 44pt-tall button will not share a line at 390px, so the button drops
+   under the text instead of squeezing it to three words a line. */
+@media (max-width:640px){
+  .attnrow{flex-wrap:wrap}
+  .attnsort,.attnact,.attnwho{margin-left:calc(26px + .7rem);align-self:flex-start;margin-top:.5rem}
+  .attnsort{min-height:32px}
+}
 .attnclear{text-align:center;padding:2.4rem 1rem;color:var(--muted)}
 .attnclear b{display:block;font-size:1rem;color:var(--ink);margin-bottom:.3rem}
 /* The change log is a five-column table, which is right on a laptop and impossible on a phone:
@@ -2141,6 +2158,7 @@ function loadData(d){
     if (s.verified === undefined) s.verified = true;
   }
   data.pendingSkills = data.pendingSkills || [];
+  data.sorted = data.sorted || {};   // which Attention rows somebody has dealt with (12 Aug)
   migratePendingSkills();
   for (const wk of Object.values(data.weeks)) {
     if (!("roster" in wk)) wk.roster = null;
@@ -6843,31 +6861,79 @@ async function applyDuePendingSkills(silent){
    Everything the rota team has to act on, in one place, counted on the side-menu badge.
    Deliberately NOT the red/amber day dots — those live on the board where the day is. This is
    for things that would otherwise sit unnoticed: people to check, clashes, changes about to land. */
-function attentionItems(){
+/* ── ONE RULE FOR EVERY ROW: SORTED ───────────────────────────────────────────────────────────
+   Ali, 11 Aug, writing the rule for Cover: "any attention thing that leaves a badge must have a
+   way of showing youve sorted and the attention badge disappearing. And on attention page when
+   say youve sorted grey out and drop off after 3 days." Cover got it that night. The resident
+   board did not, and on 12 Aug it showed: he checked Tom McKernan, the row simply vanished, and
+   there was no way to tell a row that had been dealt with from a row that had never existed —
+   "it should just grey out and badge drop".
+
+   So: every row takes a press. The badge drops at once, the row greys and STAYS for three days
+   with the name of whoever pressed it, then goes. A row that disappears the instant you press it
+   answers "did somebody deal with that?" with silence.
+
+   What happens on the fourth day depends on what KIND of fact the row is:
+
+     A LIVE CONDITION — a clash with Optima, somebody still unchecked, cover still running out —
+     is only ever as true as it is right now. A press quiets it for three days; if it is STILL
+     true when they are up it comes back, un-greyed and counting again. You can quiet it, you
+     cannot make it lie.
+
+     A HISTORICAL FACT — a skill that starts on a date, a notice — happened, and a named person
+     saying they have dealt with it is the end of it. Those stay gone.
+
+   And one thing Cover did not need: here the press often makes the condition FALSE (checking
+   somebody is what the row was asking for). The row must still grey rather than vanish, so the
+   title is copied into the store when it is pressed and drawn from there for its three days. */
+const SORTED_GREY_DAYS = 3;
+const LIVE_KINDS = ["clash", "ghost", "unver", "dup", "cover"];
+function sortedOf(id){ return (data && data.sorted && data.sorted[id]) || null; }
+/* Rows that summarise a SET — the clashes, the ghosts — carry a signature of that set in their id,
+   so quieting today's three clashes cannot also quiet tomorrow's fourth. A new fact is a new row. */
+function attnSig(parts){
+  const s = parts.join("|");
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+function rawAttention(){
   if (!data) return [];
   const out = [];
-  const clashes = (data.syncReview || []).length;
-  if (clashes) out.push({ n: clashes, title: "Allocate disagrees with the board",
+  const review = data.syncReview || [];
+  const clashes = review.length;
+  if (clashes) out.push({ kind: "clash", id: "clash:" + attnSig(review.map(c => (c && (c.date || "")) + (c && (c.name || "")))),
+    n: clashes, title: "Allocate disagrees with the board",
     body: clashes === 1 ? "One day where somebody's shift here doesn't match Optima. Pick which is right." : clashes + " days where somebody's shift here doesn't match Optima. Pick which is right.",
     go: () => { const e = $("#syncReview"); if (e) e.scrollIntoView({ behavior: "smooth", block: "center" }); } });
 
   const ghosts = (typeof srDetectGhosts === "function") ? srDetectGhosts() : [];
-  if (ghosts.length) out.push({ n: ghosts.length, title: "Off the Optima rota but still allocated",
+  if (ghosts.length) out.push({ kind: "ghost", id: "ghost:" + attnSig(ghosts.map(g => (g && (g.sid || g.name || "")) + (g && (g.date || "")))),
+    n: ghosts.length, title: "Off the Optima rota but still allocated",
     body: ghosts.slice(0, 6).map(g => g.name).join(", ") + (ghosts.length > 6 ? " and " + (ghosts.length - 6) + " more" : "")
       + " — the sync clears these on its next run; these are the ones it could not.",
     go: () => { const e = $("#syncReview"); if (e) e.scrollIntoView({ behavior: "smooth", block: "center" }); } });
 
-  const unver = data.staff.filter(s => s.verified === false && s.active !== false);
-  if (unver.length) out.push({ n: unver.length, title: "New people to check",
-    body: unver.slice(0, 6).map(s => s.name).join(", ") + (unver.length > 6 ? " and " + (unver.length - 6) + " more" : "") + " — added automatically from Optima. Confirm their skills are right.",
-    go: () => switchTab("staff") });
+  /* ONE ROW PER PERSON, not one row listing six of them. Checking somebody is a thing you do to a
+     person, so it has to be a thing you can press against that person — a single row covering the
+     lot can only ever be half-done, and half-done is what the badge cannot say. The press does the
+     same work the Staff page's Check button does, which is why the button says Checked. */
+  for (const s of data.staff.filter(x => x.verified === false && x.active !== false)) {
+    out.push({ kind: "unver", id: "unver:" + s.id, n: 1,
+      title: s.name + " has not been checked",
+      body: "Added automatically from Optima" + (s.grade ? " as " + s.grade : " with no grade set")
+          + ". Confirm their skills are right — they are being allocated in the meantime.",
+      sortLabel: "Checked",
+      onSort: () => { s.verified = true; logEntry("Checked new starter: " + s.name); },
+      go: () => switchTab("staff") });
+  }
 
   /* Two records for one person is not a tidiness problem: the rules live on one of them while the
      rota is written against the other, so a supernumerary neurology registrar ends up counted in a
      pod and nothing on screen explains why. It goes near the top because everything downstream of
      it is wrong while it stays true. */
   for (const d of suspectedDuplicates()) {
-    out.push({ n: 1,
+    out.push({ kind: "dup", id: "dup:" + d.keep.id + ":" + d.dup.id, n: 1,
       title: d.dup.name + " and " + d.keep.name + " look like the same person",
       body: "They are " + d.why + ". \u201c" + d.dup.name + "\u201d came from the Optima import as a "
           + "one-off locum, so it carries no grade and no skills — anything set against "
@@ -6897,7 +6963,9 @@ function attentionItems(){
     const words = Object.keys(x.add || {}).map(k => (SKILL_SHORT[k] || k).toLowerCase());
     if (!words.length) continue;
     const list = words.length > 1 ? words.slice(0, -1).join(", ") + " and " + words[words.length - 1] : words[0];
-    out.push({ n: 1,
+    /* Historical, not live: the date it starts is a fact about the future that somebody has now
+       read. Once they say so it does not come back — unlike a clash, which is only true today. */
+    out.push({ kind: "pend", id: "pend:" + x.id + ":" + x.from, n: 1,
       title: x.name + " — " + list + " from " + niceDate(x.from),
       body: "Ticked and in use now. Auto-fill starts choosing them for " + list + " on " + niceDate(x.from) + ".",
       go: () => switchTab("staff") });
@@ -6918,13 +6986,63 @@ function attentionItems(){
       });
     }
     const daysLeft = lastCover ? Math.round((new Date(lastCover) - new Date(today)) / 86400000) : -1;
-    if (daysLeft < 7) out.push({ n: 1, title: "Consultant cover needs the next Pod Allocations sheet",
+    /* The id carries the date the cover runs out, so importing the next sheet makes this a
+       different row: quieting "cover ends 24 Aug" cannot also quiet "cover ends 21 Sep". */
+    if (daysLeft < 7) out.push({ kind: "cover", id: "cover:" + (lastCover || "none"), n: 1,
+      title: "Consultant cover needs the next Pod Allocations sheet",
       body: lastCover ? "The imported consultant cover ends " + niceDate(lastCover) + ". Drop the new 4-week sheet on the Import page."
                       : "No consultant cover imported for the days ahead. Drop the current 4-week Pod Allocations sheet on the Import page.",
       go: () => switchTab("import") });
   }
 
   return out;
+}
+/* THE SORTED PASS. Everything above says what is true; this says what somebody has already dealt
+   with. One place at the end rather than a check inside each push — doing it per row is how Cover
+   ended up with three different behaviours and one row that could not be cleared at all. */
+function attentionItems(){
+  if (!data) return [];
+  const now = Date.now();
+  const live = [];
+  const seen = new Set();
+  for (const it of rawAttention()) {
+    seen.add(it.id);
+    const s = sortedOf(it.id);
+    if (!s || !s.t) { live.push(it); continue; }
+    const ageDays = (now - Date.parse(s.t)) / 86400000;
+    if (!(ageDays >= 0)) { live.push(it); continue; }        // unreadable stamp: treat as not sorted
+    if (ageDays < SORTED_GREY_DAYS) { live.push(Object.assign({}, it, { done: true, doneBy: s.who, doneAt: s.t })); continue; }
+    // Three days up. Still true and live? It comes back. A record of something that happened stays dealt with.
+    if (LIVE_KINDS.includes(it.kind)) live.push(it);
+  }
+  /* Rows whose condition has GONE because the press dealt with it — checking somebody is exactly
+     this — still show, greyed, for their three days, drawn from what was stored at the time. */
+  for (const [id, s] of Object.entries((data.sorted) || {})) {
+    if (seen.has(id) || !s || !s.t || !s.title) continue;
+    const ageDays = (now - Date.parse(s.t)) / 86400000;
+    if (!(ageDays >= 0) || ageDays >= SORTED_GREY_DAYS) continue;
+    live.push({ kind: "gone", id: id, n: 1, title: s.title, body: s.body || "",
+      sortLabel: s.label || "Sorted", done: true, doneBy: s.who, doneAt: s.t, go: () => {} });
+  }
+  // Dealt-with rows sit under the ones that still need somebody. Order is otherwise untouched.
+  return live.filter(x => !x.done).concat(live.filter(x => x.done));
+}
+/* Pressing it is a change to the shared rota like any other: it arms editing, saves, and is
+   logged under a name — the name is the whole point of a greyed row. */
+async function markSorted(id){
+  const it = attentionItems().find(x => x.id === id);
+  if (!it || it.done) return;
+  if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+  if (it.onSort) it.onSort();
+  data.sorted = data.sorted || {};
+  /* The title and the word on the button are stored alongside the stamp, so the greyed row can be
+     drawn for its three days after the condition that produced it has gone — which is exactly what
+     happens when the press is what dealt with it. */
+  data.sorted[id] = { t: new Date().toISOString(), who: editorName(), title: it.title,
+                      body: it.body || "", label: it.sortLabel || "Sorted" };
+  if (!it.onSort) logEntry("Marked sorted: " + it.title, "manual");
+  markDirty(); saveFile(true); renderAll(); updateTeamBadge();
+  toast((it.sortLabel || "Sorted") + " — " + it.title);
 }
 // Feedback has its own page so it doesn't clog this list, but it still counts on the badge.
 function unreadFeedback(){ return ((data && data.feedback) || []).filter(f => !isFeedbackRead(f)).length; }
@@ -6935,17 +7053,19 @@ function logSeenAt(){
   const local = store.get("logSeen") || "";
   return shared > local ? shared : local;
 }
+/* The badge counts what NOBODY HAS DEALT WITH. A greyed row is still on the page — that is the
+   point of it — but it must not keep the number up, or pressing Sorted would appear to do nothing. */
 function attentionCount(){
   const seen = logSeenAt();
   const freshLog = data ? (data.log || []).filter(x => x && x.t > seen).length : 0;
-  return attentionItems().reduce((n, x) => n + x.n, 0) + unreadFeedback() + (freshLog ? 1 : 0);
+  return attentionItems().reduce((n, x) => n + (x.done ? 0 : x.n), 0) + unreadFeedback() + (freshLog ? 1 : 0);
 }
 function updateTeamBadge(){
   const n = data ? attentionCount() : 0;
   const txt = n > 99 ? "99+" : String(n);
   const b = $("#teamBadge");
   if (b) { b.textContent = txt; b.classList.toggle("on", n > 0); }
-  const attnOnly = data ? attentionItems().reduce((a, x) => a + x.n, 0) : 0;
+  const attnOnly = data ? attentionItems().reduce((a, x) => a + (x.done ? 0 : x.n), 0) : 0;
   const t = $("#tabAttnCount");
   if (t) { t.textContent = String(attnOnly); t.classList.toggle("on", attnOnly > 0); }
   const st = $("#tabStaffCount");
@@ -7073,14 +7193,25 @@ function renderAttention(){
     return;
   }
   for (const it of items) {
-    const row = el("button", { class: "attnrow", onclick: it.go },
-      el("span", { class: "n" }, String(it.n)),
+    const row = el("button", { class: "attnrow" + (it.done ? " done" : ""), onclick: it.go },
+      el("span", { class: "n" }, it.done ? "✓" : String(it.n)),
       el("span", { class: "tx" }, el("b", {}, it.title), el("span", {}, it.body)));
-    /* Some rows can fix the thing they are describing. The button sits inside the row but stops
-       the click bubbling, so reading the row still takes you to the page and pressing the button
-       does the work — one row, two intentions, neither stealing the other. */
-    if (it.act) row.append(el("button", { class: "btn attnact", onclick: e => { e.stopPropagation(); it.act(); } },
-      it.actLabel || "Fix"));
+    /* A dealt-with row keeps its title and loses its buttons: there is nothing left to press, and
+       leaving a live Sorted button on a sorted row invites people to wonder whether it took. The
+       name stays, because "did somebody deal with that?" is the question this page is answering. */
+    if (it.done) {
+      row.append(el("span", { class: "attnwho" },
+        (it.doneBy && it.doneBy !== "(name not set)" ? (it.sortLabel || "Sorted") + " by " + it.doneBy : (it.sortLabel || "Sorted"))
+        + (it.doneAt ? " · " + niceDate(String(it.doneAt).slice(0, 10)) : "")));
+    } else {
+      /* Some rows can fix the thing they are describing. The button sits inside the row but stops
+         the click bubbling, so reading the row still takes you to the page and pressing the button
+         does the work — one row, two intentions, neither stealing the other. */
+      if (it.act) row.append(el("button", { class: "btn attnact", onclick: e => { e.stopPropagation(); it.act(); } },
+        it.actLabel || "Fix"));
+      row.append(el("button", { class: "btn sec attnsort", onclick: e => { e.stopPropagation(); markSorted(it.id); } },
+        it.sortLabel || "Sorted"));
+    }
     box.append(row);
   }
 }
