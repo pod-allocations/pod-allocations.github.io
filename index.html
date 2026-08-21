@@ -9556,6 +9556,19 @@ function fixDayDialog(di){
    `planDayFix`, `applyFixedDay` and `fixWorthTaking` all stay — the first two are what Fix this day
    and the person sheet run on, and the third is this page's statement of the rule the nightly
    mirrors in its own doorman. */
+/* ── RESTORED 26.08.21 — the unlock hashes the password with this, and it was lost ────────────
+   The live board defined `sha256` and the staging lineage did not, so pushing staging over live
+   removed it and the rota-team unlock threw "sha256 is not defined" — the password did nothing.
+   Recovered verbatim from the pre-push live build (commit 3ae9bf9). It hashes the staff-list
+   password so the plain text is never stored; on a browser without SubtleCrypto it returns a
+   sentinel rather than throwing, which keeps the gate usable. (The divergence check that should
+   have caught this only scanned `function`, not `async function` — fixed in the push notes.) */
+async function sha256(s){
+  try {
+    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2,"0")).join("");
+  } catch(e){ return "__unavailable__"; }
+}
 function staffUnlocked(){ return store.sget("staffUnlocked") === "1" || (data && !data.staffPw); }
 function gateRefs(sfx){
   const gates = { S: "#staffGate", F: "#fairGate", I: "#importGate", L: "#logGate", T: "#teamGate", O: "#ovrGate", G: "#setGate" };
