@@ -136,6 +136,18 @@ td.daylabel .d{font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
 /* When it rides on the week-nav row (26.08.21) it needs no bottom margin of its own, and it sits
    hard right. On desktop the second .spacer already pushes it there; this keeps it tidy if wrapped. */
 .weekbar #summaryBanner{margin-bottom:0;margin-left:auto}
+/* THE ONE STATUS PILL — 26.08.21. Green covered / amber needs-a-hand, opens the detail. */
+.statuspill{display:inline-flex;align-items:center;gap:.42rem;font:inherit;font-size:.78rem;font-weight:600;
+  border-radius:999px;padding:.4rem .8rem;cursor:pointer;border:1px solid transparent;letter-spacing:-.005em;line-height:1}
+.statuspill .pd{width:8px;height:8px;border-radius:50%;flex:none}
+.statuspill.ok{background:#eef8f2;color:#1c6b46;border-color:#d5ecdf}
+.statuspill.ok .pd{background:#2f9e6b}
+.statuspill.warn{background:#fdf4e6;color:#8a5810;border-color:#f0dcb4}
+.statuspill.warn .pd{background:#e0a032}
+.statuspill b{font-weight:800}
+.statuspill .pmut{opacity:.7;font-weight:600}
+.statuspill .pchev{display:inline-flex;opacity:.55;margin-left:.05rem}
+.statuspill:hover{filter:brightness(.985)}
 .statchip{background:#f7f7f5;border:0.5px solid #ececea;border-radius:10px;padding:.26rem .6rem;font-weight:600;color:var(--ink);display:inline-flex;align-items:center;gap:.4rem;font-size:.74rem;white-space:nowrap}
 .statchip .sd{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .statchip.clickable{cursor:pointer;font-family:inherit;transition:background .12s,border-color .12s}
@@ -4032,18 +4044,27 @@ function renderWeekInner(){
   const soft = real.filter(i => !i.hard && !i.info).length + weekIssues.length;
   banner.className = "";
   banner.innerHTML = "";
-  // The issue/aim chips are the way in to the detail — click the red chip to see the issues, the
-  // amber chip to see the aims. No separate "Details" button needed.
-  const statChip = (color, text, onclick) => {
-    const attrs = onclick
-      ? { class: "statchip clickable", role: "button", tabIndex: 0, title: "Click to see the detail",
-          onclick, onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onclick(); } } }
-      : { class: "statchip" };
-    return el(onclick ? "button" : "span", attrs, el("span", { class: "sd", style: "background:" + color }), text);
-  };
-  if (hard) banner.append(statChip("#E24B4A", hard + " issue" + (hard>1?"s":""), () => checksDialog()));
-  if (soft) banner.append(statChip("#e6b84c", soft + " aim" + (soft>1?"s":""), () => checksDialog()));
-  if (!hard && !soft) banner.append(statChip("#7fc99a", "All checks pass"));
+  /* ── ONE CONTROL, PLAIN WORDS, ROTA-TEAM ONLY — 26.08.21 ───────────────────────────────────
+     Ali revamp: the two chips ("1 issue · 5 aims") become a SINGLE pill that says the week's
+     health in words a clinician reads without training, and opens the detail. It is drawn only
+     when somebody is editing — a resident sees a clean board with no status on it at all — and it
+     is the ONE place the week's health lives, so nothing is said twice (the per-day dots are gone,
+     the score is gone). Green when the week is covered, amber when something wants a hand. */
+  if (canEdit()) {
+    let pill;
+    if (!hard && !soft) {
+      pill = el("button", { class: "statuspill ok", title: "Nothing outstanding this week",
+        onclick: () => checksDialog() }, el("span", { class: "pd" }), "Week covered");
+    } else {
+      const bits = [];
+      if (hard) bits.push(el("b", {}, hard + " to fix"));
+      if (soft) bits.push(el("span", { class: "pmut" }, (hard ? "· " : "") + soft + " to improve"));
+      pill = el("button", { class: "statuspill warn", title: "Click to see what needs a hand",
+        onclick: () => checksDialog() }, el("span", { class: "pd" }), ...bits,
+        el("span", { class: "pchev", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' }));
+    }
+    banner.append(pill);
+  }
   /* ── ONE LINE, NOT THREE — Ali, 26.08.21: "Top bar still a mess, why 3 lines." ──────────────
      The issue/aim chips used to sit on their OWN row below the week nav on desktop, which — with
      the title bar above the week nav — read as three stacked bands. They now ride on the RIGHT of
@@ -4068,7 +4089,7 @@ function checksDialog(focusDi){
   const wk = getWeek(currentWeekKey);
   const m = $("#modal");
   m.innerHTML = "";
-  m.append(el("h3", {}, "Checks · " + (single ? DAYNAMES[focusDi] + " " + fmtDate(addDays(currentWeekKey, focusDi)) : weekLabel(currentWeekKey))));
+  m.append(el("h3", {}, "What needs a look · " + (single ? DAYNAMES[focusDi] + " " + fmtDate(addDays(currentWeekKey, focusDi)) : weekLabel(currentWeekKey))));
   let any = false;
   const acceptedRows = [];
   const rank = i => i.hard ? 2 : i.info ? 0 : 1;
@@ -4077,7 +4098,7 @@ function checksDialog(focusDi){
     cb.checked = accepted;
     cb.disabled = !canEdit();
     cb.onchange = () => { toggleAccepted(wk, di, i.msg, dayName); renderWeek(); checksDialog(focusDi); };
-    return el("div", { class: "w " + (i.hard?"hard":i.info?"info":"soft") + (accepted ? " acc" : "") }, cb, el("span",{class:"tag"}, i.hard?"ISSUE":i.info?"NOTE":"AIM"), i.msg);
+    return el("div", { class: "w " + (i.hard?"hard":i.info?"info":"soft") + (accepted ? " acc" : "") }, cb, el("span",{class:"tag"}, i.hard?"Fix":i.info?"Note":"Better"), i.msg);
   };
   wk.days.forEach((day, di) => {
     if (single && di !== focusDi) return;
@@ -11478,6 +11499,12 @@ function srApplyComeOff(g, reallocate){
 }
 function renderAutoNotice(){
   const el = document.getElementById("autoNotice"); if (!el) return;
+  /* THE "RECHECK …" NUDGE IS RETIRED — Ali, 26.08.21: "its poorly worded and i dont know if its
+     neeeded." It fired when the overnight sync changed a near-term day, but it was cryptic, could
+     not be dismissed, and said nothing the change log doesn't. Kept as a no-op (hidden) rather than
+     ripped out, so `data.autoNotice` the sync still writes simply goes unshown. */
+  el.style.display = "none"; el.innerHTML = ""; return;
+  /* eslint-disable no-unreachable */
   const n = data && data.autoNotice;
   const days = (n && n.days) || [];
   /* Shown only on the day the change was made, then it goes on its own — no dismiss button,
