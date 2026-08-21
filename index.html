@@ -142,12 +142,15 @@ td.daylabel .d{font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
 .statuspill .pd{width:8px;height:8px;border-radius:50%;flex:none}
 .statuspill.ok{background:#eef8f2;color:#1c6b46;border-color:#d5ecdf}
 .statuspill.ok .pd{background:#2f9e6b}
-.statuspill.warn{background:#fdf4e6;color:#8a5810;border-color:#f0dcb4}
+.statuspill.warn{background:#fff;color:var(--ink);border-color:var(--line)}
 .statuspill.warn .pd{background:#e0a032}
-.statuspill b{font-weight:800}
-.statuspill .pmut{opacity:.7;font-weight:600}
-.statuspill .pchev{display:inline-flex;opacity:.55;margin-left:.05rem}
-.statuspill:hover{filter:brightness(.985)}
+.statuspill .pk{font-size:.62rem;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#a72f2f;background:#fbe6e6;border-radius:5px;padding:.1rem .32rem}
+.statuspill .pday{font-weight:700}
+.statuspill .pmsg{color:var(--muted);font-weight:600;max-width:20ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.statuspill .pmore{color:var(--faint,#9aa5b1);font-weight:600}
+.statuspill .poddot.small{width:16px;height:16px;font-size:.58rem}
+.statuspill .pchev{display:inline-flex;opacity:.5;margin-left:.05rem}
+.statuspill:hover{background:#fbfbfc}
 .statchip{background:#f7f7f5;border:0.5px solid #ececea;border-radius:10px;padding:.26rem .6rem;font-weight:600;color:var(--ink);display:inline-flex;align-items:center;gap:.4rem;font-size:.74rem;white-space:nowrap}
 .statchip .sd{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .statchip.clickable{cursor:pointer;font-family:inherit;transition:background .12s,border-color .12s}
@@ -1021,12 +1024,13 @@ button.strdial.strbarbtn{border-radius:6px;min-height:44px;display:flex;align-it
    An edge bar rather than a fill, because the board already spends amber on days that need
    attention and a second amber SURFACE would compete with it. A 3px edge reads at a glance on a
    phone and disappears when you are not looking for it. */
-.chip.rc{border-left:3px solid #ba7517;border-radius:0 6px 6px 0}
+/* MOVEMENT IS A FAINT GREY RING NOW — Ali, 26.08.21: "pull it [the orange 36-hour count] just have
+   a faint grey outline round the pill or something to show if someones move." So the loud amber
+   edge and the orange count pill are gone; a person who has moved (in the last 36h, or since the
+   week was published) carries one soft grey ring. Quiet, per-person, points at who moved. */
+.chip.rc{box-shadow:0 0 0 1.5px #d5d8de;border-radius:999px}
 .rcfrom{margin-left:auto;font-size:.6rem;color:var(--muted);white-space:nowrap;padding-left:.25rem}
-.rccount{display:inline-flex;align-items:center;gap:.18rem;background:#faeeda;color:#854F0B;
-  border-radius:999px;padding:0 .38rem;font-size:.62rem;font-weight:600;margin-top:.15rem;line-height:1.5}
-.rcdot{width:5px;height:5px;border-radius:50%;background:#ba7517;flex:none}
-.chip.moved{box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent);border-radius:6px}
+.chip.moved{box-shadow:0 0 0 1.5px #d5d8de;border-radius:999px}
 /* ── THE DRAFT TINT AND ITS FLAG ARE GONE — 26.08.20 ──────────────────────────────────────────
    Ali: "the draft warning can be removed i think now." The two rules that shaped it are kept here
    rather than left in the history, because they were learned the hard way and the next caveat
@@ -4027,6 +4031,7 @@ function renderWeekInner(){
       mobileDay,
       {
         dot: (iso, di) => {
+          if (!canEdit()) return "none";        // residents see a clean day strip, no status dots
           const issues = dayIssues[di];
           if (issues.length === 1 && issues[0].empty) return "none";
           if (issues.filter(i => i.hard).length) return "hard";
@@ -4051,17 +4056,32 @@ function renderWeekInner(){
      is the ONE place the week's health lives, so nothing is said twice (the per-day dots are gone,
      the score is gone). Green when the week is covered, amber when something wants a hand. */
   if (canEdit()) {
+    /* THE PILL NAMES THE WORST GAP — 26.08.21. Ali: don't make me click to see which day. So the
+       single most important thing to FIX is written out — its day, its pod, the gap — and any
+       other fixes fold into "+N more". The "could be better" niceties never touch the bar: a week
+       with no real gaps just reads "Covered", and the improvements are one click away in the panel.
+       Only fixes are ever counted here. */
+    const hardFixes = [];
+    dayIssues.forEach((vis, di) => vis.forEach(i => { if (i.hard && !i.empty) hardFixes.push({ di, msg: i.msg }); }));
+    weekIssues.forEach(i => { if (i.hard) hardFixes.push({ di: null, msg: i.msg }); });
+    const chev = el("span", { class: "pchev", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' });
     let pill;
-    if (!hard && !soft) {
-      pill = el("button", { class: "statuspill ok", title: "Nothing outstanding this week",
-        onclick: () => checksDialog() }, el("span", { class: "pd" }), "Week covered");
+    if (!hardFixes.length) {
+      pill = el("button", { class: "statuspill ok",
+        title: soft ? soft + " thing" + (soft > 1 ? "s" : "") + " could be better — click to see" : "Nothing outstanding this week",
+        onclick: () => checksDialog() }, el("span", { class: "pd" }), "Covered");
     } else {
-      const bits = [];
-      if (hard) bits.push(el("b", {}, hard + " to fix"));
-      if (soft) bits.push(el("span", { class: "pmut" }, (hard ? "· " : "") + soft + " to improve"));
-      pill = el("button", { class: "statuspill warn", title: "Click to see what needs a hand",
-        onclick: () => checksDialog() }, el("span", { class: "pd" }), ...bits,
-        el("span", { class: "pchev", html: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' }));
+      const w0 = hardFixes[0];
+      const dayLab = w0.di == null ? "This week" : DAYNAMES[w0.di].slice(0, 3);
+      const podM = /Pod ([A-E])/.exec(w0.msg);
+      const kids = [ el("span", { class: "pd" }), el("span", { class: "pk" }, "Fix"),
+        el("span", { class: "pday" }, dayLab) ];
+      if (podM) kids.push(el("span", { class: "poddot small pod" + podM[1], title: "Pod " + podM[1] }, podM[1]));
+      kids.push(el("span", { class: "pmsg", title: w0.msg }, podM ? w0.msg.replace(/Pod [A-E]\s*/, "") : w0.msg));
+      if (hardFixes.length > 1) kids.push(el("span", { class: "pmore" }, "+" + (hardFixes.length - 1) + " more"));
+      kids.push(chev);
+      pill = el("button", { class: "statuspill warn", title: "Click to see everything that needs a look",
+        onclick: () => checksDialog() }, ...kids);
     }
     banner.append(pill);
   }
@@ -5856,12 +5876,13 @@ function renderDayRow(day, di, dateISO, issues){
   /* HOW MANY CHANGED, so the day tells you where to look before the chips tell you who. Counts
      removals as well as moves and arrivals — a person taken off is a change to the day even
      though there is no chip left to mark. */
-  const rcDay = recentChanges(dateISO);
-  const rcChip = rcDay.n ? el("div", { class: "rccount", title: rcDay.n + " change" +
-      (rcDay.n === 1 ? "" : "s") + " in the last 36 hours" },
-      el("span", { class: "rcdot" }), String(rcDay.n)) : null;
-  const dlInner = el("div", { class: "dl-inner" }, el("div", { class: "dn" }, DAYNAMES[di].slice(0,3).toUpperCase()), el("div", { class: "d" }, fmtDate(dateISO)),
-    rcChip, canEdit() ? null : el("div", {}, badge));
+  /* THE DATE COLUMN IS JUST THE DATE NOW — 26.08.21. Ali: "the day header column still seem to
+     carry a load of historical red or orange dots - remove", and the orange "N changes in 36h"
+     count went with them. The per-day status dot (red/amber/green) and the change count are both
+     gone: a resident sees a clean column of dates, and the rota team reads the week's health from
+     the one pill and acts through the per-day Fix button. Movement now shows as the grey ring on
+     the person, not a mark in this column. */
+  const dlInner = el("div", { class: "dl-inner" }, el("div", { class: "dn" }, DAYNAMES[di].slice(0,3).toUpperCase()), el("div", { class: "d" }, fmtDate(dateISO)));
   /* THE DAY'S OWN RING, WHERE THE DOT ALREADY LIVES. Ali, 26.08.15: "why doesnt the column with the
      daily dot show the day overview". No reason except that it never did — the day score existed
      only on Setup, while the column that answers "how is this day?" carried a three-state dot. Same
