@@ -133,6 +133,9 @@ td.daylabel .d{font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
 .w.hard .tag{background:var(--red);color:#fff}
 .w.soft .tag{background:var(--amber);color:#fff}
 #summaryBanner{display:inline-flex;align-items:center;gap:.4rem;background:#fff;border:0.5px solid rgba(29,31,36,.05);box-shadow:0 1px 3px rgba(29,31,36,.10);border-radius:999px;padding:.35rem .45rem;font-weight:600;font-size:.78rem;color:var(--ink);margin-bottom:.75rem}
+/* When it rides on the week-nav row (26.08.21) it needs no bottom margin of its own, and it sits
+   hard right. On desktop the second .spacer already pushes it there; this keeps it tidy if wrapped. */
+.weekbar #summaryBanner{margin-bottom:0;margin-left:auto}
 .statchip{background:#f7f7f5;border:0.5px solid #ececea;border-radius:10px;padding:.26rem .6rem;font-weight:600;color:var(--ink);display:inline-flex;align-items:center;gap:.4rem;font-size:.74rem;white-space:nowrap}
 .statchip .sd{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .statchip.clickable{cursor:pointer;font-family:inherit;transition:background .12s,border-color .12s}
@@ -1536,7 +1539,19 @@ const RULE_DEFAULTS = { podMin: 2, podEMin: 1, nightMin: 4, transferAim: 4, neur
                            cost that scores zero (an A-D pod with no airway and no transfer);
                            scoreSoft is what counts as near enough to nothing (transfer instead of
                            airway). Changing either changes every dial on the board at once. */
-                        scoreRef: 4000, scoreSoft: 60 };
+                        scoreRef: 4000, scoreSoft: 60,
+                        /* SCORES ARE HIDDEN UNTIL THE CALIBRATION IS RIGHT — Ali, 26.08.21:
+                           "just hide the scoring completely until can get it to work." On the
+                           planner's own days everything scores 90–100, but on a real human-arranged
+                           day a clinically fine Pod E reads 27 purely for carrying two airway-trained
+                           people (the fair-share preference `airwayOnE`, 420 each), and the day ring
+                           stacks all five pods so it reads worse than any single pod. That is a
+                           display-calibration fault — a mild preference shown with the severity of a
+                           broken rule — not an allocator fault. Every pod bar, day ring and night
+                           ring is gated on this ONE flag, so it is off everywhere at once and can be
+                           turned back on from Setup once the scale is fixed, with no code edit. The
+                           issue and aim flags are unaffected: those are rule checks, not the score. */
+                        showScores: false };
 /* Every number the checks argue about, editable from Settings — hard rule 1. The table above is
    only the FALLBACK, so a board nobody has touched behaves exactly as it always did. */
 /* ── WHAT A TRAINEE CAN SEE, AND WHY IT IS A NUMBER RATHER THAN A RULE ─────────────────────────
@@ -4029,9 +4044,14 @@ function renderWeekInner(){
   if (hard) banner.append(statChip("#E24B4A", hard + " issue" + (hard>1?"s":""), () => checksDialog()));
   if (soft) banner.append(statChip("#e6b84c", soft + " aim" + (soft>1?"s":""), () => checksDialog()));
   if (!hard && !soft) banner.append(statChip("#7fc99a", "All checks pass"));
+  /* ── ONE LINE, NOT THREE — Ali, 26.08.21: "Top bar still a mess, why 3 lines." ──────────────
+     The issue/aim chips used to sit on their OWN row below the week nav on desktop, which — with
+     the title bar above the week nav — read as three stacked bands. They now ride on the RIGHT of
+     the week-nav row (the `.spacer` pushes them across), on every width, so the header is the
+     toolbar and one line beneath it. It wraps to a second line only when the window is genuinely
+     too narrow to hold both, which is the honest place for a wrap rather than an always-on one. */
   const wbEl = document.querySelector(".weekbar");
-  if (isMobile()) { if (banner.parentElement !== wbEl) wbEl.append(banner); }
-  else if (banner.parentElement === wbEl) wbEl.insertAdjacentElement("afterend", banner);
+  if (banner.parentElement !== wbEl) wbEl.append(banner);
 }
 function issueKey(di, msg){ return di + "|" + msg; }
 function isAccepted(wk, di, msg){ return (wk.accepted || []).includes(issueKey(di, msg)); }
@@ -5617,6 +5637,7 @@ function askDate(title, cur){
    same colours, same tap-through — a night team that is thin should look thin in the way a pod does,
    not in a way somebody has to learn separately. */
 function strengthNightDial(dateISO){
+  if (!rule("showScores")) return null;   // scores hidden until the scale is fixed (26.08.21)
   if (!canEdit()) return null;
   var rec = STR_DAY[dateISO];
   if (!rec || !rec.sc || !rec.sc.night) return null;
@@ -5636,6 +5657,7 @@ function strengthNightDial(dateISO){
   return wrap;
 }
 function strengthDial(dateISO, p){
+  if (!rule("showScores")) return null;   // scores hidden until the scale is fixed (26.08.21)
   if (!canEdit()) return null;
   var rec = STR_DAY[dateISO];
   if (!rec || !rec.sc || !rec.sc.pods || !rec.sc.pods[p]) return null;
@@ -5671,6 +5693,7 @@ function strengthDial(dateISO, p){
    row, so tapping the day is the way into "which pod is the thin one" without hunting across the
    table. */
 function strengthDayDial(dateISO){
+  if (!rule("showScores")) return null;   // scores hidden until the scale is fixed (26.08.21)
   if (!canEdit()) return null;
   var rec = STR_DAY[dateISO];
   if (!rec || !rec.sc || rec.sc.empty || rec.sc.day.pct == null) return null;
@@ -7393,6 +7416,10 @@ function logStoryBlock(){
 }
 function dayIndexOf(iso){ const d = new Date(iso); return isNaN(d) ? 0 : (d.getUTCDay() + 6) % 7; }
 function logDelta(from, to){
+  /* The log's before/after numbers use the same scale as the board dials, so they are hidden by
+     the same switch until it is calibrated (26.08.21). The rows, pod circles and by-person paths
+     stay — only the 0–100 figures go. */
+  if (!rule("showScores")) return el("span", { class: "stdelta" });
   if (from == null || to == null) return el("span", { class: "stdelta" });
   const flat = from === to, up = to >= from;
   return el("span", { class: "stdelta" },
