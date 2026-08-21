@@ -53,6 +53,10 @@ body.viewmode #summaryBanner{display:none}
 .hbtn:hover{filter:brightness(.95)}
 /* Icon-only header buttons — square, so they don't shout louder than the page. */
 .hbtn.hicon{padding:.42rem;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center}
+/* A button carrying a drawn glyph and a word needs to lay them out; text-only buttons never did.
+   The glyph nudges up by half a pixel because an arrow's optical centre sits below its box. */
+.hbtn:has(.hglyph){display:inline-flex;align-items:center;gap:.4rem}
+.hglyph{flex:none;transform:translateY(-.5px)}
 .hbtn.hicon svg{width:19px;height:19px;display:block}
 /* Feedback is a trial-only ask, so it earns one quiet pulse and nothing more. */
 #btnFeedback{position:relative;border-color:#c7cdf2;color:var(--accent);background:var(--accent-bg)}
@@ -169,6 +173,22 @@ td.nighttd .chip{display:flex}
 .addbtn:hover{color:var(--accent);border-color:var(--accent)}
 /* chips */
 .chip{display:inline-flex;align-items:center;gap:.32rem;background:#fff;border:0.5px solid rgba(29,31,36,.05);border-radius:999px;padding:.2rem .55rem .2rem .26rem;font-size:.74rem;font-weight:600;margin:.15rem;cursor:grab;user-select:none;box-shadow:0 1px 3px rgba(29,31,36,.10);white-space:nowrap;max-width:100%;flex-wrap:nowrap}
+/* ── 44px CHIPS ON A PHONE: TRIED, DRAWN, AND TURNED DOWN — 26.08.21 ──────────────────────────
+   Rule 14 asks for 44px touch targets and a chip is about 22px, so this looked like a straight
+   debt to pay. It was built, drawn at 390px and put to Ali, who turned it down: "dont think
+   required." Recording it here so nobody rediscovers the idea and quietly ships it.
+
+   What the mockup showed: five people in one pod go from a column that fits on a screen to one
+   about twice as tall, so on the busiest day — the day you actually need the board — you scroll
+   more. That cost is certain; the mis-tap it prevents is not.
+
+   And the tempting shortcut is worse than either. Keeping the chip small while stretching an
+   invisible 44px hit area over it sounds free, but chips sit ~22px apart, so the hit areas overlap
+   their neighbours and a tap near an edge picks up the WRONG PERSON. A target you cannot aim fails
+   silently and moves somebody's working day. If this is ever revisited, it has to be real height
+   or nothing.
+
+   Chips are therefore unchanged, on every screen size. */
 .chip:active{cursor:grabbing}
 .chip.dragging{opacity:.35}
 .chip .tagx,.hlp .tagx,#modal .tagx{font-size:.56rem;font-weight:800;border-radius:999px;padding:.09rem .34rem;background:var(--hair);color:var(--muted);flex-shrink:0;letter-spacing:.02em;display:inline-block;vertical-align:.08em}
@@ -189,9 +209,9 @@ body.phone-dragging .chip{outline:1.5px dashed #b9c3ee;outline-offset:1px}
 .chip.fgh{cursor:default;background:#fbfbf9;color:var(--muted);border:1px dotted #d5d8de;box-shadow:none}
 .chip.fgh .tagx{background:var(--hair);color:var(--muted)}
 button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.viewonly #btnSave,.viewonly #btnUndo,.viewonly #btnRedo,.viewonly #btnWho,.viewonly #btnPublish,.viewonly #btnAutoFill,.viewonly #btnFixWeek,.viewonly #btnFixAhead,.viewonly #btnFixMenu,.viewonly #btnDone{display:none}
+.viewonly #btnSave,.viewonly #btnUndo,.viewonly #btnRedo,.viewonly #btnWho,.viewonly #btnPublish,.viewonly #btnDone{display:none}
 body.viewmode .x,body.viewmode .ptoken,body.viewmode .trayadd,body.viewmode .addbtn,body.viewmode .mini,
-body.viewmode #btnSave,body.viewmode #btnUndo,body.viewmode #btnRedo,body.viewmode #btnWho,body.viewmode #btnAutoFill,body.viewmode #btnFixWeek,body.viewmode #btnFixAhead,body.viewmode #btnFixMenu,body.viewmode #btnMore,body.viewmode #saveState,body.viewmode #btnDone{display:none}
+body.viewmode #btnSave,body.viewmode #btnUndo,body.viewmode #btnRedo,body.viewmode #btnWho,body.viewmode #btnMore,body.viewmode #saveState,body.viewmode #btnDone{display:none}
 body:not(.viewmode) #btnEdit{display:none}
 /* When the board is locked, Edit is the one thing to press — make it look like it. */
 body.viewmode #btnEdit{background:var(--accent);color:#fff;box-shadow:0 0 0 3px var(--accent-bg)}
@@ -752,7 +772,6 @@ button.btn,.hbtn{white-space:nowrap}
   body[data-week="now"] .weekbar{background:var(--accent-bg);border-color:var(--accent)}
   .navarrow{border:0;background:var(--hair);width:42px;height:42px}
   .navarrow:hover{background:var(--ink)}
-  #btnAutoFill{grid-column:1 / -1;justify-self:center}
   #summaryBanner{grid-column:1 / -1;display:flex;justify-content:flex-start;width:100%;background:transparent;border:0;box-shadow:none;border-radius:0;border-top:0.5px solid #f0f0ee;margin:0;padding:.55rem .1rem .05rem}
   body.viewmode table.rota td.tray:not(:has(.chip)){display:none}
   table.rota td.tray:not(:has(.chip)):not(:has(.tray-sec)){padding:.45rem .7rem}
@@ -851,6 +870,14 @@ button.strdial:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
    because a hard rule is a gate and a gate has no percentage — see the header of strength.js. */
 .strring .rx{font-size:17px;font-weight:800;fill:#B3302F}
 .strdial.broken{--strarc:#E24B4A;--strnum:#B3302F}
+/* THE POD BAR — 26.08.21. A number over a length. 44px of tappable height (rule 14) even though
+   the bar itself is 7px, because the thing being tapped is the whole mark, not the ink. */
+button.strdial.strbarbtn{border-radius:6px;min-height:44px;display:flex;align-items:center}
+.strbarwrap{display:flex;flex-direction:column;align-items:flex-start;gap:.1rem;line-height:1}
+.strbarnum{font-size:.86rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.strbar{display:block;overflow:visible}
+.strbar .bt{fill:var(--hair,#e2e7ec)}
+.strbar .bc{stroke:#12171d;stroke-width:1.4;opacity:.65}
 .strdelta{flex:none;font-size:.66rem;font-weight:700;padding:.05rem .35rem;border-radius:999px;white-space:nowrap}
 .strdelta.up{background:#eef7f1;color:#2f7a52}
 .strdelta.down{background:#fdf1f1;color:#B3302F}
@@ -912,6 +939,9 @@ button.strdial:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sttag{font-size:.55rem;font-weight:700;padding:.05rem .3rem;border-radius:8px;margin-left:.3rem;vertical-align:1px}
 .sttag.fix{background:var(--accent-bg);color:var(--accent)}
 .sttag.none{background:var(--hair);color:#a8acb3}
+/* AFTER PUBLISH — 26.08.21. Amber, because it is the one change a trainee is owed an explanation
+   for: it happened after they could see the week. Not red — nothing is wrong, it just needs saying. */
+.sttag.pub{background:#fdf1dc;color:#8a5a00}
 .stopen{background:#fcfcfb;border-top:0.5px solid var(--hair)}
 .stgo+.stgo{border-top:0.5px solid #f4f4f2}
 .stgo.sync{opacity:.6}
@@ -946,6 +976,13 @@ button.strdial:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .stfoot{display:flex;align-items:center;gap:.3rem;padding:.55rem .8rem;font-size:.68rem;color:var(--muted);
   border-top:0.5px solid var(--hair)}
 .stsw{margin-left:auto;display:inline-flex;align-items:center;gap:.3rem;cursor:pointer}
+/* BY PERSON — 26.08.21. One line per person, their fortnight as a path of the same pod circles. */
+.pprow{display:flex;align-items:center;gap:.7rem;padding:.5rem .8rem;border-bottom:0.5px solid var(--hair)}
+.ppname{flex:none;width:150px;font-size:.78rem;font-weight:600;color:var(--ink);line-height:1.2}
+.ppname .ppn{display:block;font-size:.6rem;font-weight:500;color:var(--muted)}
+.pppath{display:flex;align-items:center;gap:.25rem;flex-wrap:wrap;min-width:0}
+.ppcell{display:inline-flex;flex-direction:column;align-items:center;gap:.05rem}
+.ppday{font-size:.5rem;color:#b0b4bb;letter-spacing:.02em}
 .stsw input{width:13px;height:13px}
 @media (max-width:640px){ .stgrids{grid-template-columns:1fr} .stpane{padding-left:1.2rem} .stdate{width:4.6rem} }
 
@@ -965,6 +1002,15 @@ button.strdial:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
    ring in the full accent, which on a board where nearly every chip in a reworked week carries
    one shouted louder than the names. 1px, and the accent at a third — still unmistakable when
    you look for it, no longer the first thing you see. */
+/* ── THE 36-HOUR CHANGE MARK ──────────────────────────────────────────────────────────────────
+   An edge bar rather than a fill, because the board already spends amber on days that need
+   attention and a second amber SURFACE would compete with it. A 3px edge reads at a glance on a
+   phone and disappears when you are not looking for it. */
+.chip.rc{border-left:3px solid #ba7517;border-radius:0 6px 6px 0}
+.rcfrom{margin-left:auto;font-size:.6rem;color:var(--muted);white-space:nowrap;padding-left:.25rem}
+.rccount{display:inline-flex;align-items:center;gap:.18rem;background:#faeeda;color:#854F0B;
+  border-radius:999px;padding:0 .38rem;font-size:.62rem;font-weight:600;margin-top:.15rem;line-height:1.5}
+.rcdot{width:5px;height:5px;border-radius:50%;background:#ba7517;flex:none}
 .chip.moved{box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent);border-radius:6px}
 /* ── THE DRAFT TINT AND ITS FLAG ARE GONE — 26.08.20 ──────────────────────────────────────────
    Ali: "the draft warning can be removed i think now." The two rules that shaped it are kept here
@@ -1094,7 +1140,13 @@ pre.rawlog{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monos
   <button class="hbtn ghost hicon" id="btnKey" title="What the symbols and colours mean" aria-label="Key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="4"/><path d="M12 12h9"/><path d="M17.5 12v3.2"/><path d="M20.5 12v2.2"/></svg></button>
   <button class="hbtn" id="btnEdit" title="Unlock to edit — drag people between pods, add locums and edit the Fairfield column">Edit</button>
   <button class="hbtn ghost" id="btnDone" title="Back to read-only view">Done</button>
-  <button class="hbtn ghost" id="btnUndo" title="Undo last change (Ctrl+Z)">↩ Undo</button>
+  <!-- UNDO: A DRAWN ARROW, NOT A TEXT GLYPH — 26.08.21. ↩ is the "carriage return" character, and
+       phones render it in whatever the system font happens to think that means: on iOS it is a
+       thin hairline that all but disappears at 13px, and on some Android builds it arrives as an
+       emoji in full colour. The same mark on the same button looking like three different things
+       on three phones is not a style problem, it is a control the user cannot learn. Drawn as SVG
+       it is the same arrow everywhere and inherits currentColor with the rest of the bar. -->
+  <button class="hbtn ghost" id="btnUndo" title="Undo last change (Ctrl+Z)" aria-label="Undo last change"><svg class="hglyph" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h11a5 5 0 0 1 0 10h-6"/><path d="M8 4 4 8l4 4"/></svg><span>Undo</span></button>
   <button class="hbtn ghost" id="btnRedo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)">↪ Redo</button>
   <div class="menuwrap"><button class="hbtn ghost hicon" id="btnMore" title="More" aria-label="More"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button><div class="menupop" id="moreMenu"></div></div>
   <button class="hbtn ghost" id="btnSave" style="opacity:.7;font-size:.75rem" title="Everything saves on its own — this only forces an immediate save">Save now</button>
@@ -1108,10 +1160,6 @@ pre.rawlog{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monos
       <button class="navarrow" id="btnNextWeek" title="Next week"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
       <button class="btn sec" id="btnToday" style="font-size:.78rem;padding:.35rem .7rem">This week</button>
       <span class="spacer"></span>
-      <button class="btn sec" id="btnAutoFill" style="font-size:.78rem;padding:.35rem .7rem" title="Distribute everyone on each day's bench into pods, as fairly as possible. Keeps anyone you've already placed.">Auto-fill week</button>
-      <button class="btn sec" id="btnFixWeek" style="font-size:.78rem;padding:.35rem .7rem" title="Correct every day that has issues with the fewest changes — you see the plan before it's applied.">Fix week</button>
-      <button class="btn sec" id="btnFixAhead" style="font-size:.78rem;padding:.35rem .7rem" title="Bring every week from today onwards up to the current algorithm. Published weeks are left alone unless a day is actually broken — you see the whole plan before it's applied.">Fix ahead</button>
-      <div class="menuwrap"><button class="btn sec" id="btnFixMenu" style="font-size:.78rem;padding:.35rem .7rem" title="Let the allocator do it — you see the plan before anything is applied">Fix ▾</button><div class="menupop" id="fixMenu"></div></div>
       <span class="spacer"></span>
     </div>
     <div id="summaryBanner"></div>
@@ -1444,6 +1492,7 @@ pre.rawlog{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monos
 <script src="core.js?v=20260810-04"></script>
 <script src="strength.js?v=20260815-09"></script>
 <script src="planner.js?v=20260820-01"></script>
+<script src="podcost.js?v=20260821-01"></script>
 <script src="k.js"></script>
 <script>/*ROTA_DATA_START*/window.ROTA_DATA = null;/*ROTA_DATA_END*/</script>
 <script>
@@ -1481,7 +1530,13 @@ const GRADES = ["CON","ACCP","SCF","JCF","RCF","ST","CT","ACCS","IMT","FY1","FY2
    weeks carrying an older model. Both still editable in Settings — hard rule 1. */
 const RULE_DEFAULTS = { podMin: 2, podEMin: 1, nightMin: 4, transferAim: 4, neuroTarget: 70, retentionDays: 400,
                         spreadMax: 2, spreadE: 3, visibleWeeks: 2, firmWeeks: 1,
-                        writeDay: 1, writeHour: 14, publishDay: 4, publishHour: 7 };
+                        writeDay: 1, writeHour: 14, publishDay: 4, publishHour: 7,
+                        /* THE SCORE SCALE — 26.08.21, both read through rule() so the curve can be
+                           retuned from Setup without a code edit (hard rule 1). scoreRef is the
+                           cost that scores zero (an A-D pod with no airway and no transfer);
+                           scoreSoft is what counts as near enough to nothing (transfer instead of
+                           airway). Changing either changes every dial on the board at once. */
+                        scoreRef: 4000, scoreSoft: 60 };
 /* Every number the checks argue about, editable from Settings — hard rule 1. The table above is
    only the FALLBACK, so a board nobody has touched behaves exactly as it always did. */
 /* ── WHAT A TRAINEE CAN SEE, AND WHY IT IS A NUMBER RATHER THAN A RULE ─────────────────────────
@@ -1541,6 +1596,27 @@ function weekClockPassed(dayK, hourK){
   return day > wantDay || (day === wantDay && d.getHours() >= wantHour);
 }
 function publishedWeeks(){ return weekClockPassed("publishDay", "publishHour") ? 2 : 1; }
+/* ── WHEN A GIVEN WEEK WENT PUBLIC — 26.08.21, for the change log ──────────────────────────────
+   A week beginning on Monday `wkKey` is written the Tuesday before and goes public the Friday
+   before, at publishHour. So its publication moment is publishDay/publishHour of the PREVIOUS week.
+   Returned as a Date. This is derived from the same two clock rules the gate uses — nothing new is
+   stored — so it can be asked of any week, including weeks already past, which is what lets the log
+   mark "this changed after the trainees saw it" without a field having been written at the time. */
+function weekPublishMoment(wkKey){
+  const prevMon = addDays(wkKey, -7);
+  const pubDate = addDays(prevMon, rule("publishDay"));   // publishDay: 0 = Monday
+  const d = new Date(pubDate + "T00:00:00");
+  d.setHours(rule("publishHour"), 0, 0, 0);
+  return d;
+}
+/* Was a change, made at ISO-timestamp `madeT`, to a rota day `iso`, made AFTER that week was
+   public to the trainees? A change before publication is the week being written and is nobody's
+   surprise; a change after it is the one thing a trainee is owed an explanation for. */
+function changeAfterPublish(madeT, iso){
+  if (!madeT || !iso) return false;
+  const t = Date.parse(madeT); if (isNaN(t)) return false;
+  return t >= weekPublishMoment(mondayOf(iso)).getTime();
+}
 /* ── AND THE WEEK IS WRITTEN THREE DAYS BEFORE ANYBODY SEES IT ─────────────────────────────────
    Ali, 26.08.20: the following week is allocated at 14:00 on the Tuesday, sits on Look ahead
    behind the rota-team password, and goes public at 07:00 on the Friday. Two clocks, same shape,
@@ -1641,6 +1717,44 @@ function snapVisibleWeeks(){
 }
 /* Where somebody was standing when the week became visible, or null if this week was already
    public before snapshots existed — which must read as "no answer", never as "no change". */
+/* ── WHAT CHANGED IN THE LAST 36 HOURS ─────────────────────────────────────────────────────────
+   Ali, 26.08.20: "need to highlight changes made within 48 hours or a day so people can see...
+   its the trainees that need to know theres been a short notice swap." 36 hours, and shown to
+   everybody rather than to the rota team, because the person who needs to know they are on a
+   different pod tomorrow is the person working it.
+
+   READ FROM THE LOG, so nothing new is stored and the mark ages out on its own. Every change
+   already carries WHEN it was made (`t`), WHICH rota day it was made to (`on`) and, since
+   26.08.04, the change as fields (`d = {act, subj, from, to}`) rather than as a sentence.
+
+   THIS IS NOT THE SAME MARK AS `moved`, and the two answer different questions. `moved` is
+   "different from when you last looked", against the snapshot taken as the week became visible —
+   so it says nothing to somebody who has not looked. This is "changed recently", against the
+   clock, and it is true whether or not anybody has opened the board. They can both be on a chip.
+
+   `d.subj` is a NAME, not an id — that is what the log has written since it was introduced, and
+   the sync writes names too. Matched on name for that reason and no other.
+
+   REMOVALS COUNT BUT CANNOT BE MARKED: somebody taken off the day has no chip to draw on. They
+   are in the day's count, which is what makes the count honest, and the detail is in the log. */
+const RECENT_HOURS = 36;
+function recentChanges(iso){
+  const out = { by: {}, n: 0 };
+  if (!data || !data.log) return out;
+  const cutoff = Date.now() - RECENT_HOURS * 3600 * 1000;
+  for (let i = data.log.length - 1; i >= 0; i--) {     // oldest first, so the latest wins
+    const e = data.log[i];
+    if (!e || e.on !== iso || !e.d || !e.d.subj) continue;
+    const when = Date.parse(e.t);
+    if (!isFinite(when) || when < cutoff) continue;
+    const a = e.d.act;
+    if (a === "move" && e.d.to) out.by[e.d.subj] = { kind: "move", from: e.d.from || "" };
+    else if (a === "on") out.by[e.d.subj] = { kind: "new", from: "" };
+    else if (a === "off" || (a === "move" && !e.d.to)) { delete out.by[e.d.subj]; out.n++; }
+  }
+  out.n += Object.keys(out.by).length;
+  return out;
+}
 function seenPodOf(iso, id){
   const wkKey = mondayOf(iso), sn = data && data.seen && data.seen[wkKey];
   if (!sn) return null;
@@ -2035,7 +2149,11 @@ async function enterEditInner(){
   // waiting on a network read first.
   const syncP = Promise.resolve(syncLatest()).catch(() => {});
   const prev = store.get("rotaEditorName");
-  const n = await uiPrompt("Start typing and pick your name — changes are logged under it.", { title: "Who's editing?", okLabel: "Start editing", placeholder: prev ? "Last editor on this computer: " + prev : "Start typing…", options: editorNameOptions() });
+  /* PRE-FILL THE NAME — restored 26.08.21. Ali: "on the whos editing it used to autofill, now it
+     doesnt." The last editor on this computer is put straight into the box (uiDialog honours
+     `value`), so the common case — the same person editing again — is one tap on Start editing,
+     not a retype. Still fully editable, and the picker still filters as you type for anyone else. */
+  const n = await uiPrompt("Start typing and pick your name — changes are logged under it.", { title: "Who's editing?", okLabel: "Start editing", value: prev || "", placeholder: prev ? "Last editor on this computer: " + prev : "Start typing…", options: editorNameOptions() });
   if (!n || !n.trim()) return;
   await syncP; // by now the latest copy (including anyone else's lock) has loaded
   const lock = data.editLock;
@@ -2299,13 +2417,20 @@ async function exitEdit(){
     updateSaveState("saved");
   }
   EDIT_MODE = false;
-  teamEditTried = false;   // the next walk into the rota-team pages arms editing again
+  /* DONE MEANS DONE — fixed 26.08.21. Ali: "theres no way of getting out of edit mode. clicking
+     done should do that." It did drop to view mode, but this line used to reset teamEditTried to
+     FALSE, and switchTab auto-re-enters edit on any rota-team page whenever that flag is false. So
+     the very next tap on a team page silently armed editing again and the board felt welded into
+     edit mode. Leaving the flag TRUE means a deliberate Done stays done: the page stays read-only
+     until the person clicks Edit again, which calls enterEdit directly and is not gated by this
+     flag. First-entry auto-arm (Ali, 12 Aug) is unaffected — that fires before anyone has exited. */
+  teamEditTried = true;
   document.body.classList.add("viewmode");
   tapPick = null; tapPhone = null;
   renderAll();
 }
 async function changeEditor(){
-  const n = await uiPrompt("Changes from now on are logged under this name.", { title: "Who's editing?", okLabel: "Switch", placeholder: "Start typing…", options: editorNameOptions() });
+  const n = await uiPrompt("Changes from now on are logged under this name.", { title: "Who's editing?", okLabel: "Switch", value: store.get("rotaEditorName") || "", placeholder: "Start typing…", options: editorNameOptions() });
   if (n && n.trim()) { store.set("rotaEditorName", n.trim()); updateWhoBtn(); toast("Now editing as " + n.trim()); }
 }
 /* Every time a human moves somebody the allocator had placed, write it down in a form that can be
@@ -2719,13 +2844,26 @@ async function refreshCover(){
   const names = consNames();
   if (data && canEdit() && Object.keys(names).length) {
     data.cons = data.cons || {};
+    /* ── WHY THE BOARD SAID "cached names" ON A BOARD THAT WAS READING COVER PERFECTLY WELL ────
+       Measured on live 26.08.20: `data.cons.from` was `"seed"` and the 34 names on the board were
+       the ones carried over from its own old staff records. The read was not broken. This was.
+
+       `from` and `at` used to be set INSIDE the "have the names changed?" branch. The seed was
+       built from those same staff records, so it produces the same initials Cover holds; the names
+       matched on the very first read, the branch never ran, and the flag never flipped. Setup then
+       showed amber for ever on a board whose Cover read was succeeding every single load.
+
+       A successful read is a fact about the READ. It is recorded whether or not the answer differs
+       from what we already had — that is the whole difference between "we could not reach Cover"
+       and "Cover told us nothing new", and conflating the two is what hid this for weeks. The
+       names themselves are still only written when they actually change, so a no-op read does not
+       dirty the store or start a save. */
     const was = JSON.stringify(data.cons.names || {});
-    if (was !== JSON.stringify(names)) {
-      data.cons.names = names;
-      data.cons.at = new Date().toISOString();
-      data.cons.from = "cover";
-      markDirty();
-    }
+    const now = JSON.stringify(names);
+    if (was !== now) { data.cons.names = names; markDirty(); }
+    if (data.cons.from !== "cover" || was !== now) markDirty();
+    data.cons.at = new Date().toISOString();
+    data.cons.from = "cover";
   }
   renderWeek();
 }
@@ -3759,12 +3897,6 @@ function renderWeekInner(){
   }
   banner.style.display = "";   // let CSS decide — shown while editing, hidden in read-only view
   const wk = getWeek(currentWeekKey);
-  const anyUnplaced = wk.days.some((day, di) => {
-    const pool = poolFor(day, addDays(currentWeekKey, di));
-    const assigned = assignedIds(day);
-    return Object.keys(pool).some(id => !assigned.has(id));
-  });
-  $("#btnAutoFill").style.display = anyUnplaced ? "" : "none";
   /* ── THE DRAFT WEEK SAYS SO ON THE FACE OF THE BOARD ─────────────────────────────────────
      Ali, 26.08.15: "maybe label 3rd week of the 3 with draft label to change significantly for
      trainees or something." Shown here rather than as a tooltip or a tint, because the whole
@@ -4508,6 +4640,16 @@ function chip(s, opts){
     const was = movedSinceSeen(addDays(currentWeekKey, opts.di), s.id, opts.pod);
     if (was) { c.classList.add("moved"); c.title = personLabel(s) + " — was Pod " + was + " when this week was published"; }
   }
+  /* The 36-hour mark. Drawn on every board, edit mode or not — see recentChanges(). */
+  if (opts.di != null && opts.pod) {
+    const rc = recentChanges(addDays(currentWeekKey, opts.di)).by[s.name];
+    if (rc) {
+      c.classList.add("rc");
+      c.append(el("span", { class: "rcfrom" }, rc.kind === "new" ? "new" : (rc.from ? "from " + rc.from : "moved")));
+      c.title = (c.title || personLabel(s)) + "\n" +
+        (rc.kind === "new" ? "Added in the last 36 hours" : "Moved here in the last 36 hours");
+    }
+  }
   if (s.adhoc && /zlocum/i.test(s.name || "") && opts.di != null && canEdit())
     c.append(el("button", { class: "x", title: "We know who this locum is — type their name", onclick: e => { e.stopPropagation(); nameLocum(s, opts.di); } }, "✎"));
   if (opts.onRemove) c.append(el("button", { class: "x", title: opts.removeTitle || "Remove", onclick: e => { e.stopPropagation(); opts.onRemove(); } }, "✕"));
@@ -4948,6 +5090,107 @@ function strNightCounts(day){
   for (i = 0; i < ids.length; i++) if (!seen[ids[i]] && countsInNumbers(ids[i])) { seen[ids[i]] = 1; out.push(ids[i]); }
   return out;
 }
+/* ══ THE SCORE COMES FROM THE ALLOCATOR — 26.08.21 ═══════════════════════════════════════════
+   Ratified by Ali today. Until now the rings were drawn by `strength.js`, which scores a day the
+   OLD allocator built. The planner writes to a different objective, so the ring and the allocator
+   were marking different exam papers — the same class of fault as the repair passes, one surface
+   along. Both numbers now come out of `Planner.CFG`, the allocator's own price list, by way of
+   `podcost.js`, which walks exactly the charges `Planner.weekCost` walks and hands each one to the
+   pod and the day that earned it. Its total is asserted equal to `weekCost`, so the board and the
+   allocator cannot drift apart without something failing loudly.
+
+   `strength.js` STAYS. It still owns the requirement lists the panels read — which rules are met,
+   missed or broken, and what they are called — because those are explanations and the planner has
+   none. What it no longer owns is the NUMBER.
+
+   The scale is the softened log: score = 100 · (1 − log(1+cost/soft) ÷ log(1+ref/soft)), ref 4000,
+   soft 60. Both are prices already in the list. Both are read through `rule()` so they can be
+   changed from Setup without a code edit (hard rule 1). */
+/* NO CACHE, DELIBERATELY — and this is not laziness, it is a bug that was already caught.
+   26.08.21: the first version of this held the last ledger and reused it whenever the week key
+   and the week OBJECT were the same, clearing only on a redraw. The probe then changed a day's
+   long-day shifts without repainting and got the old score back, so a day that could no longer
+   reach 100 still said it could. Anything that scores a day it has just modified — the Fix this
+   day preview above all — would have hit exactly that.
+
+   `attribute()` walks seven days of five pods. Seven of those per redraw is nothing beside what
+   the redraw itself does, and a score that is merely fast is worth nothing if it is stale. */
+function plannerScoreCfg(){
+  return { ref: rule("scoreRef") || 4000, soft: rule("scoreSoft") || 60 };
+}
+function plannerStaffMap(){
+  var m = {}, i, s;
+  for (i = 0; i < data.staff.length; i++) { s = data.staff[i]; if (s && s.id) m[s.id] = s; }
+  return m;
+}
+/* Build exactly the inputs `Planner.weekCost` sees, out of what is on the board — who is on comes
+   from the day's POOL, not from who happens to be sitting in a pod, so somebody on the bench still
+   counts towards what the day could have been. */
+function plannerLedger(wk, key){
+  if (typeof PodCost === "undefined" || !PodCost || typeof Planner === "undefined" || !Planner) return null;
+  var cfg = Object.assign({}, Planner.CFG, planCfg());
+  var staff = plannerStaffMap();
+  var plan = [], on = [], isNew = {}, di, p, i;
+  var dayBetween = function (a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); };
+  for (di = 0; di < 7; di++) {
+    var iso = addDays(key, di), day = (wk.days && wk.days[di]) || blankDay();
+    var byPod = {}, m = {}, pool = {};
+    try { pool = poolFor(day, iso) || {}; } catch (e) { pool = {}; }
+    for (var id in pool) {
+      if (pool[id].kind !== "day") continue;
+      var s = staff[id];
+      if (!s || isSupernumerary(s)) continue;
+      m[id] = poolState(pool[id]) === "LD" ? "LD" : "SD";
+    }
+    for (i = 0; i < PODS.length; i++) {
+      p = PODS[i];
+      byPod[p] = (((day.pods && day.pods[p] && day.pods[p].assign) || [])
+        .filter(function (a) { return a.id && m[a.id]; })
+        .map(function (a) { return a.id; }));
+    }
+    plan.push(byPod); on.push(m);
+    for (var id2 in m) {
+      var s2 = staff[id2];
+      isNew[id2] = !!(s2 && s2.start && dayBetween(s2.start, iso) <= cfg.newDays);
+    }
+  }
+  var hist = (data && data.plannerHistory) || Planner.blankHistory();
+  var home = wk.plannerHome || {};
+  var led, floors = [];
+  try { led = PodCost.attribute(plan, on, home, staff, hist, isNew, cfg); }
+  catch (e) { return null; }
+  for (di = 0; di < 7; di++) {
+    try { floors.push(PodCost.floorFor(plan[di], on[di], staff, cfg)); }
+    catch (e) { floors.push({ floor: 0, notes: [], unreachable: false }); }
+  }
+  return { key: key, wk: wk, led: led, floors: floors, plan: plan, cfg: cfg };
+}
+/* What one day is worth, in the shape the dials already read. */
+function plannerDayScore(wk, key, di){
+  var L = plannerLedger(wk, key);
+  if (!L || !L.led.days[di] || !L.led.days[di].staffed) return null;
+  var sc = plannerScoreCfg(), d = L.led.days[di], pods = {}, total = d.dayOnly, i, p;
+  for (i = 0; i < PODS.length; i++) {
+    p = PODS[i];
+    total += d.pods[p].cost;
+    pods[p] = { cost: d.pods[p].cost, why: d.pods[p].why,
+                inUse: (L.plan[di][p] || []).length > 0,
+                pct: Math.round(PodCost.toScore(d.pods[p].cost, sc.ref, sc.soft)) };
+  }
+  /* THE CEILING. Ali, 26.08.21: "if only 4 LD on the day cant score 100." The floor is the cost
+     the roster makes unavoidable — a pod that cannot have a long day because nobody is on one, a
+     pod that cannot be covered because nobody airway or transfer trained is free. Scoring the
+     floor gives the highest mark the day could possibly earn, and the tick goes there. Nothing is
+     forgiven: the day is still scored on what it actually costs, and the gap between the arc and
+     the tick is the part that is somebody's fault rather than the roster's. */
+  var fl = L.floors[di] || { floor: 0, notes: [] };
+  return {
+    pods: pods, dayOnly: d.dayOnly, dayWhy: d.dayWhy, cost: total,
+    pct: Math.round(PodCost.toScore(total, sc.ref, sc.soft)),
+    ceiling: fl.floor > 0 ? Math.round(PodCost.toScore(fl.floor, sc.ref, sc.soft)) : null,
+    ceilingWhy: fl.notes || []
+  };
+}
 function strCounts(day){
   var o = {}, i, p;
   for (i = 0; i < PODS.length; i++) {
@@ -4974,6 +5217,34 @@ function strengthTick(day, dateISO, issues, wk, di){
     prevCounts: prev ? strCounts(prev) : null,
     nightCounts: strNightCounts(day), prevNightCounts: prev ? strNightCounts(prev) : null,
     issues: issues || [], cfg: strengthCfg() });
+
+  /* ── THE NUMBER IS THE ALLOCATOR'S, THE EXPLANATION IS STRENGTH'S — 26.08.21 ────────────────
+     Done here, before the deltas are worked out, so a delta tracks the number actually on screen
+     rather than the one it replaced. `strength.js` keeps `broken`, `missed`, `met` and the names
+     of the requirements, which is what the panels read; the percentage on the face of every dial
+     now comes from `Planner.CFG` by way of `podcost.js`.
+
+     A pod with nobody in it keeps whatever strength.js said about it — usually nothing — because
+     an empty pod is not a pod, and the charge list has nothing to say about one. */
+  try {
+    var pl = plannerDayScore(wk || getWeek(currentWeekKey), (wk && wk.key) || currentWeekKey, di);
+    if (pl) {
+      for (var q = 0; q < PODS.length; q++) {
+        var pk = PODS[q], ps = pl.pods[pk];
+        if (!ps || !ps.inUse || !sc.pods[pk]) continue;
+        sc.pods[pk].pct = ps.pct;
+        sc.pods[pk].cost = ps.cost;
+        sc.pods[pk].charges = ps.why;
+      }
+      sc.day.pct = pl.pct;
+      sc.day.cost = pl.cost;
+      sc.day.charges = pl.dayWhy;
+      /* the ceiling is the roster's, and only exists when the roster actually caps the day */
+      sc.day.ceiling = pl.ceiling;
+      sc.day.ceilingWhy = pl.ceilingWhy;
+    }
+  } catch (e) { /* no planner, no podcost — strength.js keeps the number and nothing breaks */ }
+
   var seen = STR_SEEN[dateISO], delta = {}, now = { pods: {}, miss: {}, day: sc.day.pct }, i, p, pd;
   for (i = 0; i < PODS.length; i++) {
     p = PODS[i]; pd = sc.pods[p];
@@ -5172,13 +5443,52 @@ function strengthWhy(sc, p){
    denominator on the face any more: the old "8 of 8" was a floor reverse-engineered from what a
    pod had historically run at, and Ali threw it out ("why is pod E out of 3"). What the number is
    OUT OF is in the panel behind it, where the arithmetic belongs. */
+/* ── THE POD MARK IS A NUMBER AND A BAR — ratified 26.08.21 ───────────────────────────────────
+   Ali picked this over five rings: length compares across five pods better than arc does, and it
+   leaves the RING as the day's language instead of repeating it five times over on the same
+   screen. The colour is continuous — `PodCost.toColour` runs a hue ramp, so a pod costing 300 and
+   a pod costing 900 genuinely look different. There are no bands here and no legend, which is the
+   whole point: three traffic lights and "colour by highest rule broken" were both rejected as
+   seven buckets wearing a different coat.
+
+   The ceiling tick appears on the bar for the same reason it appears on the ring: 40 against a
+   tick at 40 is a pod with nothing to answer for, and 40 against a tick at 80 is not. */
+function strengthBarSVG(pd){
+  var W = 64, H = 7;
+  if (pd.isBroken)
+    return '<span class="strbarwrap"><span class="strbarnum" style="color:#B3302F">!</span>'
+      + '<svg class="strbar" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" focusable="false" aria-hidden="true">'
+      + '<rect class="bt" x="0" y="0" width="' + W + '" height="' + H + '" rx="' + (H / 2) + '"></rect>'
+      + '<rect x="0" y="0" width="' + W + '" height="' + H + '" rx="' + (H / 2) + '" fill="#E24B4A"></rect></svg></span>';
+  var pct = pd.pct == null ? null : Math.max(0, Math.min(100, pd.pct));
+  var col = (typeof PodCost !== "undefined" && PodCost && pct != null)
+    ? PodCost.toColour(pct) : Strength.colourOf(pd.pct);
+  var w = pct == null ? 0 : (W * pct / 100);
+  var ceil = (pd.ceiling == null) ? null : Math.max(0, Math.min(100, pd.ceiling));
+  var tick = "";
+  if (ceil != null && ceil < 100) {
+    var x = (W * ceil / 100).toFixed(2);
+    tick = '<line class="bc" x1="' + x + '" y1="-1.5" x2="' + x + '" y2="' + (H + 1.5) + '"></line>';
+  }
+  return '<span class="strbarwrap"><span class="strbarnum" style="color:' + col + '">'
+    + esc(pct == null ? "–" : String(Math.round(pct))) + '</span>'
+    + '<svg class="strbar" viewBox="0 -2 ' + W + ' ' + (H + 4) + '" width="' + W + '" height="' + (H + 4) + '" focusable="false" aria-hidden="true">'
+    + '<rect class="bt" x="0" y="0" width="' + W + '" height="' + H + '" rx="' + (H / 2) + '"></rect>'
+    + (w > 0 ? '<rect x="0" y="0" width="' + w.toFixed(2) + '" height="' + H + '" rx="' + (H / 2) + '" fill="' + col + '"></rect>' : '')
+    + tick + '</svg></span>';
+}
 function strengthRingSVG(pd){
   if (pd.isBroken)
     return '<svg class="strring" viewBox="0 0 40 40" width="38" height="38" focusable="false" aria-hidden="true">'
       + '<circle class="rt" cx="20" cy="20" r="15.9155" pathLength="100"></circle>'
       + '<circle class="ra" cx="20" cy="20" r="15.9155" pathLength="100" stroke-dasharray="100 100" style="stroke:#E24B4A"></circle>'
       + '<text class="rx" x="20" y="25">!</text></svg>';
-  var pct = pd.pct, col = Strength.colourOf(pct);
+  /* Continuous colour, same ramp as the pod bars — 26.08.21. `Strength.colourOf` returns one of
+     three band colours, which is the banding Ali rejected twice. The ring's SHAPE is unchanged;
+     only where its colour comes from has moved. */
+  var pct = pd.pct;
+  var col = (typeof PodCost !== "undefined" && PodCost && pct != null)
+    ? PodCost.toColour(Math.max(0, Math.min(100, pct))) : Strength.colourOf(pct);
   var arc = pct == null ? 0 : Math.max(0, Math.min(100, pct));
   /* THE CEILING DASH. Ali, 26.08.15: "use a dash to show the maximum for that pod - max doesnt need
      to be 100 there as fewer needs." A short mark on the track at the best this pod could have done
@@ -5332,8 +5642,8 @@ function strengthDial(dateISO, p){
   var pd = rec.sc.pods[p], d = rec.delta[p];
   if (!pd.app && !pd.isBroken) return null;
   var lab = pd.isBroken ? ("Pod " + p + " broken") : ("Pod " + p + " " + pd.pct + " per cent");
-  var btn = el("button", { class: "strdial " + (pd.isBroken ? "broken" : Strength.band(pd.pct)), type: "button",
-    title: lab, "aria-label": lab, html: strengthRingSVG(pd),
+  var btn = el("button", { class: "strdial strbarbtn " + (pd.isBroken ? "broken" : Strength.band(pd.pct)), type: "button",
+    title: lab, "aria-label": lab, html: strengthBarSVG(pd),
     /* stopPropagation because the pod cell is a drop zone and a tap-to-place target — opening the
        arithmetic must not also count as picking the pod. */
     onclick: function (e) { if (e && e.stopPropagation) e.stopPropagation(); strengthRulesDialog(dateISO, p); } });
@@ -5499,8 +5809,15 @@ function renderDayRow(day, di, dateISO, issues){
     badge.title = (daySc.isBroken ? "Pod " + daySc.podBroken.join(", ") + " broken" : "The day, " + daySc.pct + "%")
       + "\n" + badge.title;
   }
+  /* HOW MANY CHANGED, so the day tells you where to look before the chips tell you who. Counts
+     removals as well as moves and arrivals — a person taken off is a change to the day even
+     though there is no chip left to mark. */
+  const rcDay = recentChanges(dateISO);
+  const rcChip = rcDay.n ? el("div", { class: "rccount", title: rcDay.n + " change" +
+      (rcDay.n === 1 ? "" : "s") + " in the last 36 hours" },
+      el("span", { class: "rcdot" }), String(rcDay.n)) : null;
   const dlInner = el("div", { class: "dl-inner" }, el("div", { class: "dn" }, DAYNAMES[di].slice(0,3).toUpperCase()), el("div", { class: "d" }, fmtDate(dateISO)),
-    canEdit() ? null : el("div", {}, badge));
+    rcChip, canEdit() ? null : el("div", {}, badge));
   /* THE DAY'S OWN RING, WHERE THE DOT ALREADY LIVES. Ali, 26.08.15: "why doesnt the column with the
      daily dot show the day overview". No reason except that it never did — the day score existed
      only on Setup, while the column that answers "how is this day?" carried a three-state dot. Same
@@ -5673,17 +5990,30 @@ function renderDayRow(day, di, dateISO, issues){
        TEST SITE ONLY (Ali, 31 Jul): the computed consultant pod allocation is the consultant
        allocator's unapproved output — it must never appear on the live board as if it were
        real. Live shows only what the rota team picks by hand until that allocator ships. */
-    if (TESTMODE) {
-      /* These five reads have been dead since the store was carved in two — nothing has written
-         `data.consRota` since. They were shaped for exactly what Cover holds (`days` keyed by date,
-         `cur` keyed by pod), which is why repointing them is a reconnection and not a rewrite. */
-      const crec = coverDays()[dateISO];
-      const cini = crec && crec.cur && crec.cur[p];
-      if (cini && !pod.cons) {
-        const lbl = el("span", { class: "consauto", title: consName(cini) + " — from Cover" }, consSurname(cini));
-        if (crec.cur.cod && crec.cur.cod === cini) lbl.append(el("span", { class: "codpill" }, "COD"));
-        col.append(el("div", { class: "conswrap" }, lbl));
-      }
+    /* ── WHO IS COVERING THIS POD, TAKEN FROM COVER — 26.08.21 ────────────────────────────────
+       Ali: "they can now be taken live from the Cover page instead of waiting for a spreadsheet
+       to be dropped in every few weeks." So the TESTMODE gate comes off. It was right while the
+       Cover allocator was unapproved output; Cover is live now and is the source of truth for
+       which consultant covers which pod.
+
+       READ ONLY, and that is a rule not a detail. Nothing here writes `pod.cons`, so the board
+       never puts anything back into Cover and never bakes a Cover answer into the rota store. If
+       Cover changes its mind tomorrow the board simply shows the new answer.
+
+       PRECEDENCE: a hand-picked consultant always wins, and an imported one counts as hand-picked.
+       That is what keeps the import box working as the backup Ali asked to keep — drop the
+       spreadsheet in and it overrides Cover exactly as it does today.
+
+       Defensive about shape: the Cover store is written by another page and this board must not
+       break if it grows a level. `cur` is what it holds today; `pods` and the bare day object are
+       accepted too rather than throwing. */
+    const crec = coverDays()[dateISO];
+    const cslot = crec ? (crec.cur || crec.pods || crec) : null;
+    const cini = cslot && cslot[p];
+    if (cini && !pod.cons) {
+      const lbl = el("span", { class: "consauto", title: consName(cini) + " — from Cover" }, consSurname(cini));
+      if (cslot.cod && cslot.cod === cini) lbl.append(el("span", { class: "codpill" }, "COD"));
+      col.append(el("div", { class: "conswrap" }, lbl));
     }
     for (const a of pod.assign.filter(a => a.id && staffById(a.id))) {
       col.append(chip(staffById(a.id), { di, day, pod: p, tag: a.shift,
@@ -6324,15 +6654,34 @@ function consLabel(s){
       the source, and it no longer needs staff records to match against.                          */
 const COVER_READ = (window.__POD_KEYS && window.__POD_KEYS.cr) || localStorage.getItem("podCR") || "";
 let coverLive = null;            // the Cover store when it answered this session; null when it did not
+/* ── A FAILED READ MUST SAY SO — 26.08.21 ─────────────────────────────────────────────────────
+   This had three separate `return null`s and no way to tell them apart: no key configured, Cover
+   answered with an error, or Cover answered with something that was not a Cover store. All three
+   drew the same amber word, so nobody could act on any of them. `coverError` holds the reason in
+   plain language and Setup shows it. Still silent on screen for a trainee — a viewer does not need
+   to know the plumbing — but the rota team can see it and so can anybody looking at the log. */
+let coverError = null;
 async function readCover(){
-  if (!COVER_READ) return null;
+  coverError = null;
+  /* Every failure leads with the same six words, because that is the bit the reader needs and the
+     render suite holds it to it. What follows is the part that tells somebody what to DO about it,
+     which is what was missing when all three cases drew one identical amber word. */
+  if (!COVER_READ) { coverError = "Cover could not be reached — no Cover address is set on this board."; return null; }
   try {
     const r = await fetch(COVER_READ, { method: "POST", headers: { "Content-Type": "application/json" },
                                         body: "{}", cache: "no-store" });
-    if (!r.ok) return null;
+    if (!r.ok) { coverError = "Cover could not be reached — it answered " + r.status + " " + (r.statusText || ""); return null; }
     const d = JSON.parse(await r.text());
-    return (d && typeof d === "object" && (d.map || d.names || d.days)) ? d : null;
-  } catch(e){ return null; }
+    if (d && typeof d === "object" && (d.map || d.names || d.days)) return d;
+    /* This one deliberately does NOT say "could not be reached", because it was reached — it
+       answered with something that is not a Cover store, which is a different problem needing a
+       different person. */
+    coverError = "Cover answered, but with nothing that looks like the Cover store.";
+    return null;
+  } catch(e){
+    coverError = "Cover could not be reached — " + ((e && e.message) || "no answer from the network") + ".";
+    return null;
+  }
 }
 /* Built ONCE, from the register this board is giving up. Every consultant staff record maps to the
    initials Cover knows them by — from their `aliases` first, because those were typed in by a
@@ -6380,6 +6729,7 @@ function consList(){
 function consFreshness(){
   const at = consStale();
   if (at === null) return "Consultant covering this pod";
+  if (coverError) return coverError + (at ? " Names as they were " + String(at).slice(0, 10) + "." : "");
   if (!at) return "Cover could not be reached — this list has never been refreshed from it";
   const days = Math.max(0, Math.round((Date.parse(todayISO()) - Date.parse(String(at).slice(0, 10))) / 86400000));
   return "Cover could not be reached — names as they were "
@@ -6859,8 +7209,50 @@ function logDayStory(iso){
   return { iso, day, sessions: sess };
 }
 /* Score a reconstructed arrangement. The names are turned back into ids because that is what the
-   evaluator counts; anybody the staff list no longer holds is skipped rather than guessed at. */
+   evaluator counts; anybody the staff list no longer holds is skipped rather than guessed at.
+
+   ── THE LOG SCORES ON THE SAME PRICE LIST AS THE BOARD — 26.08.21 ──────────────────────────────
+   Until today this returned `Strength.scoreDay(...).day.pct`. But the board's rings now take their
+   number from the PLANNER's price list through podcost.js. If the log had stayed on strength.js,
+   the same day would carry two different numbers depending on where you read it — the exact "two
+   models marking different papers" fault the whole day's work exists to remove, reappearing in the
+   log. So the reconstructed day is priced by podcost.js on the same scale, and only if that is
+   unavailable does it fall back to strength so a delta is better than none.
+
+   A per-DAY score is the right question for the log — "did this go make the day better or worse" —
+   so the whole-week charges (a second pod, a move, a home pod) are deliberately not in it: they
+   cannot be known from one reconstructed day and strength never counted them either. What is in it
+   is exactly the per-day half of the price list: a long day in every pod, cover, Pod E not the
+   biggest, the spread. The number therefore matches the board's for the same arrangement. */
+function logPlannerScore(dayRec, state, iso){
+  if (typeof PodCost === "undefined" || !PodCost || typeof Planner === "undefined" || !Planner) return null;
+  const staff = plannerStaffMap();
+  const idOf = nm => { const s = (data.staff || []).find(x => x.name === nm); return s ? s.id : null; };
+  let pool = {};
+  try { pool = poolFor(dayRec.day, iso) || {}; } catch (e) { pool = {}; }
+  const on0 = {};
+  for (const id in pool) { if (pool[id].kind !== "day") continue; const s = staff[id];
+    if (!s || isSupernumerary(s)) continue; on0[id] = poolState(pool[id]) === "LD" ? "LD" : "SD"; }
+  const byPod0 = {};
+  for (const p of PODS) byPod0[p] = (state[p] || []).map(idOf).filter(id => id && on0[id]);
+  const plan = [byPod0, {}, {}, {}, {}, {}, {}];
+  const on = [on0, {}, {}, {}, {}, {}, {}];
+  const isNew = {};
+  const dayBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+  const cfg = Object.assign({}, Planner.CFG, planCfg());
+  for (const id in on0) { const s = staff[id]; isNew[id] = !!(s && s.start && dayBetween(s.start, iso) <= cfg.newDays); }
+  let led;
+  try { led = PodCost.attribute(plan, on, {}, staff, Planner.blankHistory(), isNew, cfg); }
+  catch (e) { return null; }
+  if (!led.days[0].staffed) return null;
+  let total = led.days[0].dayOnly;
+  for (const p of PODS) total += led.days[0].pods[p].cost;
+  const sc = plannerScoreCfg();
+  return Math.round(PodCost.toScore(total, sc.ref, sc.soft));
+}
 function logScoreOf(dayRec, state, iso){
+  const planned = logPlannerScore(dayRec, state, iso);
+  if (planned != null) return planned;
   if (!window.Strength || !data) return null;
   const idOf = nm => { const s = (data.staff || []).find(x => x.name === nm); return s ? s.id : null; };
   const counts = {}; for (const p of PODS) counts[p] = (state[p] || []).map(idOf).filter(Boolean);
@@ -6877,6 +7269,7 @@ function renderLog(){
 
   box.append(logViewToggle());
   if (logView === "story") { box.append(logStoryBlock()); return; }
+  if (logView === "person") { box.append(logPersonBlock()); return; }
   if (logView === "raw") { box.append(rawLogBlock()); return; }
   const panel = logPanel(data.log, 400, renderLog);
   box.append(panel);
@@ -6899,8 +7292,52 @@ function logViewToggle(){
   const seg = el("div", { class: "logvw" });
   const b = (v, label) => el("button", { class: v === logView ? "on" : "",
     onclick: () => { logView = v; renderLog(); } }, label);
-  seg.append(b("story", "What happened"), b("cat", "Categorised"), b("raw", "Raw"));
+  seg.append(b("story", "What happened"), b("person", "By person"), b("cat", "Categorised"), b("raw", "Raw"));
   return seg;
+}
+/* ── FOLLOW ONE PERSON — 26.08.21 ─────────────────────────────────────────────────────────────
+   The question "why does this person keep moving?" is never answered by a single row, because the
+   answer is the PATTERN across a fortnight. So this draws one line per person: their pods over
+   time, left to right, as the same pastel circles the board uses. The person who moves five times
+   is a line with five circles and is impossible to miss; the person who never moves is one circle.
+
+   It reads only the rota entries the story view reads, so paperwork stays out, and it says only
+   WHERE somebody went — never why they were or were not on a day. Hard rule 6 is untouched: a move
+   to a pod, a spell on the bench and a day off all appear here exactly as the log already records
+   them, with no reason attached to any of them. */
+function logPersonBlock(){
+  const wrap = el("div", { class: "story" });
+  const es = logRotaEntries().slice().sort((a, b) => String(a.t) < String(b.t) ? -1 : 1);
+  const per = {};
+  for (const e of es) {
+    const d = logDet(e) || {}; const nm = d.subj; if (!nm) continue;
+    const to = d.act === "off" ? "off" : d.to;
+    (per[nm] = per[nm] || []).push({ iso: e.on, to: to, t: e.t, act: d.act });
+  }
+  const names = Object.keys(per).sort((a, b) => per[b].length - per[a].length);
+  if (!names.length) return el("div", { class: "empty" }, "No rota changes to trace yet.");
+  for (const nm of names) {
+    const steps = per[nm];
+    const row = el("div", { class: "pprow" });
+    row.append(el("span", { class: "ppname" }, nm,
+      el("span", { class: "ppn" }, steps.length + (steps.length === 1 ? " change" : " changes"))));
+    const path = el("span", { class: "pppath" });
+    steps.forEach((s, i) => {
+      if (i) path.append(el("span", { class: "starr" }, "→"));
+      const iso = s.iso, lab = iso ? DAYNAMES[dayIndexOf(iso)].slice(0, 3) : "";
+      const circle = (s.to === "off" || s.act === "off")
+        ? el("span", { class: "stchip none", title: (iso || "") + " — off the day" }, "·")
+        : (PODS.includes(s.to)
+            ? el("span", { class: "stchip pod" + s.to, title: (iso || "") + " — Pod " + s.to }, s.to)
+            : el("span", { class: "stchip none", title: iso || "" }, "?"));
+      const cell = el("span", { class: "ppcell" }, circle, el("span", { class: "ppday" }, lab));
+      path.append(cell);
+    });
+    row.append(path);
+    wrap.append(row);
+  }
+  wrap.append(el("div", { class: "stfoot" }, el("span", {}, names.length + " people · newest change on the right")));
+  return wrap;
 }
 /* ── DRAWING IT ────────────────────────────────────────────────────────────────────────────
    Ali, 26.08.15, with a screenshot of the first attempt: "unusably busy viaully rehitngk and make
@@ -6965,6 +7402,9 @@ function logDelta(from, to){
 function logDayRow(st){
   const first = st.sessions[0], last = st.sessions[st.sessions.length - 1];
   const names = [...new Set(st.sessions.filter(x => !x.sync).map(x => x.who))];
+  /* Did anything happen to this day AFTER the trainees could see the week? That is the one change
+     that owes an explanation, so it is flagged at the top level where the eye lands first. */
+  const afterPub = st.sessions.some(x => changeAfterPublish(x.made || (x.es && x.es[0] && x.es[0].t), st.iso));
   const row = el("div", { class: "strow" });
   const body = el("div", { class: "stopen" });
   body.style.display = "none";
@@ -6972,7 +7412,8 @@ function logDayRow(st){
   const btn = el("button", { class: "stday", type: "button" }, cv,
     el("span", { class: "stdate" }, DAYNAMES[dayIndexOf(st.iso)].slice(0, 3) + " " + fmtDate(st.iso)),
     el("span", { class: "stwho" }, names.length ? names.join(", ") : "sync only",
-      st.sessions.some(x => x.fix) ? el("span", { class: "sttag fix" }, "FIX") : null),
+      st.sessions.some(x => x.fix) ? el("span", { class: "sttag fix" }, "FIX") : null,
+      afterPub ? el("span", { class: "sttag pub", title: "Changed after this week was public to trainees" }, "AFTER PUBLISH") : null),
     logDelta(first && first.from, last && last.to));
   btn.onclick = () => { const open = body.style.display !== "none";
     body.style.display = open ? "none" : "block"; cv.textContent = open ? "▸" : "▾";
@@ -6989,10 +7430,12 @@ function logGoRow(s, st){
   const noop = s.moves.length && s.moves.every(m => m.noop) || (s.from != null && s.from === s.to && s.moves.length);
   /* Only shown when it says something the day's own figure does not. */
   const sameAsDay = st.sessions.length === 1;
+  const afterPub = changeAfterPublish(s.made || (s.es && s.es[0] && s.es[0].t), st.iso);
   const btn = el("button", { class: "stgobtn", type: "button" }, cv,
     el("span", { class: "stgow" }, el("b", {}, s.who),
       s.fix ? el("span", { class: "sttag fix" }, "FIX") : null,
       noop ? el("span", { class: "sttag none" }, "NO EFFECT") : null,
+      afterPub ? el("span", { class: "sttag pub", title: "After this week was public" }, "AFTER PUBLISH") : null,
       el("span", { class: "stgot" }, s.tm.split(" – ")[0] + " · " + s.moves.length)),
     sameAsDay ? el("span", { class: "stdelta" }) : logDelta(s.from, s.to));
   btn.onclick = () => { const open = pane.style.display !== "none";
@@ -8290,8 +8733,8 @@ function autoFillDay(wk, di, wkKey, opts){
   nightAirwayFix();
 }
 /* ── THE PLANNER WRITES THE WEEK ────────────────────────────────────────────────────────────────
-   One door. Everything that used to fill a week a day at a time now comes through here, so the
-   board, Fix week and the headless nightly all write the rota the same way — the planner plans the
+   One door. Everything that writes a whole week comes through here, so the board, a skills
+   re-allocation and the headless nightly all write the rota the same way — the planner plans the
    WHOLE week at once and then leaves it alone. If planner.js has not loaded for any reason the old
    day-at-a-time path still runs, so a missing file degrades rather than breaks.
 
@@ -8300,9 +8743,9 @@ function autoFillDay(wk, di, wkKey, opts){
 function fillWeekWithPlanner(wk, key){
   const k = key || currentWeekKey;
   /* THE WRITE GATE. A week is allocated once, at 14:00 on the Tuesday of the week before, and
-     never before. Refusing here rather than at each of the callers is the whole point: Auto-fill,
-     Fix week, Fix ahead, a skills re-allocation and the headless nightly all come through this
-     door, so they all inherit the rule and none of them can forget it. */
+     never before. Refusing here rather than at each of the callers is the whole point: every
+     path that writes a week comes through this door, so they all inherit the rule and none of
+     them can forget it. */
   if (!weekIsWritable(k)) return null;
   if (typeof Planner === "undefined" || !Planner || !Planner.writeWeek) {
     wk.days.forEach((day, di) => autoFillDay(wk, di, k));
@@ -8317,40 +8760,133 @@ function fillWeekWithPlanner(wk, key){
     return null;
   }
 }
-async function autoFillWeek(){
-  const wk = getWeek(currentWeekKey);
-  /* Say so rather than doing nothing. A button that shrugs is the fault this project has been
-     bitten by twice — work done, screen updated, nothing written, no error anywhere. */
-  if (!weekIsWritable(currentWeekKey)) { uiAlert(writeGateWhy(currentWeekKey), { title: "Not written yet" }); return; }
-  const perDay = wk.days.map((day, di) => {
-    const pool = poolFor(day, addDays(currentWeekKey, di));
-    const assigned = assignedIds(day);
-    return Object.keys(pool).filter(id => !assigned.has(id)).length;
-  });
-  const total = perDay.reduce((a,b) => a+b, 0);
-  if (!total) { toast("Everyone is already placed"); return; }
-  const breakdown = perDay.map((n, di) => n ? DAYNAMES[di].slice(0,3) + " " + n : null).filter(Boolean).join(" · ");
-  const small = total <= 6;
-  if (!(await uiConfirm(
-    small
-      ? "Still on the bench: " + breakdown + ". Only these people get placed — everyone already in a pod stays exactly where they are. Undo reverses it."
-      : "Everyone still on a bench (" + breakdown + ") gets placed into pods — long days spread out, airway balanced, same pod kept through the week, phones rotated. Anyone already placed stays put. Undo reverses it.",
-    { title: small ? "Place the remaining " + total + (total === 1 ? " person?" : " people?") : "Auto-fill the week?", okLabel: small ? "Place " + (total === 1 ? "them" : "them all") : "Auto-fill" }
-  ))) return;
-  fillWeekWithPlanner(wk, currentWeekKey);
-  logEntry("Auto-filled week " + weekLabel(currentWeekKey), "auto", currentWeekKey);
-  markDirty();
-  renderWeek();
-  const noPhone = wk.days.map((day, di) => (!day.phone && Object.keys(poolFor(day, addDays(currentWeekKey, di))).length) ? DAYNAMES[di] : null).filter(Boolean);
-  if (noPhone.length) uiAlert("No phone could be allocated on: " + noPhone.join(", ") + ".\n\nNobody on those days' benches is ticked as a referral-phone holder. Check the Phone column on the Staff page, then run Auto-fill again.", { title: "Phone not allocated" });
-  else toast("Week filled — check the dots, then adjust anything you disagree with");
-}
+/* ── AUTO-FILL WEEK IS GONE — 26.08.20 ────────────────────────────────────────────────────────
+   Ali: "i think we want this removed if it rehashes the whole week. only fix should be fix this
+   day?" Measured on staging before removing it, on the real w/c 24 Aug: put ONE person on the
+   bench and press Auto-fill, and **65 other people move** — 10 on the day they came off and
+   **55 on days that had nothing to do with it**. The person who came off Pod A landed in Pod C.
+
+   Its own confirm dialog said "Only these people get placed — everyone already in a pod stays
+   exactly where they are." That was true of the old day-at-a-time filler, which stepped over
+   anybody already placed. It stopped being true the moment the button was routed through
+   `fillWeekWithPlanner`, because the planner plans the WHOLE week from the roster — it has no
+   notion of leaving the rest alone. A dialog making a promise the code cannot keep is worse than
+   no dialog.
+
+   So the only repair a human runs by hand is now FIX THIS DAY, which is the shape the ratified
+   rule asks for: planned once, repaired only, and a sick day repairs that day alone. Somebody
+   arriving on a bench is placed by the nightly, which fills untouched days, and by Fix this day,
+   which puts them in a pod rather than leaving them there.
+
+   `autoFillDay` stays — it is what the nightly builds a day with and what fillWeekWithPlanner
+   falls back to. `fillWeekWithPlanner` stays: it is still the door a WEEK is written through. */
 
 /* ================= FIX A DAY (minimal-change repair after somebody comes off) =================
    Works on a clone, makes the fewest moves needed to clear the day's rule breaks (and any aim that
    costs no extra move), and returns the proposed changes for a preview. Nothing is applied until the
-   user hits Apply, and Undo reverses it. */
+   user hits Apply, and Undo reverses it.
+
+   26.08.21 — THE REPAIR NOW COMES FROM THE PLANNER. Until today a week was WRITTEN by
+   `Planner.writeWeek` and REPAIRED by the four passes below, which are the old allocator. Two
+   models marking different papers: the planner would place somebody to one price list and the
+   repair would move them again to another. `Planner.fixDay` has existed and been tested since
+   26.08.19 and was simply never called.
+
+   `planDayFix(di)` keeps its name and its contract exactly — eleven call sites depend on
+   `{ changes, fixed, unresolved }` computed on a CLONE so the day can be previewed before Apply.
+   All that changes is who does the work in the middle.
+
+   Honest about the size of the win: measured over 42 real sick-call cases across the two written
+   weeks, the old path moves 0.55 other people on average, worst 3; the planner moves 0.46. The
+   "2.8" in the changelog was against the OLD DEPLOYED BOARD and no longer applies. So this is
+   worth doing for the consistency, not for the churn saving. Say so rather than claiming a number.
+
+   The night phone is repaired here rather than in the planner: `Planner.fixDay` deliberately
+   touches the day pods only, and the night team is written once by `writeWeek`. */
 function planDayFix(di){
+  if (typeof Planner === "undefined" || !Planner || !Planner.fixDay) return planDayFixLegacy(di);
+  const wk = getWeek(currentWeekKey);
+  const dateISO = addDays(currentWeekKey, di);
+  const orig = wk.days[di];
+  const sn = id => { const s = staffById(id); if (!s) return id; const p = s.name.split(" "); return (p[0] || "") + (p.length > 1 ? " " + p[p.length-1] : ""); };
+  const unresolved = [];
+
+  /* ── THE ROSTER GATE, and it is not a formality ──────────────────────────────────────────────
+     `Planner.fixDay` works out who is on THE DAY from `wk.roster[iso]`, not from who is currently
+     sitting in the pods. That is right for a repair — the roster is the truth about who is at
+     work — but it means that on a day whose roster never arrived, the planner correctly concludes
+     nobody is on and hands back five empty pods. Found 26.08.21 by the rule suite, which builds
+     its fixtures as days without a roster: five airway assertions came back `A=0 B=0 C=0 D=0 E=0`.
+
+     A day can be roster-less on the live board too — a week the Allocate trawl has not reached, or
+     a date the trawl skipped. Blanking a day full of people because its paperwork is missing is far
+     worse than leaving it as it is, so where the roster cannot account for the people already
+     placed, the old passes do the repair and nothing is lost. */
+  const rosterForDay = (wk.roster || {})[dateISO] || null;
+  const placedCount = PODS.reduce((n, p) => n + ((orig.pods[p] || {}).assign || []).filter(a => a.id).length, 0);
+  const rosteredOnDay = rosterForDay ? Object.keys(rosterForDay).filter(id => rosterForDay[id] && rosterForDay[id].kind === "day").length : 0;
+  if (placedCount && !rosteredOnDay) return planDayFixLegacy(di);
+
+  /* A CLONE, always. Nothing below may touch the real week: the whole point of this function is
+     that the user sees the proposal first and Apply is a separate act. */
+  let clone, day;
+  try {
+    clone = JSON.parse(JSON.stringify(wk));
+    clone.key = clone.key || currentWeekKey;
+    const res = Planner.fixDay(clone, di, data.staff,
+      { history: data.plannerHistory, weekKey: currentWeekKey, cfg: planCfg() });
+    day = clone.days[di];
+    (res && res.notes ? res.notes : []).forEach(n => unresolved.push(typeof n === "string" ? n : (n && n.text) || String(n)));
+  } catch (e) {
+    /* If the planner cannot repair this day, the old passes still can. A failed repair must never
+       be a blank day — that is the one outcome worse than a day nobody has tidied. */
+    return planDayFixLegacy(di);
+  }
+  if (!day || !day.pods) return planDayFixLegacy(di);
+
+  /* Belt and braces on the same fault: if the repair has emptied a day that had people in it,
+     it is wrong whatever the reason, and the old path takes over. */
+  const afterCount = PODS.reduce((n, p) => n + ((day.pods[p] || {}).assign || []).filter(a => a.id).length, 0);
+  if (placedCount && !afterCount) return planDayFixLegacy(di);
+
+  /* ── the night phone, unchanged ──────────────────────────────────────────────────────────── */
+  const pool = poolFor(day, dateISO);
+  const nightIds = Object.keys(pool).filter(id => pool[id].kind === "night");
+  day.night = day.night || { phone: null, AB: [], CDE: [], E: [], super: [] };
+  const nOK = day.night.phone && canHoldPhone(staffById(day.night.phone));
+  if (!nOK && nightIds.length) {
+    const nHist = historicCount(dd => dd.night.phone);
+    const prevN = di > 0 ? wk.days[di-1].night.phone : null;
+    const cands = nightIds.map(staffById).filter(s => s && canHoldPhone(s) && !skillHeldBack(s.id, "phoneHolder", dateISO))
+      .sort((a,b) => ((a.id===prevN)-(b.id===prevN)) || ((nHist[a.id]||0)-(nHist[b.id]||0)) || a.name.localeCompare(b.name));
+    if (cands.length) {
+      day.night.phone = cands[0].id;
+      if (!day.night.AB.includes(cands[0].id) && !day.night.CDE.includes(cands[0].id) && !(day.night.E || []).includes(cands[0].id))
+        day.night.CDE.push(cands[0].id);
+    }
+  }
+  if (!day.phone) unresolved.push("No trained long-day phone holder is rostered — the phone is left unallocated.");
+
+  /* ── the diff, byte-for-byte the same shape the cards and the log already read ───────────── */
+  const changes = [];
+  const podOf   = id => PODS.find(p => (day.pods[p].assign  || []).some(a => a.id === id));
+  const origPod = id => PODS.find(p => (orig.pods[p].assign || []).some(a => a.id === id));
+  if (orig.phone !== day.phone && day.phone) changes.push({ icon: "phone", text: "Phone → " + sn(day.phone), reason: "Long day, fair rotation" });
+  const ids = new Set([...PODS.flatMap(p => (day.pods[p].assign  || []).map(a=>a.id)),
+                       ...PODS.flatMap(p => (orig.pods[p].assign || []).map(a=>a.id))].filter(Boolean));
+  for (const id of ids) {
+    const b = origPod(id), a = podOf(id);
+    if (b && a && b !== a) changes.push({ icon: "move", who: sn(id), from: b, to: a, text: "Move " + sn(id) + " — Pod " + b + " → Pod " + a, reason: "" });
+    else if (!b && a) changes.push({ icon: "plus", who: sn(id), from: null, to: a, text: "Add " + sn(id) + " to Pod " + a, reason: "From the bench" });
+  }
+  if (orig.night.phone !== day.night.phone && day.night.phone) changes.push({ icon: "phone", text: "Night phone → " + sn(day.night.phone), reason: "" });
+  return { changes, fixed: day, unresolved: [...new Set(unresolved)] };
+}
+
+/* ── THE OLD FOUR-PASS REPAIR ─────────────────────────────────────────────────────────────────
+   Kept as the fallback for the one case that matters: `planner.js` failing to load. It is no
+   longer the path anybody takes. Do not tune it — tune `Planner.CFG`. */
+function planDayFixLegacy(di){
   const wk = getWeek(currentWeekKey);
   const dateISO = addDays(currentWeekKey, di);
   const orig = wk.days[di];
@@ -8959,154 +9495,34 @@ function fixDayDialog(di){
     el("button", { class: "btn", onclick: () => { applyFixedDay(di, plan.fixed, plan.changes); closeModal(); toast("Fixed " + DAYNAMES[di].slice(0,3) + " — Undo reverses it"); } }, "Apply " + plan.changes.length + " change" + (plan.changes.length>1?"s":""))));
   $("#modalBg").style.display = "flex";
 }
-/* ── FIX AHEAD: EVERY WEEK FROM TODAY, NOT JUST THE ONE ON SCREEN ──────────────────────────────
-   Ali, 26.08.16: "just apply the new algorithm to all future weeks, find a way."
+/* ── FIX WEEK AND FIX AHEAD ARE GONE — 26.08.20 ───────────────────────────────────────────────
+   Ali: "we should remove the fix week and fix ahead buttons too shouldnt we?" Measured on the live
+   board before removing anything: Fix ahead scanned every week from today and found ZERO days;
+   Fix week offered ZERO changes on this week and zero on next. Both were already inert, and
+   structurally so rather than by luck.
 
-   The way did not exist, and the reason is worth writing down because it looks like it did. The
-   nightly rewrites future days — but only ones it has just touched: its optimise step lives INSIDE
-   the loop over people Optima has newly added, so a day allocated last week under the old model
-   and untouched since is never revisited by anything. And the board could only ever fix the week
-   you were standing on, which stops at the published window: weeks past it are reachable only
-   through Look ahead, behind the rota team password. So a change to the algorithm reached the days
-   somebody happened to open, and no others.
+   FIX AHEAD was built on 26.08.16 to walk the store and pull weeks written under an OLDER
+   algorithm up to the current one — "a change to the algorithm reached the days somebody happened
+   to open, and no others". The write gate deletes that whole class of problem: a week is now
+   written ONCE, at 14:00 on its Tuesday, under that night's algorithm, and nothing exists beyond
+   the written edge for it to reach. It was a migration tool for a migration that can no longer
+   happen.
 
-   This walks the store instead of the screen. Two rules, both already agreed and neither invented
-   here:
+   FIX WEEK is the more interesting one, because it could still have acted on a broken day. It goes
+   anyway, and the reason is the ratified rule rather than the measurement: "planned once, then
+   repaired only — a re-plan moves people for no reason, which is the fault this whole rebuild
+   exists to remove." A button called Fix WEEK invites a human to re-run the optimiser across seven
+   days people have already read. Its honest remaining job — repair a day that is actually broken —
+   is done automatically by the nightly inside the firm window, and by hand by Fix THIS DAY, which
+   stays.
 
-   THE PAST IS HISTORY. Days before today are never touched.
+   WHAT IS LOST, deliberately: there is now no way to push an algorithm improvement into a week that
+   has already been written. Under the old regime that was a gap worth a button; under the new one a
+   written week is a promise, so leaving it alone is the point rather than the cost.
 
-   A PUBLISHED WEEK IS A PROMISE. Inside the visible-and-firm window the rota has been read and
-   planned around, so this may repair a BROKEN day and may not chase a better number — the same
-   line the nightly draws (26.08.15) and for the same reason. Beyond it, the board itself labels
-   the week DRAFT and says people may still move, so the tidy is taken.
-
-   It needs no password, and that is deliberate rather than an oversight: the nightly already
-   rewrites unpublished future days unattended with no password at all, so "the algorithm may
-   arrange a week nobody has read yet" is this system's existing policy, not a new one. What the
-   rota team password protects is a HUMAN dragging people around in a week trainees cannot see.
-   Every day this touches is logged by name, and Undo reverses the lot. */
-function fixAheadScan(){
-  const today = todayISO(), orig = currentWeekKey, out = [];
-  try {
-    for (const k of Object.keys(data.weeks || {}).sort()) {
-      if (addDays(k, 6) < today) continue;                 // week finished before today
-      if (!weekIsWritable(k)) continue;                    // not allocated yet: nothing to fix
-      currentWeekKey = k;
-      const wk = getWeek(k);
-      for (let di = 0; di < 7; di++) {
-        const iso = addDays(k, di);
-        if (iso < today) continue;
-        const day = wk.days[di];
-        const issues = checkDay(day, iso, di, wk);
-        if (issues.some(i => i.empty)) continue;           // nothing allocated on it at all
-        const plan = planDayFix(di);
-        if (!fixWorthTaking(plan, di, wk)) continue;
-        const gate = dayRating(plan.fixed, iso, di, wk).brk < dayRating(day, iso, di, wk).brk;
-        const published = iso >= visibleFrom() && iso <= firmTo();
-        if (published && !gate) continue;                  // read and planned around: leave it
-        out.push({ k, di, iso, n: plan.changes.length, gate, published });
-      }
-    }
-  } finally { currentWeekKey = orig; }
-  return out;
-}
-async function fixAheadDialog(){
-  const found = fixAheadScan();
-  const m = $("#modal"); m.innerHTML = "";
-  m.append(el("h3", {}, "Fix ahead"));
-  if (!found.length) {
-    m.append(el("p", { style: "color:var(--muted);font-size:.9rem" },
-      "Every week from today onwards is already as good as the current settings can make it."));
-    m.append(el("div", { class: "dlg-btns" }, el("button", { class: "btn", onclick: closeModal }, "Close")));
-    $("#modalBg").style.display = "flex"; return;
-  }
-  const weeks = [...new Set(found.map(f => f.k))];
-  const total = found.reduce((n, f) => n + f.n, 0);
-  m.append(el("p", { class: "fixsub" }, total + " change" + (total > 1 ? "s" : "") + " across " +
-    found.length + " day" + (found.length > 1 ? "s" : "") + " in " + weeks.length + " week" +
-    (weeks.length > 1 ? "s" : "") + ". Published weeks are only touched where a day is broken."));
-  const wrap = el("div", { class: "fixweek" });
-  for (const k of weeks) {
-    const inWk = found.filter(f => f.k === k);
-    wrap.append(el("div", { class: "fixday-h" }, fmtDate(k) + " to " + fmtDate(addDays(k, 6)) +
-      " — " + inWk.reduce((n, f) => n + f.n, 0) + " change" + (inWk.reduce((n, f) => n + f.n, 0) > 1 ? "s" : "")));
-    for (const f of inWk)
-      wrap.append(el("div", { class: "fixrow" }, el("div", {},
-        el("div", { class: "fixrow-t" }, DAYNAMES[f.di] + " " + fmtDate(f.iso) + " · " + f.n + " change" + (f.n > 1 ? "s" : "")),
-        el("div", { class: "fixrow-r" }, f.published ? "published week, and this day is broken" : "not published yet"))));
-  }
-  m.append(wrap);
-  m.append(el("div", { class: "dlg-btns" },
-    el("button", { class: "btn ghost", onclick: closeModal }, "Cancel"),
-    el("button", { class: "btn", onclick: () => { fixAheadApply(found); closeModal(); } },
-      "Apply " + total + " change" + (total > 1 ? "s" : ""))));
-  $("#modalBg").style.display = "flex";
-}
-/* THE PLAN IS RECOMPUTED AT THE MOMENT IT IS APPLIED, not reused from the scan. Fixing Tuesday
-   changes what Wednesday's continuity is measured against, so a plan made before Tuesday moved is
-   answering a question that is no longer being asked. Costs one more pass; buys correctness. */
-function fixAheadApply(found){
-  const orig = currentWeekKey;
-  let days = 0, moves = 0;
-  try {
-    for (const f of found) {
-      currentWeekKey = f.k;
-      const wk = getWeek(f.k);
-      const plan = planDayFix(f.di);
-      if (!fixWorthTaking(plan, f.di, wk)) continue;
-      applyFixedDay(f.di, plan.fixed, plan.changes);
-      days++; moves += plan.changes.length;
-    }
-  } finally { currentWeekKey = orig; }
-  logEntry("Fix ahead: " + moves + " change" + (moves === 1 ? "" : "s") + " across " + days +
-           " day" + (days === 1 ? "" : "s") + " from today onwards", "auto");
-  markDirty(); saveFile(true); renderAll();
-  toast(days ? ("Fixed " + days + " day" + (days === 1 ? "" : "s") + " ahead — Undo reverses it")
-             : "Nothing needed changing");
-}
-async function fixWeekDialog(){
-  const wk = getWeek(currentWeekKey);
-  const plans = [];
-  wk.days.forEach((day, di) => {
-    /* ── THIS USED TO ASK checkDay AND NOTHING ELSE ─────────────────────────────────────────────
-       `if (!issues.some(hard || soft)) return;` — so Fix week would not even CALL the planner on a
-       day that broke no rule, and answered "Nothing to fix automatically this week." Ali hit it on
-       26.08.16 on the week of 17 Aug: every day passed the rules, the planner had six changes worth
-       six points waiting on the Tuesday alone, and the button said there was nothing to do.
-
-       It is the same fault the nightly had until 26.08.15 — an acceptance test that counted red
-       flags while the planner had started optimising a percentage — and it is the fault this whole
-       model exists to catch, because Thursday 13 August broke no rule either. So every non-empty
-       day is now planned, and the plan is kept if it clears a gate or moves the number. */
-    const issues = checkDay(day, addDays(currentWeekKey, di), di, wk);
-    if (issues.some(i => i.empty)) return;                    // nothing allocated on this day at all
-    const plan = planDayFix(di);
-    if (fixWorthTaking(plan, di, wk)) plans.push({ di, plan });
-  });
-  const m = $("#modal"); m.innerHTML = "";
-  m.append(el("h3", {}, "Fix the week"));
-  if (!plans.length) { m.append(el("p", { style: "color:var(--muted);font-size:.9rem" }, "Nothing to fix automatically this week.")); m.append(el("div", { class: "dlg-btns" }, el("button", { class: "btn", onclick: closeModal }, "Close"))); $("#modalBg").style.display = "flex"; return; }
-  const total = plans.reduce((n,x) => n + x.plan.changes.length, 0);
-  m.append(el("p", { class: "fixsub" }, "The fewest changes across " + plans.length + " day" + (plans.length>1?"s":"") + " to clear the issues."));
-  const wrap = el("div", { class: "fixweek" });
-  for (const { di, plan } of plans) {
-    wrap.append(el("div", { class: "fixday-h" }, DAYNAMES[di] + " " + fmtDate(addDays(currentWeekKey, di))));
-    plan.changes.forEach(c => wrap.append(fixChangeRow(c)));
-  }
-  m.append(wrap);
-  m.append(el("div", { class: "dlg-btns" },
-    el("button", { class: "btn ghost", onclick: closeModal }, "Cancel"),
-    el("button", { class: "btn", onclick: () => { for (const { di, plan } of plans) getWeek(currentWeekKey).days[di] = plan.fixed; logEntry("Fixed " + plans.length + " day(s) this week (minimal changes)", "auto", currentWeekKey); markDirty(); renderWeek(); closeModal(); toast("Week tidied — Undo reverses it"); } }, "Apply " + total + " change" + (total>1?"s":""))));
-  $("#modalBg").style.display = "flex";
-}
-
-/* ================= PASSWORD GATE (Staff page) ================= */
-async function sha256(s){
-  try {
-    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2,"0")).join("");
-  } catch(e){ return "__unavailable__"; }
-}
+   `planDayFix`, `applyFixedDay` and `fixWorthTaking` all stay — the first two are what Fix this day
+   and the person sheet run on, and the third is this page's statement of the rule the nightly
+   mirrors in its own doorman. */
 function staffUnlocked(){ return store.sget("staffUnlocked") === "1" || (data && !data.staffPw); }
 function gateRefs(sfx){
   const gates = { S: "#staffGate", F: "#fairGate", I: "#importGate", L: "#logGate", T: "#teamGate", O: "#ovrGate", G: "#setGate" };
@@ -11289,9 +11705,6 @@ function lookAheadWhy(wkKey){
 $("#btnPrevWeek").onclick = () => stepWeek(-1);
 $("#btnNextWeek").onclick = () => stepWeek(1);
 $("#btnToday").onclick = () => { currentWeekKey = mondayOf(todayISO()); renderWeek(); };
-$("#btnAutoFill").onclick = autoFillWeek;
-$("#btnFixWeek").onclick = fixWeekDialog;
-$("#btnFixAhead").onclick = fixAheadDialog;
 
 /* ── THE BAR, TIDIED (26.08.16) ───────────────────────────────────────────────────────────────
    The buttons are relocated, not rebuilt: each keeps its id, its handler, its disabled state and
@@ -11306,8 +11719,26 @@ $("#btnFixAhead").onclick = fixAheadDialog;
     const pop = document.getElementById(popId); if (!pop) return;
     for (const id of ids) { const b = document.getElementById(id); if (b) pop.appendChild(b); }
   };
-  into("moreMenu", ["btnRedo", "btnSave", "btnPublish", "btnKey"]);
-  into("fixMenu",  ["btnAutoFill", "btnFixWeek", "btnFixAhead"]);
+  /* ── THE KEY HAS TO BE REACHABLE WITHOUT PRESSING EDIT — 26.08.21 ─────────────────────────
+     Found while drawing up the menu job: a trainee looking at the board sees a header with one
+     button on it, Edit. The Key had been tidied into the ⋯ menu, and `body.viewmode #btnMore` is
+     display:none — so the ⋯ that opens it is not on the screen at all. The result was that the
+     only people who could find out what the symbols and colours mean were the people who already
+     knew, because they were the ones editing.
+
+     That is worse than untidy. Project rule 2 says a screen that needs an explainer sentence
+     should be redesigned instead, and the Key is the on-demand help that rule explicitly allows —
+     so it is the one control that must never be behind a door a viewer cannot open.
+
+     So it comes out of the menu and stays on the bar in both modes. The first version of this fix
+     moved it in and out depending on the mode, which is worse than it sounds: `tidyTopBar` runs
+     once at load, so its position would have been decided by whichever mode the board happened to
+     start in and never corrected afterwards. A control whose location depends on history is a
+     control nobody can learn.
+
+     Everything else about the 26.08.16 tidy-up is unchanged: Redo, Save and Publish are still
+     things you press once a week, and they are still in the ⋯ menu. */
+  into("moreMenu", ["btnRedo", "btnSave", "btnPublish"]);
   const wire = (btnId, popId) => {
     const b = document.getElementById(btnId), pop = document.getElementById(popId);
     if (!b || !pop) return;
@@ -11318,7 +11749,6 @@ $("#btnFixAhead").onclick = fixAheadDialog;
     pop.addEventListener("click", () => setTimeout(() => pop.classList.remove("open"), 0));
   };
   wire("btnMore", "moreMenu");
-  wire("btnFixMenu", "fixMenu");
   document.addEventListener("click", () => document.querySelectorAll(".menupop.open").forEach(m => m.classList.remove("open")));
   document.addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll(".menupop.open").forEach(m => m.classList.remove("open")); });
 })();
