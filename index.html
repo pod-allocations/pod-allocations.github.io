@@ -5991,52 +5991,58 @@ function renderDayRow(day, di, dateISO, issues){
         { act: "move", subj: "Observer " + o.name, from: was, to: p, bench: !was }); } });
     /* The list is now Cover's, keyed by initials. `cur` is normalised through consKey so a day
        saved when this board kept its own register still selects the right person. */
+    /* ── ONE CONSULTANT CONTROL PER POD — reworked 26.08.21 ───────────────────────────────────
+       Ali, seeing "cons…" stacked on a name and a bare "MN": "why displaying weird CONS, and why
+       some initials." Two faults, one cause.
+
+       COVER IS THE SOURCE OF TRUTH; the stored pick is the BACKUP (Ali: consultants "can now be
+       taken live from the Cover page… this import box can be left as backup"). The old code had
+       that backwards — a stored/imported pick ALWAYS won, so pods still carrying a stale imported
+       code showed it (and "MN", a code with no full name behind it, printed as raw initials) while
+       Cover only showed where nothing was stored. Two sources on screen at once, and an empty
+       "cons…" picker drawn on top of the Cover name.
+
+       New precedence, matching what Ali actually said:
+         · a stored pick that RESOLVES to a real name is a deliberate override and wins;
+         · anything else — no pick, or an unresolvable leftover like "MN" — shows Cover's answer;
+         · only when neither resolves does the raw code show, because that is all anybody knows.
+       And it is ONE control: a picker when editing (pre-set to whatever is effective, "cons…" only
+       when there genuinely is nobody), a plain surname when viewing. No stacked label.
+
+       Cover shape is read defensively — `cur` today, `pods` or the bare day object if it grows. */
     const consInis = consList();
-    const cur = consKey(pod.cons);
-    if (consInis.length || cur) {
-      const consSel = el("select", { class: "conssel" + (cur ? " has" : ""),
-        title: consStale() !== null ? consFreshness() : "Consultant covering this pod" });
-      consSel.append(el("option", { value: "" }, "cons…"));
-      if (cur && !consInis.includes(cur)) consSel.append(el("option", { value: cur, selected: "1" }, consSurname(cur)));
-      for (const ini of consInis)
-        consSel.append(el("option", { value: ini, title: consName(ini), ...(cur === ini ? { selected: 1 } : {}) }, consSurname(ini)));
-      consSel.onchange = () => { const was = cur; pod.cons = consSel.value || null;
-        logEntry("Pod " + p + " consultant: " + (consSel.value ? consSurname(consSel.value) : "cleared") + " (" + dayShort(di) + ")",
-                 "manual", dateOfDi(di), null,
-                 { act: "cons", subj: "Pod " + p, from: was ? consSurname(was) : "", to: consSel.value ? consSurname(consSel.value) : "" });
-        markDirty(); renderWeek(); };
-      consSel.disabled = !canEdit();
-      col.append(el("div", { class: "conswrap" }, consSel));
-    }
-    /* Consultant rota crosstalk: when no consultant is picked here, show the one the
-       consultant rota assigns (display-only), with a COD pill on the referral holder.
-       TEST SITE ONLY (Ali, 31 Jul): the computed consultant pod allocation is the consultant
-       allocator's unapproved output — it must never appear on the live board as if it were
-       real. Live shows only what the rota team picks by hand until that allocator ships. */
-    /* ── WHO IS COVERING THIS POD, TAKEN FROM COVER — 26.08.21 ────────────────────────────────
-       Ali: "they can now be taken live from the Cover page instead of waiting for a spreadsheet
-       to be dropped in every few weeks." So the TESTMODE gate comes off. It was right while the
-       Cover allocator was unapproved output; Cover is live now and is the source of truth for
-       which consultant covers which pod.
-
-       READ ONLY, and that is a rule not a detail. Nothing here writes `pod.cons`, so the board
-       never puts anything back into Cover and never bakes a Cover answer into the rota store. If
-       Cover changes its mind tomorrow the board simply shows the new answer.
-
-       PRECEDENCE: a hand-picked consultant always wins, and an imported one counts as hand-picked.
-       That is what keeps the import box working as the backup Ali asked to keep — drop the
-       spreadsheet in and it overrides Cover exactly as it does today.
-
-       Defensive about shape: the Cover store is written by another page and this board must not
-       break if it grows a level. `cur` is what it holds today; `pods` and the bare day object are
-       accepted too rather than throwing. */
+    const stored = consKey(pod.cons);
     const crec = coverDays()[dateISO];
     const cslot = crec ? (crec.cur || crec.pods || crec) : null;
-    const cini = cslot && cslot[p];
-    if (cini && !pod.cons) {
-      const lbl = el("span", { class: "consauto", title: consName(cini) + " — from Cover" }, consSurname(cini));
-      if (cslot.cod && cslot.cod === cini) lbl.append(el("span", { class: "codpill" }, "COD"));
-      col.append(el("div", { class: "conswrap" }, lbl));
+    const coverIni = (cslot && cslot[p]) ? consKey(cslot[p]) : "";
+    const resolves = v => !!(v && consNames()[consKey(v)]);
+    const eff = resolves(stored) ? stored : (coverIni || stored || "");
+    const fromCover = !!eff && eff === coverIni && !resolves(stored);
+    const isCod = !!coverIni && cslot && cslot.cod && consKey(cslot.cod) === coverIni && fromCover;
+    if (consInis.length || eff) {
+      const wrap = el("div", { class: "conswrap" });
+      const titleFor = who => consStale() !== null ? consFreshness()
+        : (fromCover ? consName(who) + " — from Cover" : (who ? consName(who) : "Consultant covering this pod"));
+      if (canEdit()) {
+        const consSel = el("select", { class: "conssel" + (eff ? " has" : ""), title: titleFor(eff) });
+        consSel.append(el("option", { value: "", ...(eff ? {} : { selected: 1 }) }, "cons…"));
+        if (eff && !consInis.includes(eff)) consSel.append(el("option", { value: eff, selected: 1 }, consSurname(eff)));
+        for (const ini of consInis)
+          consSel.append(el("option", { value: ini, title: consName(ini), ...(eff === ini ? { selected: 1 } : {}) }, consSurname(ini)));
+        consSel.onchange = () => { const was = stored; pod.cons = consSel.value || null;
+          logEntry("Pod " + p + " consultant: " + (consSel.value ? consSurname(consSel.value) : "cleared") + " (" + dayShort(di) + ")",
+                   "manual", dateOfDi(di), null,
+                   { act: "cons", subj: "Pod " + p, from: was ? consSurname(was) : "", to: consSel.value ? consSurname(consSel.value) : "" });
+          markDirty(); renderWeek(); };
+        wrap.append(consSel);
+        if (isCod) wrap.append(el("span", { class: "codpill" }, "COD"));
+        col.append(wrap);
+      } else if (eff) {
+        const lbl = el("span", { class: "consauto", title: titleFor(eff) }, consSurname(eff));
+        if (isCod) lbl.append(el("span", { class: "codpill" }, "COD"));
+        wrap.append(lbl);
+        col.append(wrap);
+      }
     }
     for (const a of pod.assign.filter(a => a.id && staffById(a.id))) {
       col.append(chip(staffById(a.id), { di, day, pod: p, tag: a.shift,
