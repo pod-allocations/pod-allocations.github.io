@@ -1024,13 +1024,13 @@ button.strdial.strbarbtn{border-radius:6px;min-height:44px;display:flex;align-it
    An edge bar rather than a fill, because the board already spends amber on days that need
    attention and a second amber SURFACE would compete with it. A 3px edge reads at a glance on a
    phone and disappears when you are not looking for it. */
-/* MOVEMENT IS A FAINT GREY RING NOW — Ali, 26.08.21: "pull it [the orange 36-hour count] just have
-   a faint grey outline round the pill or something to show if someones move." So the loud amber
-   edge and the orange count pill are gone; a person who has moved (in the last 36h, or since the
-   week was published) carries one soft grey ring. Quiet, per-person, points at who moved. */
-.chip.rc{box-shadow:0 0 0 1.5px #d5d8de;border-radius:999px}
-.rcfrom{margin-left:auto;font-size:.6rem;color:var(--muted);white-space:nowrap;padding-left:.25rem}
-.chip.moved{box-shadow:0 0 0 1.5px #d5d8de;border-radius:999px}
+/* THE MOVE MARK — a small grey swap glyph in the corner of a moved chip, ~48h then gone
+   (Ali, 26.08.22, idea 1). Hover shows where from. Replaces the grey ring and the amber edge. */
+.chip{position:relative}
+.movemk{position:absolute;right:-4px;bottom:-4px;width:15px;height:15px;border-radius:50%;
+  background:#eef1f4;border:1px solid #d9dde2;display:inline-flex;align-items:center;justify-content:center;
+  box-shadow:0 1px 2px rgba(20,30,45,.14);pointer-events:auto}
+.movemk svg{width:9px;height:9px;stroke:#6b7682;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 /* ── THE DRAFT TINT AND ITS FLAG ARE GONE — 26.08.20 ──────────────────────────────────────────
    Ali: "the draft warning can be removed i think now." The two rules that shaped it are kept here
    rather than left in the history, because they were learned the hard way and the next caveat
@@ -1768,7 +1768,7 @@ function snapVisibleWeeks(){
 
    REMOVALS COUNT BUT CANNOT BE MARKED: somebody taken off the day has no chip to draw on. They
    are in the day's count, which is what makes the count honest, and the detail is in the log. */
-const RECENT_HOURS = 36;
+const RECENT_HOURS = 48;   /* the move mark shows for ~2 days then clears itself (Ali, 26.08.22) */
 function recentChanges(iso){
   const out = { by: {}, n: 0 };
   if (!data || !data.log) return out;
@@ -3015,6 +3015,12 @@ const FLAGS = [
   ["fgh","FGH days","info","","Covers Fairfield General on days."],
   ["fghNights","FGH nights","info","","Covers Fairfield General at night."],
   ["fghSuper","FGH supernumerary","info","","Supernumerary at Fairfield General."],
+  /* LOCUM, LEAVE OUT OF FAIRNESS — Ali, 26.08.22: a locum doing occasional random shifts should not
+     appear in the fairness table or the Pod E rolling share. They are still real staff on the days
+     they work — allocated into pods, counted in the day's numbers — but their scattered shifts are
+     not an unfairness to balance, so the long-term fairness maths ignores them. A tick, not a guess
+     from the name or grade, so a regular who happens to locum occasionally is never misclassified. */
+  ["noFair","Locum — leave out of fairness","info","","An ad-hoc locum who does occasional shifts. Still put in pods on the days they work, but the fairness table and the Pod E share ignore them — their scattered shifts aren't an unfairness to balance."],
 ];
 // Supervisor automatically counts as a holder; a shadow is a learner who can't hold on their own.
 const canHoldPhone = s => !!(s && (s.phoneHolder || s.phoneSupervisor));
@@ -4697,18 +4703,20 @@ function chip(s, opts){
      THE TITLE SAYS WHERE THEY WERE, not why they moved. Hard rule 6: the board records that
      somebody is somewhere different and never the reason, and "was Pod A" is a fact about the
      rota while anything more would be a fact about a person. */
-  if (opts.di != null && opts.pod && dayIsFirm(addDays(currentWeekKey, opts.di))) {
-    const was = movedSinceSeen(addDays(currentWeekKey, opts.di), s.id, opts.pod);
-    if (was) { c.classList.add("moved"); c.title = personLabel(s) + " — was Pod " + was + " when this week was published"; }
-  }
-  /* The 36-hour mark. Drawn on every board, edit mode or not — see recentChanges(). */
+  /* ── THE MOVE MARK — a small grey swap glyph, ~48h then gone (Ali, 26.08.22, idea 1 of three) ──
+     A quiet badge in the corner of anyone who moved here (or arrived) inside RECENT_HOURS; hover
+     says where from. It carries its own expiry — recentChanges() only returns a person while they
+     are inside the window, so the mark disappears on its own after a day or two, no cleanup. One
+     mark, one channel: the old grey ring and the "from X" text label are both gone. */
   if (opts.di != null && opts.pod) {
     const rc = recentChanges(addDays(currentWeekKey, opts.di)).by[s.name];
     if (rc) {
-      c.classList.add("rc");
-      c.append(el("span", { class: "rcfrom" }, rc.kind === "new" ? "new" : (rc.from ? "from " + rc.from : "moved")));
-      c.title = (c.title || personLabel(s)) + "\n" +
-        (rc.kind === "new" ? "Added in the last 36 hours" : "Moved here in the last 36 hours");
+      const fromTxt = rc.kind === "new" ? "New to the rota (last 48h)"
+        : (rc.from ? "Moved here from Pod " + rc.from + " (last 48h)" : "Moved here (last 48h)");
+      const glyph = rc.kind === "new"
+        ? '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>'
+        : '<svg viewBox="0 0 24 24"><path d="M7 4 4 7l3 3"/><path d="M4 7h11a5 5 0 0 1 5 5"/><path d="M17 20l3-3-3-3"/><path d="M20 17H9a5 5 0 0 1-5-5"/></svg>';
+      c.append(el("span", { class: "movemk", title: fromTxt, html: glyph }));
     }
   }
   if (s.adhoc && /zlocum/i.test(s.name || "") && opts.di != null && canEdit())
@@ -7050,7 +7058,8 @@ function renderFairness(){
   const rows = Object.entries(counts).map(([id, c]) => {
     const s = staffById(id);
     return s ? { s, c, total: PODS.reduce((n,p) => n + c.pods[p], 0) } : null;
-  }).filter(Boolean).sort((a,b) => b.total - a.total || a.s.name.localeCompare(b.s.name));
+  }).filter(r => r && !r.s.noFair)   /* an ad-hoc locum marked "leave out of fairness" is not shown */
+    .sort((a,b) => b.total - a.total || a.s.name.localeCompare(b.s.name));
   const podDot = { A: "var(--podAb)", B: "var(--podBb)", C: "var(--podCb)", D: "var(--podDb)", E: "var(--podEb)" };
   const head = el("tr", {}, el("th", { style: "min-width:150px" }, "Name"));
   for (const p of PODS) head.append(el("th", {}, el("span", { class: "dot", style: "background:" + podDot[p] }), p));

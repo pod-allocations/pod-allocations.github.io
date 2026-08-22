@@ -1600,51 +1600,61 @@ const SEED = `(function(){
       "for (var p of PODS) for (var a of d.pods[p].assign) if (a.id) return (staffById(a.id)||{}).name; return null; })()");
     ok("the fixture has somebody to mark", di >= 0 && !!who, "di=" + di + " who=" + who);
 
-    ok("a person moved 4 hours ago is marked, and says where from",
+    /* THE MOVE MARK IS A CORNER SWAP GLYPH NOW — 26.08.22 (idea 1). A `.movemk` badge, ~48h window,
+       where-from in its hover title. No text label, no ring, no orange count. */
+    ok("a person moved 4 hours ago gets a move glyph that says where from (on hover)",
       w.eval("(function(){ data.log = []; return true; })()") === true &&
       (seed(4, { act: "move", subj: who, from: "D", to: "A" }),
        w.eval("(function(){ currentWeekKey = mondayOf(todayISO()); renderWeek();" +
-         "var c = [].slice.call(document.querySelectorAll('#weekGrid .chip.rc'));" +
-         "return c.length > 0 && c.some(function(x){ return /from D/.test(x.textContent); }); })()") === true));
+         "var c = [].slice.call(document.querySelectorAll('#weekGrid .movemk'));" +
+         "return c.length > 0 && c.some(function(x){ return /from Pod D/.test(x.title||''); }); })()") === true));
 
-    /* THE ORANGE 36-HOUR COUNT IS GONE — 26.08.21. Movement is the grey ring on the person now;
-       there is no count pill in the date column at all. */
     ok("...and there is no orange count pill anywhere",
       w.eval("(function(){ return !document.querySelector('#weekGrid .rccount'); })()") === true);
 
-    ok("a change 40 hours ago is outside the window and is not marked",
+    ok("a change 50 hours ago is outside the 48h window and is not marked",
       w.eval("(function(){ data.log = []; return true; })()") === true &&
-      (seed(40, { act: "move", subj: who, from: "D", to: "A" }),
-       w.eval("(function(){ renderWeek(); return !document.querySelector('#weekGrid .chip.rc')" +
-         " && !document.querySelector('#weekGrid .rccount'); })()") === true));
+      (seed(50, { act: "move", subj: who, from: "D", to: "A" }),
+       w.eval("(function(){ renderWeek(); return !document.querySelector('#weekGrid .movemk'); })()") === true));
 
-    ok("an arrival reads 'new' rather than naming a pod it never came from",
+    ok("an arrival gets a 'new' glyph whose hover says new, not a pod it never came from",
       w.eval("(function(){ data.log = []; return true; })()") === true &&
       (seed(2, { act: "on", subj: who }),
        w.eval("(function(){ renderWeek();" +
-         "var c = document.querySelector('#weekGrid .chip.rc');" +
-         "return !!c && /new/.test(c.textContent); })()") === true));
+         "var c = document.querySelector('#weekGrid .movemk');" +
+         "return !!c && /New/.test(c.title||'') && !/Pod/.test(c.title||''); })()") === true));
 
-    /* A removal has no chip to ring and there is no count any more, so it simply leaves no mark —
-       the accepted trade for a quieter board (Ali, 26.08.21). It is still in the change log. */
-    ok("somebody taken off leaves no mark on the board (no chip, no count)",
+    /* A removal has no chip to mark and there is no count, so it simply leaves no mark — the
+       accepted trade for a quieter board. It is still in the change log. */
+    ok("somebody taken off leaves no mark on the board (no glyph, no count)",
       w.eval("(function(){ data.log = []; return true; })()") === true &&
       (seed(3, { act: "off", subj: "Nobody Here" }),
        w.eval("(function(){ renderWeek();" +
-         "return !document.querySelector('#weekGrid .chip.rc')" +
+         "return !document.querySelector('#weekGrid .movemk')" +
          " && !document.querySelector('#weekGrid .rccount'); })()") === true));
 
     /* Hard rule 6 lives one surface away: the mark says WHAT moved, never why. */
-    ok("the mark never says why anybody moved",
+    ok("the move glyph never says why anybody moved",
       w.eval("(function(){ data.log = []; return true; })()") === true &&
       (seed(2, { act: "move", subj: who, from: "D", to: "A" }),
        w.eval("(function(){ renderWeek();" +
-         "var t = [].slice.call(document.querySelectorAll('#weekGrid .chip.rc'))" +
+         "var t = [].slice.call(document.querySelectorAll('#weekGrid .movemk'))" +
          "  .map(function(c){ return (c.title||'') + ' ' + c.textContent; }).join(' ');" +
          "return !/sick|illness|absent|unwell|reason|because|swap/i.test(t); })()") === true));
 
     w.eval("data.log = []; renderWeek();");
   }
+
+  /* LOCUM LEFT OUT OF FAIRNESS — 26.08.22. A staff member ticked noFair still allocates but drops
+     out of the fairness table. */
+  ok("a locum marked 'leave out of fairness' drops out of the fairness table",
+     w.eval("(function(){ var A = data.staff[0]; var key = mondayOf(todayISO()); var wk = getWeek(key);" +
+            "wk.days[0].pods.A.assign = [{ id: A.id, shift: 'LD' }];" +
+            "A.noFair = false; switchTab('fair'); renderFairness();" +
+            "var before = document.getElementById('fairTable').textContent.indexOf(A.name) >= 0;" +
+            "A.noFair = true; renderFairness();" +
+            "var after = document.getElementById('fairTable').textContent.indexOf(A.name) >= 0;" +
+            "A.noFair = false; return before && !after; })()") === true);
 
   ok("no errors across the whole run", errors.length === 0, errors.slice(0, 3).join(" | "));
 
