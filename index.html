@@ -7342,39 +7342,223 @@ function logScoreOf(dayRec, state, iso){
     prevCounts: prev ? strCounts(prev) : null, issues: [], cfg: strengthCfg() });
   return sc && sc.day ? sc.day.pct : null;
 }
+/* ── THE CHANGE LOG, REBUILT AS EVENTS (26.08.24) ─────────────────────────────────────────────
+   Ratified with Ali over a morning of mocks. The log is read three ways: by the rota day a change
+   is ABOUT (today then the days ahead, past collapsed), by the day a change was MADE (today at the
+   top, backwards, never the future), and Raw. Rota/pod changes only in the first two; skills,
+   names, passwords and the like live under "Other". Every day is a short list of EVENTS — one line
+   each, "who did what", with the date and time — and each event expands to the individual moves
+   shown with colour pod chips. A run of changes to one thing by one person (five phone presses,
+   a shift flipped and flipped back) collapses to ONE event, so the toggling that made the old log
+   unreadable is folded away into the expander.
+
+   Hard rule 6 is intact: an event says WHERE/WHETHER, never why. Hard rule 2: the only chrome is
+   the tab labels and an on-demand "what the icons mean" key. It reads the log through logDet /
+   logOn / logMade in core.js and stores nothing new. */
+let logView = "day";
 function renderLog(){
   const box = $("#logList");
   box.innerHTML = "";
+  clogInjectCss();
   if (!data || !data.log.length) { box.append(el("div", { class: "empty" }, "No changes logged yet.")); return; }
-
   box.append(logViewToggle());
-  if (logView === "story") { box.append(logStoryBlock()); return; }
-  if (logView === "person") { box.append(logPersonBlock()); return; }
   if (logView === "raw") { box.append(rawLogBlock()); return; }
-  const panel = logPanel(data.log, 400, renderLog);
-  box.append(panel);
-  tagLogRows(panel);
-  /* logPanel repaints its own group list when the search box is typed in — deliberately, so the
-     box keeps focus — and it does that without coming back through here. Watching the panel is
-     how the tags survive a search; re-tagging is idempotent, so this cannot chase its own tail. */
-  try { new MutationObserver(() => tagLogRows(panel)).observe(panel, { childList: true, subtree: true }); }
-  catch(e){}
+  const host = el("div", { class: "clog" });
+  host.innerHTML = clogView(logView);
+  box.append(host);
 }
-
-/* CATEGORISED OR RAW (14 Aug). Two readers, one log. Categorised is the derived human view that
-   was already here, with the family of each row named on the row. Raw is the stored records
-   themselves, one JSON object per line, for handing to something that reads JSON rather than
-   English. Neither view adds a field and neither reveals one: the log has never recorded why
-   anybody is not on (hard rule 6), so there is nothing in the raw records to expose. The
-   existing rendering is untouched — the toggle is around it, not through it. */
-let logView = "story";
 function logViewToggle(){
   const seg = el("div", { class: "logvw" });
   const b = (v, label) => el("button", { class: v === logView ? "on" : "",
     onclick: () => { logView = v; renderLog(); } }, label);
-  seg.append(b("story", "What happened"), b("person", "By person"), b("cat", "Categorised"), b("raw", "Raw"));
+  seg.append(b("day", "By rota day"), b("made", "By day changed"), b("other", "Other changes"), b("raw", "Raw"));
   return seg;
 }
+
+/* ---- classification & the event engine ---- */
+function clogIsPrint(e){ return /print copy/i.test((e && e.msg) || ""); }
+function clogFam(e){
+  const d = logDet(e) || {};
+  if (d.act === "move") return "move";
+  if (d.act === "off") return "off";
+  if (d.act === "fix") return "fix";
+  if (d.act === "batch") return "batch";
+  if (d.act === "set"){
+    if (/phone/i.test(d.subj || "")) return "phone";
+    if (d.facet === "shift") return "shift";
+    if (d.facet === "consultant") return "cons";
+    return "other";
+  }
+  if (d.act === "person") return "other";
+  const m = String((e && e.msg) || "");
+  if (/taken off\b/i.test(m)) return "off";
+  if (/bench/i.test(m) || /→\s*Pod [A-E]|Pod [A-E]/.test(m)) return "move";
+  if (/phone/i.test(m)) return "phone";
+  return "other";
+}
+const CLOG_ROTA = { move:1, off:1, phone:1, shift:1, cons:1, fix:1, batch:1 };
+function clogIsRota(e){ return !clogIsPrint(e) && !!CLOG_ROTA[clogFam(e)]; }
+function clogActor(e){ return (logKind(e) === "auto" || !(e && e.who)) ? "Allocate" : e.who; }
+function clogEvents(entries){
+  const map = new Map();
+  (entries || []).slice().sort((a, b) => String(a.t) < String(b.t) ? -1 : 1).forEach(e => {
+    const f = clogFam(e), key = clogActor(e) + "|" + logOn(e) + "|" + f + ((f === "batch" || f === "fix") ? ("|" + (e.t || Math.random())) : "");
+    if (!map.has(key)) map.set(key, { who: clogActor(e), on: logOn(e), fam: f, t: e.t, items: [] });
+    map.get(key).items.push(e);
+  });
+  return [...map.values()].sort((a, b) => String(a.t) < String(b.t) ? -1 : 1);
+}
+
+/* ---- small formatters ---- */
+function clogEsc(s){ return String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c])); }
+function clogTime(t){ try { return new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); } catch(e){ return ""; } }
+function clogFDate(iso){ try { return new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }); } catch(e){ return iso; } }
+function clogShortDay(iso){ try { return new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); } catch(e){ return iso; } }
+function clogPlural(n, w){ return n + " " + w + (n === 1 ? "" : "s"); }
+function clogPodChip(p){ return PODS.includes(p) ? ('<span class="clc c' + p + '">' + p + '</span>')
+  : (p === "bench" ? '<span class="clc clcb">bench</span>' : (p ? '<span class="clc clcq">' + clogEsc(p) + '</span>' : '')); }
+function clogPodName(p){ return PODS.includes(p) ? ('<b class="clpn p' + p + '">Pod ' + p + '</b>')
+  : (p === "bench" ? '<b class="clpn clpb">the bench</b>' : clogEsc(p || "")); }
+function clogWhen(ev){ return clogFDate(logMade(ev.items[0])) + " · " + clogTime(ev.t); }
+
+/* ---- one consistent sentence per event ---- */
+function clogLine(ev, withDay){
+  const day = withDay && ev.on ? (" on " + clogShortDay(ev.on)) : "";
+  const n = ev.items.length, d0 = logDet(ev.items[0]) || {}, who = clogEsc(ev.who);
+  switch (ev.fam){
+    case "move": { const ppl = new Set(ev.items.map(x => (logDet(x) || {}).subj)).size;
+      const lastTo = (logDet(ev.items[ev.items.length - 1]) || {}).to;
+      return ppl > 1 ? (who + " moved " + ppl + " people across pods" + day)
+        : (who + " moved " + clogEsc(d0.subj) + " to " + clogPodName(lastTo) + day); }
+    case "off": { const ppl = new Set(ev.items.map(x => (logDet(x) || {}).subj)).size;
+      return ppl > 1 ? (who + " took " + ppl + " people off" + day) : (who + " took " + clogEsc(d0.subj) + " off" + day); }
+    case "phone": return n > 1 ? (who + " changed the phone" + day)
+      : (d0.cleared || !d0.to ? (who + " cleared the phone" + day) : (who + " set the phone to " + clogEsc(d0.to) + day));
+    case "shift": { const ppl = new Set(ev.items.map(x => (logDet(x) || {}).subj)).size;
+      if (ppl > 1) return who + " changed shifts for " + ppl + " people" + day;
+      const last = logDet(ev.items[ev.items.length - 1]) || {};
+      return who + " moved " + clogEsc(d0.subj) + " to a " + (last.to === "LD" ? "long" : last.to === "N" ? "night" : "standard") + " day" + day; }
+    case "cons": return n > 1 ? (who + " changed cover for " + n + " pods" + day)
+      : (who + " set " + clogEsc(d0.subj) + " cover to " + clogEsc(d0.to) + day);
+    case "batch": {
+      let v;
+      if (d0.subj === "Auto-fill") v = "auto-filled the " + clogEsc(d0.facet || "week");
+      else if (/import/i.test(d0.subj || "")) v = "imported the roster" + (d0.n ? (" (" + d0.n + " matched" + (d0.extra ? (", " + clogEsc(d0.extra)) : "") + ")") : "");
+      else v = "ran " + clogEsc(d0.subj);
+      return who + " " + v + day;
+    }
+    case "fix": return who + " tidied the day (" + clogPlural(d0.n || 0, "change") + ")" + day;
+    default: return clogEsc(ev.items[0].msg);
+  }
+}
+function clogDetail(ev){
+  return ev.items.map(e => { const d = logDet(e) || {}; let body;
+    if (ev.fam === "move") body = '<span class="clw">' + clogEsc(d.subj) + '</span> ' + (d.from ? clogPodChip(d.from) + '<span class="clarr">→</span>' : '') + clogPodChip(d.to);
+    else if (ev.fam === "off") body = '<span class="clw">' + clogEsc(d.subj) + '</span> <span class="clnoton">not on</span>';
+    else if (ev.fam === "phone") body = '<span class="clw">' + (d.cleared || !d.to ? "phone cleared" : "→ " + clogEsc(d.to)) + '</span>';
+    else if (ev.fam === "shift") body = '<span class="clw">' + clogEsc(d.subj) + '</span> <span class="clst">' + clogEsc(d.from || "") + '</span><span class="clarr">→</span><span class="clst">' + clogEsc(d.to || "") + '</span>';
+    else body = '<span class="clw">' + clogEsc(e.msg) + '</span>';
+    return '<div class="cldrow">' + body + '<span class="clmeta">' + clogTime(e.t) + '</span></div>';
+  }).join("");
+}
+const CLOG_ICON = {
+  move:'<svg viewBox="0 0 24 24" width=15 height=15 fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><path d="M7 7h11M15 3l3 4-3 4M17 17H6M9 13l-3 4 3 4"/></svg>',
+  phone:'<svg viewBox="0 0 24 24" width=14 height=14 fill=currentColor><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.3 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>',
+  shift:'<svg viewBox="0 0 24 24" width=15 height=15 fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><circle cx=12 cy=12 r=9/><path d="M12 7.5V12l3 2"/></svg>',
+  off:'<svg viewBox="0 0 24 24" width=15 height=15 fill=none stroke=currentColor stroke-width=2.2 stroke-linecap=round><circle cx=12 cy=12 r=9/><path d="M8 12h8"/></svg>',
+  cons:'<svg viewBox="0 0 24 24" width=15 height=15 fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/></svg>',
+  batch:'<svg viewBox="0 0 24 24" width=15 height=15 fill=currentColor><path d="M13 2L4 13h6l-1 9 11-13h-7z"/></svg>',
+  fix:'<svg viewBox="0 0 24 24" width=15 height=15 fill=none stroke=currentColor stroke-width=2 stroke-linecap=round stroke-linejoin=round><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2-2z"/></svg>',
+  other:'<svg viewBox="0 0 24 24" width=15 height=15 fill=currentColor><circle cx=5 cy=12 r=2/><circle cx=12 cy=12 r=2/><circle cx=19 cy=12 r=2/></svg>'
+};
+function clogIconTag(f){ return '<span class="clico i' + f + '">' + (CLOG_ICON[f] || CLOG_ICON.other) + '</span>'; }
+function clogEventHTML(ev, withDay){
+  const l = clogLine(ev, withDay), w = clogWhen(ev), ic = clogIconTag(ev.fam);
+  if (ev.items.length <= 1)
+    return '<div class="clev1">' + ic + '<span class="clel">' + l + '</span><span class="clwhen">' + w + '</span></div>';
+  return '<details class="clev"><summary>' + ic + '<span class="clel">' + l + '</span><span class="clwhen">' + w + '</span><span class="clec">' + ev.items.length + '</span></summary><div class="cled">' + clogDetail(ev) + '</div></details>';
+}
+function clogTileHTML(label, evs, withDay, open){
+  return '<details class="clgrp"' + (open ? " open" : "") + '><summary class="clghead"><span class="clglabel">' + clogEsc(label) + '</span><span class="clgcount">' + clogPlural(evs.length, "event") + '</span></summary><div class="clgbody">' + evs.map(ev => clogEventHTML(ev, withDay)).join("") + '</div></details>';
+}
+function clogKeyHTML(){
+  const items = [["move","Pod move"],["phone","Phone"],["shift","Shift"],["off","Taken off"],["cons","Consultant cover"],["batch","Allocate (auto-fill / import)"],["fix","Day tidied"]];
+  return '<details class="clkey"><summary>What the icons mean</summary><div class="clkeyb">' +
+    items.map(([f, lab]) => '<span class="clki">' + clogIconTag(f) + clogEsc(lab) + '</span>').join("") + '</div></details>';
+}
+function clogGroup(entries, keyFn){ const m = new Map(); (entries || []).forEach(e => { const k = keyFn(e); if (!m.has(k)) m.set(k, []); m.get(k).push(e); }); return m; }
+function clogView(v){
+  const today = todayISO();
+  if (v === "other"){
+    const other = data.log.filter(e => !clogIsPrint(e) && !clogIsRota(e));
+    const g = clogGroup(other, logMade);
+    const keys = [...g.keys()].sort().reverse();
+    if (!keys.length) return '<div class="empty">No admin changes.</div>';
+    return keys.map(k => {
+      const rows = g.get(k).map(e => '<div class="clev1">' + clogIconTag("other") + '<span class="clel">' + clogEsc(e.msg) + '</span><span class="clwhen">' + clogFDate(logMade(e)) + ' · ' + clogTime(e.t) + '</span></div>').join("");
+      return '<details class="clgrp" open><summary class="clghead"><span class="clglabel">' + clogEsc(logDayLabel(k, today)) + '</span></summary><div class="clgbody">' + rows + '</div></details>';
+    }).join("");
+  }
+  const rota = data.log.filter(clogIsRota);
+  if (v === "made"){
+    const g = clogGroup(rota, logMade);
+    const keys = [...g.keys()].filter(k => k <= today).sort().reverse();
+    if (!keys.length) return '<div class="empty">Nothing recorded yet.</div>';
+    return clogKeyHTML() + keys.map((k, i) => clogTileHTML(logDayLabel(k, today), clogEvents(g.get(k)), true, i === 0)).join("");
+  }
+  /* default: by rota day */
+  const g = clogGroup(rota, logOn);
+  const dk = [...g.keys()];
+  const ahead = dk.filter(k => k >= today).sort();
+  const past = dk.filter(k => k < today).sort().reverse();
+  const aheadHTML = ahead.length ? ahead.map(k => clogTileHTML(logDayLabel(k, today), clogEvents(g.get(k)), false, k === today)).join("")
+    : '<div class="empty">Nothing on today or the days ahead.</div>';
+  const pastHTML = past.length ? '<details class="clearlier"><summary>Earlier days (' + past.length + ')</summary>' + past.map(k => clogTileHTML(logDayLabel(k, today), clogEvents(g.get(k)), false, false)).join("") + '</details>' : "";
+  return clogKeyHTML() + aheadHTML + pastHTML;
+}
+function clogInjectCss(){
+  if (document.getElementById("clogcss")) return;
+  const st = document.createElement("style"); st.id = "clogcss";
+  st.textContent = CLOG_CSS; document.head.appendChild(st);
+}
+const CLOG_CSS = `
+.clog .empty{color:var(--muted);padding:1rem;text-align:center;background:var(--card,#fff);border:1px dashed var(--hair);border-radius:12px}
+.clkey{margin:0 0 12px}.clkey>summary{cursor:pointer;font-size:.8rem;color:var(--muted)}
+.clkeyb{display:flex;flex-wrap:wrap;gap:.5rem 1.1rem;padding:.6rem .2rem}
+.clki{display:inline-flex;align-items:center;gap:.4rem;font-size:.82rem}
+.clgrp{background:var(--card,#fff);border:1px solid var(--hair);border-radius:14px;margin:0 0 12px;overflow:hidden;box-shadow:0 1px 2px rgba(20,30,60,.04)}
+.clgrp>summary,.clev>summary,.clearlier>summary{list-style:none;cursor:pointer}
+.clgrp>summary::-webkit-details-marker,.clev>summary::-webkit-details-marker,.clearlier>summary::-webkit-details-marker{display:none}
+.clghead{display:flex;justify-content:space-between;align-items:baseline;padding:.7rem 1rem;border-bottom:1px solid transparent}
+.clgrp[open] .clghead{border-bottom-color:var(--hair)}
+.clglabel{font-weight:700;font-size:1.02rem}.clgcount{color:var(--muted);font-size:.76rem}
+.clgbody{padding:.2rem .7rem .45rem}
+.clev,.clev1{border-bottom:1px dotted var(--hair)}.clev:last-child,.clev1:last-child{border-bottom:none}
+.clev>summary,.clev1{display:flex;align-items:center;gap:.55rem;padding:.42rem .3rem}
+.clel{flex:1}.clwhen{color:var(--muted);font-size:.75rem;white-space:nowrap}
+.clec{color:var(--muted);font-size:.7rem;background:var(--hair);border-radius:999px;padding:.02rem .5rem;margin-left:.4rem}
+.clico{flex:none;display:inline-flex;align-items:center;justify-content:center;width:23px;height:23px;border-radius:7px}
+.imove{color:var(--podAb,#2f5fae);background:var(--podB,#e7f0fb)}
+.iphone{color:var(--podCb,#9a6b16);background:var(--podC,#fdf3e3)}
+.ishift{color:var(--podAb,#2f7d46);background:var(--podA,#e7f4ea)}
+.ioff{color:var(--podDb,#a63a68);background:var(--podD,#fbeaf0)}
+.icons{color:var(--podEb,#5b3aa6);background:var(--podE,#efeafb)}
+.ibatch{color:#465468;background:#e9edf2}
+.ifix{color:var(--podAb,#2f7d46);background:var(--podA,#e7f4ea)}
+.iother{color:#7b828b;background:#eef0f2}
+.cled{padding:.05rem .3rem .4rem 1.3rem}
+.cldrow{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.24rem 0;border-bottom:1px dotted var(--hair)}.cldrow:last-child{border-bottom:none}
+.clarr{color:var(--muted);margin:0 .3rem}
+.clc{display:inline-block;font-weight:700;min-width:1.35rem;text-align:center;border-radius:6px;padding:.06rem .1rem;font-size:.8rem}
+.clc.cA{background:var(--podA);color:var(--podAb)}.clc.cB{background:var(--podB);color:var(--podBb)}.clc.cC{background:var(--podC);color:var(--podCb)}.clc.cD{background:var(--podD);color:var(--podDb)}.clc.cE{background:var(--podE);color:var(--podEb)}
+.clcb,.clcq{background:var(--hair);color:var(--muted);padding:.06rem .45rem}
+.clpn{padding:.02rem .34rem;border-radius:5px}.clpn.pA{background:var(--podA);color:var(--podAb)}.clpn.pB{background:var(--podB);color:var(--podBb)}.clpn.pC{background:var(--podC);color:var(--podCb)}.clpn.pD{background:var(--podD);color:var(--podDb)}.clpn.pE{background:var(--podE);color:var(--podEb)}.clpb{background:var(--hair);color:var(--muted)}
+.clnoton{background:var(--hair);color:var(--muted);font-size:.72rem;font-weight:600;padding:.05rem .45rem;border-radius:999px}
+.clst{font-size:.7rem;font-weight:700;border:1px solid var(--hair);border-radius:5px;padding:.02rem .3rem}
+.clmeta{color:var(--muted);font-size:.74rem;white-space:nowrap}
+.clw{}
+.clearlier{margin-top:6px}.clearlier>summary{color:var(--muted);font-size:.85rem;padding:.5rem .2rem}
+`;
 /* ── FOLLOW ONE PERSON — 26.08.21 ─────────────────────────────────────────────────────────────
    The question "why does this person keep moving?" is never answered by a single row, because the
    answer is the PATTERN across a fortnight. So this draws one line per person: their pods over

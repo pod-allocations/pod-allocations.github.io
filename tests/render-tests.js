@@ -518,141 +518,49 @@ const SEED = `(function(){
   ok("a night move now records where the person came from",
      w.eval("typeof nightSpotOf === 'function' && NIGHT_LABEL.AB === 'A&B' && NIGHT_LABEL.CDE === 'C&D'") === true);
 
-  /* ---- the change log: searchable, and the badge belongs to the board ----------------------
-     Ali, 4 Aug: "there needs to be search bar on the change log", and the log badge should clear
-     for everyone rather than for whoever happened to look. */
-  console.log("\n-- the change log --");
-  w.eval("switchTab('log'); data.log = [" +
-    "{ t:'2026-08-04T10:00:00Z', who:'Alistair', kind:'manual', on: todayISO(), msg:'x'," +
-    "  d:{ act:'move', subj:'Christopher Ambrose', from:'A', to:'B' } }," +
-    "{ t:'2026-08-04T09:00:00Z', who:'allocate sync', kind:'auto', on: todayISO(), msg:'y'," +
-    "  d:{ act:'move', subj:'Sam Aziz', from:'C', to:'D' } }]; renderLog();");
-  ok("the log page draws a search box",
-     w.eval("logView = 'cat'; renderLog(); !!document.querySelector('#logList input[type=text]')"));
-  ok("typing a name narrows it to that person",
-     w.eval("(function(){ logQuery = 'ambrose'; renderLog();" +
-            "const t = document.getElementById('logList').textContent;" +
-            "return t.indexOf('Ambrose') >= 0 && t.indexOf('Sam Aziz') < 0; })()") === true);
-  ok("and says how many matched",
-     /1 of 2 entries match/.test(w.eval("document.getElementById('logList').textContent")));
-  ok("a search matching nobody says so rather than looking broken",
-     w.eval("(function(){ logQuery = 'zzzz'; renderLog();" +
-            "return /Nothing matches that/.test(document.getElementById('logList').textContent); })()") === true);
-  /* The box must survive its own keystrokes. The first version redrew the whole panel on every
-     input, destroying the very element being typed into — one character at a time, focus lost
-     each time (Ali, 5 Aug). Assert the SAME node is still there and still focused after a
-     repaint, not merely that a box exists. */
-  ok("typing does not destroy the search box",
-     w.eval("(function(){ logView = 'cat'; logQuery = ''; renderLog();" +
-            "const box = document.querySelector('#logList input[type=text]');" +
-            "box.focus(); box.value = 'amb';" +
-            "box.dispatchEvent(new window.Event('input', { bubbles: true }));" +
-            "const same = document.querySelector('#logList input[type=text]') === box;" +
-            "return same && document.activeElement === box; })()") === true);
-  ok("and the search repaints without a full redraw",
-     w.eval("(function(){ logQuery = 'ambrose';" +
-            "const box = document.querySelector('#logList input[type=text]');" +
-            "const groups = box.parentElement.parentElement.lastChild;" +
-            "groups.innerHTML = ''; groups.append(logGroups(data.log, 400));" +
-            "const t = groups.textContent;" +
-            "return t.indexOf('Ambrose') >= 0 && t.indexOf('Sam Aziz') < 0; })()") === true);
-
-  ok("clearing the box brings everything back",
-     w.eval("(function(){ logView = 'cat'; logQuery = ''; renderLog();" +
-            "const t = document.getElementById('logList').textContent;" +
-            "return t.indexOf('Ambrose') >= 0 && t.indexOf('Sam Aziz') >= 0; })()") === true);
-  ok("you can search by who made the change, not just by person",
-     w.eval("(function(){ logQuery = 'allocate sync'; renderLog();" +
-            "const t = document.getElementById('logList').textContent;" +
-            "const r = t.indexOf('Sam Aziz') >= 0 && t.indexOf('Ambrose') < 0; logQuery=''; renderLog(); return r; })()") === true);
-
-  /* ---- reading the log by PERSON (9 Aug) ---------------------------------------------------
-     Ali, looking at twelve rows under TODAY that were one person's problem being fixed:
-     "nothing ties the rows together". Both date modes answer "what happened then"; this one
-     answers "what has happened to HIM", which is the question somebody actually arrives with. */
-  console.log("\n-- the change log read by person --");
-  w.eval("logView = 'cat'; logQuery = ''; logFilter = 'all'; data.log = [" +
-    "{ t:'2026-08-07T15:12:00Z', who:'allocate sync', kind:'auto', on:'2026-08-12', msg:'a'," +
-    "  d:{ act:'shift', subj:'Antony Taylor Gutierrez', from:'N', to:'LD' } }," +
-    "{ t:'2026-08-09T18:15:00Z', who:'Nicholas Coffin', kind:'manual', on:'2026-08-12', msg:'b'," +
-    "  d:{ act:'move', subj:'Antony Taylor Gutierrez', from:'C&D', to:'C' } }," +
-    "{ t:'2026-08-09T18:16:00Z', who:'Nicholas Coffin', kind:'manual', on:'2026-08-13', msg:'c'," +
-    "  d:{ act:'move', subj:'Philip Meeson', from:'C&D', to:'A&B', night:true } }," +
-    "{ t:'2026-08-06T09:00:00Z', who:'Alistair', kind:'manual', on:null, msg:'Password changed' }" +
-    "]; logBy = 'person'; renderLog();");
-  const headsOf = "[...document.querySelectorAll('#logList .loghead')].map(h => h.textContent)";
-  ok("Group by offers a third way of reading it",
-     w.eval("[...document.querySelectorAll('#logList select')][0].options.length") === 3);
-  ok("every row about one person sits under their name",
-     w.eval("(function(){ const h = " + headsOf + ";" +
-            "return h.some(x => x.indexOf('Antony Taylor Gutierrez') === 0 && /2$/.test(x)); })()") === true);
-  /* The question is nearly always about somebody who has JUST been moved, so alphabetical would
-     bury them under whoever happens to start with an A. */
-  ok("the person touched most recently comes first, not the one first alphabetically",
-     w.eval("(function(){ const h = " + headsOf + ";" +
-            "return h[0].indexOf('Philip Meeson') === 0; })()") === true);
-  /* A series reads forwards. Newest-first is right for "what just happened" and wrong for
-     "how did we get here" — which is the whole reason for this mode. */
-  ok("and inside a person the entries run oldest first, so the story reads forwards",
-     w.eval("(function(){ const g = [...document.querySelectorAll('#logList .loghead')]" +
-            ".find(h => h.textContent.indexOf('Antony') === 0); if (!g) return false;" +
-            "const rows = [...g.nextSibling.querySelectorAll('tr.logrow')]; if (rows.length < 2) return false;" +
-            "return /15:12|16:12/.test(rows[0].textContent) && /18:15|19:15/.test(rows[1].textContent); })()") === true);
-  ok("the rota day is on every row, because that is what a person's series is a series of",
-     w.eval("document.querySelectorAll('#logList tr.logrow td:first-child span').length") ===
-     w.eval("document.querySelectorAll('#logList tr.logrow').length"));
-  /* Dropping them would be tidier and would also hide them. An entry the reader cannot see is
-     worse than one they can see is not about anybody. */
-  ok("entries that are not about one person are still shown, under a heading that says so",
-     w.eval("(function(){ const h = " + headsOf + ";" +
-            "return h[h.length - 1].indexOf('Not about one person') === 0; })()") === true);
-  ok("...and that bucket sorts last however recent it is",
-     w.eval("(function(){ const h = " + headsOf + ";" +
-            "return h.filter(x => x.indexOf('Not about one person') === 0).length === 1; })()") === true);
-  ok("searching still narrows it, and the groups go with it",
-     w.eval("(function(){ logQuery = 'meeson'; renderLog();" +
-            "const h = " + headsOf + "; logView = 'cat'; logQuery = ''; logBy = 'made'; renderLog();" +
-            "return h.length === 1 && h[0].indexOf('Philip Meeson') === 0; })()") === true);
-
-  /* ---- the unified change-log board (26.08.21) --------------------------------------------
-     Five ideas measured on the real 132-entry live log, built into one board. A/B/C were already
-     here (day-grouped story, per-person collapse, paperwork excluded). These assertions cover the
-     three things added: the score on the SAME price list as the board, the after-publish marker,
-     and the by-person path. */
-  console.log("\n-- the change-log board: score, publish marker, by-person --");
-  ok("there is a fourth way to read the log — by person",
-     w.eval("(function(){ switchTab('log'); logView='story'; renderLog();" +
-            "const b=[...document.querySelectorAll('#logList .logvw button')].map(x=>x.textContent);" +
-            "return b.indexOf('By person') >= 0; })()") === true);
-  ok("the story score comes from the planner's price list, matching the board",
-     w.eval("(function(){ return typeof logPlannerScore === 'function' && typeof PodCost !== 'undefined'; })()") === true);
-  /* A change made after a week is public is the one owed an explanation. The moment is derived
-     from the publish clock, not a stored field, so it works on old entries too. */
-  ok("a week has a publish moment derived from the clock",
-     w.eval("(function(){ const m = weekPublishMoment(mondayOf(todayISO()));" +
-            "return m instanceof Date && !isNaN(m.getTime()); })()") === true);
-  ok("a change before publish is not flagged, one after it is",
-     w.eval("(function(){ const iso = addDays(mondayOf(todayISO()), 21);" +
-            "const m = weekPublishMoment(mondayOf(iso)).getTime();" +
-            "const before = changeAfterPublish(new Date(m-1000).toISOString(), iso);" +
-            "const after  = changeAfterPublish(new Date(m+1000).toISOString(), iso);" +
-            "return before === false && after === true; })()") === true);
-  ok("the by-person view draws one path row per person, in pod circles",
-     w.eval("(function(){ const T = addDays(mondayOf(todayISO()), 16);" +
-            "data.log = [" +
-            "{ t:'2026-08-18T10:00:00Z', who:'A', kind:'manual', on:T, msg:'m', d:{act:'move',subj:'Sam Aziz',from:'A',to:'B'} }," +
-            "{ t:'2026-08-18T10:05:00Z', who:'A', kind:'manual', on:T, msg:'m', d:{act:'move',subj:'Sam Aziz',from:'B',to:'C'} }," +
-            "{ t:'2026-08-18T10:06:00Z', who:'A', kind:'manual', on:T, msg:'m', d:{act:'move',subj:'Nia Reggie',from:'D',to:'E'} }" +
-            "]; logView='person'; renderLog();" +
-            "const rows = document.querySelectorAll('#logList .pprow');" +
-            "const circles = document.querySelectorAll('#logList .pprow .stchip');" +
-            "return rows.length === 2 && circles.length >= 3; })()") === true);
-  ok("the by-person path never says why anybody was off — only where they went",
-     w.eval("(function(){ const t = document.getElementById('logList').textContent.toLowerCase();" +
-            "return t.indexOf('sick') < 0 && t.indexOf('reason') < 0 && t.indexOf('because') < 0; })()") === true);
-  /* Leave the log non-empty and the view back on the default — later tests (the log-seen mark,
-     the story-view checks) assume a populated log they did not set up themselves. */
-  w.eval("logView = 'story'; logBy = 'made'; logQuery = ''; renderLog();");
+  /* ---- the change log, rebuilt as EVENTS (26.08.24) --------------------------------------
+     Replaces the searchable/story/by-person board. Three reader views (by rota day, by day
+     changed, Other) plus Raw; each day is a list of events that collapse a run of same-family
+     changes into one line and expand to the individual colour moves. */
+  console.log("\n-- the change log (events) --");
+  w.eval("switchTab('log'); var T=todayISO(), TM=addDays(T,1);" +
+    "data.log=[" +
+    "{t:T+'T09:00:00Z',who:'Nick',kind:'manual',on:T,msg:'a',d:{act:'move',subj:'Sam Aziz',from:'A',to:'B'}}," +
+    "{t:T+'T09:01:00Z',who:'Nick',kind:'manual',on:T,msg:'b',d:{act:'move',subj:'Nia Reggie',from:'D',to:'E'}}," +
+    "{t:T+'T09:02:00Z',who:'Nick',kind:'manual',on:T,msg:'c',d:{act:'set',subj:'Phone',to:'Sam Aziz'}}," +
+    "{t:T+'T09:03:00Z',who:'Nick',kind:'manual',on:T,msg:'d',d:{act:'set',subj:'Phone',to:'',cleared:true}}," +
+    "{t:T+'T10:00:00Z',who:'Meg',kind:'manual',on:TM,msg:'e',d:{act:'move',subj:'Jo Bloggs',from:'C',to:'A'}}," +
+    "{t:T+'T08:00:00Z',who:'Ahmed',kind:'manual',on:null,msg:'Print copy'}," +
+    "{t:T+'T07:00:00Z',who:'Alistair',kind:'manual',on:null,msg:'Password changed'}" +
+    "]; logView='day'; renderLog();");
+  const clogTxt = () => document.getElementById("logList").textContent;
+  ok("the log offers exactly the four views, named",
+     w.eval("JSON.stringify([...document.querySelectorAll('#logList .logvw button')].map(x=>x.textContent))")
+       === JSON.stringify(["By rota day","By day changed","Other changes","Raw"]));
+  ok("two pod moves by one person on one day collapse to a single event",
+     /moved 2 people across pods/.test(w.eval("document.getElementById('logList').textContent")));
+  ok("a run of phone changes collapses to one 'changed the phone' event, not four rows",
+     /changed the phone/.test(w.eval("document.getElementById('logList').textContent")));
+  ok("Print copy never appears as an event",
+     w.eval("document.getElementById('logList').textContent").indexOf("Print copy") < 0);
+  ok("every event overview carries a date and time",
+     w.eval("(function(){var w=[...document.querySelectorAll('#logList .clwhen')];" +
+            "return w.length>=1 && w.every(x=>/\\d{1,2} \\w{3} . \\d{2}:\\d{2}/.test(x.textContent));})()") === true);
+  ok("expanding an event shows the moves as colour pod chips",
+     w.eval("document.querySelectorAll('#logList .clev .cled .clc').length") >= 2);
+  ok("the log never says why anybody was off — only where they went",
+     w.eval("(function(){var t=document.getElementById('logList').textContent.toLowerCase();" +
+            "return t.indexOf('sick')<0 && t.indexOf('reason')<0 && t.indexOf('because')<0;})()") === true);
+  ok("By day changed puts today at the top",
+     w.eval("(function(){logView='made';renderLog();" +
+            "var h=document.querySelector('#logList .clglabel');return h&&h.textContent==='Today';})()") === true);
+  ok("Other changes holds the admin entry and none of the pod moves",
+     w.eval("(function(){logView='other';renderLog();var t=document.getElementById('logList').textContent;" +
+            "return t.indexOf('Password changed')>=0 && t.indexOf('moved 2 people')<0;})()") === true);
+  ok("Raw still lists the stored records as JSON",
+     w.eval("(function(){logView='raw';renderLog();return /\"msg\"|\\bmsg\\b/.test(document.getElementById('logList').textContent);})()") === true);
+  /* Leave the log populated and the view on the default for later tests. */
+  w.eval("logView = 'day'; renderLog();");
 
   /* THE UNLOCK'S PASSWORD HASHER MUST EXIST — 26.08.21. `sha256` lived in the live lineage and not
      the staging one, so a push over live removed it and the rota-team unlock threw "sha256 is not
@@ -1239,52 +1147,28 @@ const SEED = `(function(){
       /\.weekbar>button,\.weekbar \.btn\{min-height:36px/.test(css));
   }
 
-  /* ── WHAT HAPPENED ──────────────────────────────────────────────────────────────────────
-     The view the log now opens on, so it is asserted rather than assumed. */
-  console.log("\n-- what happened --");
-  w.eval("switchTab('log'); logView = 'story'; renderLog();");
-  ok("the story view draws at all", w.eval("!!document.querySelector('#logList .story')"));
-  /* Closed is the whole point of the redesign — Ali, 26.08.15: "unusably busy". */
-  ok("every day opens CLOSED — nothing is expanded until it is asked for",
-     w.eval("[].every.call(document.querySelectorAll('#logList .stopen'), function(x){ return x.style.display === 'none'; })"));
-  ok("...and no pod grid is drawn until a go is opened",
-     w.eval("document.querySelectorAll('#logList .stgrid').length === 0"));
-  ok("a day that only the sync touched and did not change is left out",
-     w.eval("(function(){ var t=(document.getElementById('logList')||{}).textContent||'';" +
-            "return /only the sync ran|^$/.test(t) || t.indexOf('show sync') >= 0; })()"));
-  ok("...and the categorised search box is not in it",
-     w.eval("!document.querySelector('#logList input[type=text]')"));
-
-  /* A→B→C by one person is one move; a second person's move stays their own. This is the whole
-     shape Ali asked for and the two halves fight each other, so both are asserted together. */
+  /* ── THE EVENTS ENGINE (26.08.24) ───────────────────────────────────────────────────────
+     Replaces the old story view. clogEvents collapses a run of same-family changes by one person
+     on one day into a single event; the line counts distinct PEOPLE, and a run of hops shows the
+     final pod, so E->A->B by one person reads "moved ... to Pod B", not "moved 2 people". */
+  console.log("\n-- the events engine --");
   {
-    const r = JSON.parse(w.eval("(function(){" +
-      "var iso = todayISO(), A = data.staff[0];" +
-      "data.log = [" +
-      " {t:'2026-08-14T06:10:00.000Z',who:'Test One',msg:'x',kind:'manual',on:iso,d:{act:'move',subj:A.name,from:'E',to:'A'}}," +
-      " {t:'2026-08-14T06:11:00.000Z',who:'Test One',msg:'x',kind:'manual',on:iso,d:{act:'move',subj:A.name,from:'A',to:'B'}}," +
-      " {t:'2026-08-14T06:20:00.000Z',who:'Test Two',msg:'x',kind:'manual',on:iso,d:{act:'move',subj:A.name,from:'B',to:'C'}}];" +
-      "var st = logDayStory(iso);" +
-      "return JSON.stringify({goes: st.sessions.length, firstMoves: st.sessions[0].moves.length," +
-      " a: st.sessions[0].moves[0].from + '>' + st.sessions[0].moves[0].to," +
-      " chain: !!st.sessions[0].moves[0].chain," +
-      " b: st.sessions[1].moves[0].from + '>' + st.sessions[1].moves[0].to});})()"));
-    ok("two people means two goes, never one merged block", r.goes === 2, "goes=" + r.goes);
-    ok("...and one person's two hops collapse to a single move", r.firstMoves === 1);
-    ok("...reading E to B rather than E to A", r.a === "E>B", r.a);
-    ok("...with the hops still readable underneath", r.chain === true);
-    ok("...while the next person's move stays their own", r.b === "B>C", r.b);
+    const r = JSON.parse(w.eval("(function(){var iso=todayISO(),A=data.staff[0];" +
+      "data.log=[" +
+      "{t:'2026-08-14T06:10:00.000Z',who:'Test One',msg:'x',kind:'manual',on:iso,d:{act:'move',subj:A.name,from:'E',to:'A'}}," +
+      "{t:'2026-08-14T06:11:00.000Z',who:'Test One',msg:'x',kind:'manual',on:iso,d:{act:'move',subj:A.name,from:'A',to:'B'}}," +
+      "{t:'2026-08-14T06:20:00.000Z',who:'Test Two',msg:'x',kind:'manual',on:iso,d:{act:'move',subj:A.name,from:'B',to:'C'}}];" +
+      "var evs=clogEvents(data.log);" +
+      "return JSON.stringify({n:evs.length, first:clogLine(evs[0],false), items0:evs[0].items.length});})()"));
+    ok("two people who moved make two events, not one merged block", r.n === 2, "n=" + r.n);
+    ok("one person's two hops collapse into a single move event", r.items0 === 2, "items=" + r.items0);
+    ok("...and that event reads to the final pod, not a person-count", /moved .+ to .*Pod B/.test(r.first), r.first);
   }
-  ok("a move out and straight back reads as no change",
-    w.eval("(function(){ var iso = todayISO(), A = data.staff[0];" +
-      "data.log = [" +
-      " {t:'2026-08-14T06:10:00.000Z',who:'T',msg:'x',kind:'manual',on:iso,d:{act:'move',subj:A.name,from:'C',to:'D'}}," +
-      " {t:'2026-08-14T06:12:00.000Z',who:'T',msg:'x',kind:'manual',on:iso,d:{act:'move',subj:A.name,from:'D',to:'C'}}];" +
-      "return logDayStory(iso).sessions[0].moves[0].noop === true; })()") === true);
-
+  ok("the by-rota-day view opens on Today with event tiles",
+     w.eval("(function(){switchTab('log');logView='day';renderLog();return document.querySelectorAll('#logList .clgrp').length>0;})()") === true);
   /* HARD RULE 6, on the surface that shows the most history. */
   ok("no word for an absence or its cause appears anywhere in the view",
-    w.eval("(function(){ logView='story'; renderLog();" +
+    w.eval("(function(){ logView='day'; renderLog();" +
       "var t = (document.getElementById('logList')||{}).textContent || '';" +
       "return !/sick|illness|absent|annual leave|unwell|reason/i.test(t); })()") === true);
 
