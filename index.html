@@ -10306,20 +10306,13 @@ function rawAttention(){
     };
     for (const s of data.staff.filter(x => x.active !== false && x.grade !== "CON" && !x.adhoc && !x.placeholder)) {
       const tier = Strength.tierOf(s, sToday, scfg, sfs);
-      if (tier === "unknown") {
-        out.push({ kind: "noexp", id: "noexp:" + s.id, n: 1,
-          title: s.name + " has no time on the unit",
-          body: "No start date, and no shift in the roster history to take one from"
-              + (s.grade ? " (" + s.grade + ")" : "") + ". Pod scoring holds them at unknown rather than guessing.",
-          actLabel: "Set a start date",
-          act: () => askDate("When did " + s.name + " start?", s.start || "").then(d => {
-            if (!d) return;
-            editThen(() => { s.start = d; logEntry("Start date set for " + s.name + ": " + fmtDate(d)); });
-          }),
-          act2Label: "Been here before",
-          act2: () => editThen(() => { s.returner = true; logEntry(s.name + " marked as having worked here before"); }),
-          go: () => switchTab("staff") });
-      }
+      /* NO ROSTER PRESENCE = NOT WORTH A ROW — Ali, 26.08.24: "he's either there now and you can
+         take from first shift, or he's historic so doesn't matter." tier "unknown" means the person
+         has no start date AND no shift anywhere in the roster history, so pod scoring never touches
+         them (it charges nobody for a blank). Flagging it only ever nagged: it could not be
+         completed, because there was no data to complete it with, and it recomputed true on every
+         draw. A person who is actually rostered is never "unknown" — strFirstSeen supplies their
+         start from their first shift — so nothing actionable is lost by staying quiet here. */
       /* A RETURNER LOOKS EXACTLY LIKE A NEW STARTER and nothing writes the field, which is the one
          gap that keeps the experience weight capped. It cannot be derived — but it can be
          SUSPECTED, from the roster itself: somebody whose first shift on this unit predates their
