@@ -587,6 +587,16 @@ const SEED = `(function(){
             "return document.getElementById('autoNotice').style.display === 'none'; })()") === true);
   w.eval("EDIT_MODE = true; renderWeek();");
 
+  /* ---- the day column doubles as the bench (26.08.24) — the To-allocate column is retired ---- */
+  console.log("\n-- day column is the bench --");
+  ok("there is no 'To allocate' column header any more",
+     w.eval("(function(){ switchTab('rota'); renderWeek();" +
+            "return [...document.querySelectorAll('table.rota thead th')].every(t => !/to allocate/i.test(t.textContent)); })()") === true);
+  ok("the bench lives inside the day cell, which is the un-assign drop zone",
+     w.eval("(function(){ const cell = document.querySelector('table.rota td.daylabel');" +
+            "return !!cell && !!cell.querySelector('.daybench') && cell.classList.contains('zone')" +
+            "  && !document.querySelector('table.rota td.tray'); })()") === true);
+
   ok("the unlock password hasher (sha256) is defined", w.eval("typeof sha256 === 'function'"));
   {
     const hashed = await w.eval("sha256('rota-team')");

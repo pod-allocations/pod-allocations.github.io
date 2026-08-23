@@ -107,7 +107,11 @@ table.rota th{background:var(--card);color:var(--muted);font-size:.62rem;text-tr
 table.rota td{border-bottom:1px solid var(--hair);border-right:1px solid var(--hair);padding:.5rem .5rem;vertical-align:top}
 table.rota td:last-child{border-right:0}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:.4rem;vertical-align:baseline}
-td.daylabel{background:var(--card);white-space:nowrap;width:86px}
+td.daylabel{background:var(--card);width:134px;min-width:134px;vertical-align:top}
+.daybench{margin-top:.45rem}
+.daybench .chip{width:100%;margin:.25rem 0}
+.daybench:has(.chip),.daybench:has(.addmenu-wrap){border-top:1px dashed var(--hair);padding-top:.45rem}
+body.person-dragging td.daylabel{outline:2px dashed var(--accent);outline-offset:-3px;border-radius:8px}
 .dl-inner{position:sticky;top:calc(var(--stick, 64px) + 42px)}
 td.daylabel .dn{font-size:.62rem;font-weight:700;letter-spacing:.08em;color:var(--muted)}
 td.daylabel .d{font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
@@ -3977,7 +3981,7 @@ function renderWeekInner(){
      how the next person ends up re-deriving it. */
   const wrap = el("div", { class: "rota-wrap" });
   const tbl = el("table", { class: "rota" });
-  const headRow = el("tr", {}, el("th", {}, ""), el("th", { class: "trayth", style: "width:13%" }, "To allocate"));
+  const headRow = el("tr", {}, el("th", { style: "width:12%" }, ""));
   for (const p of PODS) headRow.append(el("th", { class: "podth", style: "border-top-color:var(--pod" + p + "b)" }, "Pod " + p));
   headRow.append(el("th", { style: "width:14%;background:#f7f7f5" }, "Night team"));
   headRow.append(el("th", { class: "fghth", style: "width:9%" }, "Fairfield"));
@@ -5845,7 +5849,7 @@ function strengthMeterRow(dateISO){
   if (!rec) return null;
   var wrap = strengthShape(rec.sc);
   if (!wrap) return null;
-  return el("tr", { class: "strrow" }, el("td", { class: "strmeter", colspan: "9" }, wrap));
+  return el("tr", { class: "strrow" }, el("td", { class: "strmeter", colspan: "8" }, wrap));
 }
 
 function renderDayRow(day, di, dateISO, issues){
@@ -5917,9 +5921,13 @@ function renderDayRow(day, di, dateISO, issues){
   // only ever one shadow per day, so the token disappears once someone is attached.
   if (day.phone && canEdit() && !(day.shadow || []).filter(Boolean).length) dlInner.append(el("div", {}, phoneToken(di, "shadow")));
   tr.append(dl);
-  /* ---- tray: on duty, unassigned ---- */
-  const tray = el("td", { class: "tray" });
-  makeZone(tray, di, id => {
+  /* ---- the day column doubles as the bench (26.08.24) ----
+     The separate "To allocate" column is gone (Ali: "when add each person could use the day column
+     as the bench"). Anyone rostered-but-unplaced, taken off, added as locum/bank, or an unplaced
+     observer now lives under the day, the ＋ to add sits here, and the whole day cell is the
+     un-assign drop zone. */
+  const bench = el("div", { class: "daybench" });
+  makeZone(dl, di, id => {
     const wasIn = (PODS.find(q => day.pods[q].assign.some(a => a.id === id)
                                 || (day.pods[q].super || []).includes(id)) || "") || nightSpotOf(day, id);
     removeAssign(day, id);
@@ -5933,27 +5941,27 @@ function renderDayRow(day, di, dateISO, issues){
   });
   const dayIds = Object.keys(pool).filter(id => pool[id].kind === "day" && !assigned.has(id) && !inFairfield(day, dateISO, id));
   const nightIds = Object.keys(pool).filter(id => pool[id].kind === "night" && !assigned.has(id) && !inFairfield(day, dateISO, id));
-  if (dayIds.length) tray.append(el("div", { class: "tray-sec" }, "Day"));
+  if (dayIds.length) bench.append(el("div", { class: "tray-sec" }, "Bench"));
   for (const id of dayIds.sort(benchSort(pool))) {
     const p = pool[id];
-    tray.append(chip(staffById(id), { di, day, tag: poolState(p),
+    bench.append(chip(staffById(id), { di, day, tag: poolState(p),
       tagClick: () => cycleShift(day, id, pool),
       removeTitle: "Take off this day",
       onRemove: () => { takeOffDay(day, di, id); markDirty(); renderWeek(); } }));
   }
-  if (nightIds.length) tray.append(el("div", { class: "tray-sec" }, "Night"));
+  if (nightIds.length) bench.append(el("div", { class: "tray-sec" }, "Night"));
   for (const id of nightIds.sort((a,b) => seniority(staffById(a)) - seniority(staffById(b)) || staffById(a).name.localeCompare(staffById(b).name))) {
     const p = pool[id];
-    tray.append(chip(staffById(id), { di, day, tag: "N",
+    bench.append(chip(staffById(id), { di, day, tag: "N",
       tagClick: () => cycleShift(day, id, pool),
       removeTitle: "Take off this day",
       onRemove: () => { takeOffDay(day, di, id); markDirty(); renderWeek(); } }));
   }
-  tray.append(el("div", { class: "hint trayhint" }, "Drop here to un-assign"));
+  bench.append(el("div", { class: "hint trayhint" }, "Drop here to un-assign"));
   const obsUn = (day.obs || []).filter(o => !o.pod);
   if (obsUn.length) {
-    tray.append(el("div", { class: "tray-sec" }, "Observers"));
-    for (const o of obsUn) tray.append(obsChip(day, o, di));
+    bench.append(el("div", { class: "tray-sec" }, "Observers"));
+    for (const o of obsUn) bench.append(obsChip(day, o, di));
   }
   // Add-person control: the column stays collapsed to a single ＋. Tapping ＋ opens a floating popover
   // with a name search (the everyday case) plus locum/bank and observer rows underneath.
@@ -6009,13 +6017,13 @@ function renderDayRow(day, di, dateISO, issues){
       if (!open) { wrap.className = "addmenu-wrap panelopen"; setTimeout(() => addIn.focus(), 0); }
     } }, icon(I_PLUS));
     wrap.append(plus, dlEl, pop);
-    tray.append(wrap);
+    bench.append(wrap);
   }
   // A phone nobody could be given sits here with everything else still to place, rather than
   // hiding in the day label or the night column. It can be dragged straight onto a person.
-  if (!day.phone) tray.append(el("div", { style: "margin-top:.25rem" }, phoneToken(di, "day")));
-  if (!day.night.phone) tray.append(el("div", { style: "margin-top:.25rem" }, phoneToken(di, "night")));
-  tr.append(tray);
+  if (!day.phone) bench.append(el("div", { style: "margin-top:.25rem" }, phoneToken(di, "day")));
+  if (!day.night.phone) bench.append(el("div", { style: "margin-top:.25rem" }, phoneToken(di, "night")));
+  dlInner.append(bench);
   /* ---- pods ---- */
   for (const p of PODS) {
     const pod = day.pods[p];
