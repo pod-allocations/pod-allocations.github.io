@@ -1015,10 +1015,11 @@ const SEED = `(function(){
 
   ok("My shifts is a rail item, not another toolbar icon",
      w.eval("!!document.querySelector('aside button[data-tab=mine]') && !document.getElementById('btnMyMonth')") === true);
-  ok("and it draws a month grid for the person picked",
+  ok("it draws the type-to-find box and an upcoming list, not a month grid",
      w.eval("(function(){ store.set('myId','r1'); switchTab('mine'); renderMine();" +
             "const box = document.getElementById('mineBox');" +
-            "return box.querySelectorAll('.mday').length >= 28 && !!box.querySelector('select'); })()") === true);
+            "return !!box.querySelector('.minein') && !box.querySelector('select')" +
+            "  && !!box.querySelector('.minelist') && box.querySelectorAll('.mday').length === 0; })()") === true);
   ok("the choice is remembered in this browser, not written to the rota",
      w.eval("(function(){ const before = JSON.stringify(data.staff);" +
             "store.set('myId','r2'); renderMine();" +

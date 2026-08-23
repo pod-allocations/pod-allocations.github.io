@@ -11517,58 +11517,118 @@ function whereIsPerson(id, dateISO){
 let mineAnchor = null;
 function renderMine(){
   const box = $("#mineBox"); if (!box) return;
-  box.innerHTML = "";
-  if (!data) return;
+  box.innerHTML = ""; if (!data) return;
+  mineInjectCss();
   let who = store.get("myId") || "";
-  if (!mineAnchor) mineAnchor = currentWeekKey || todayISO();
-  const pick = el("select", { style: "max-width:20rem;margin-bottom:.6rem" });
-  pick.append(el("option", { value: "" }, "— choose a person —"));
-  for (const st of activeStaff(todayISO()).filter(x => x.grade !== "CON"))
-    pick.append(el("option", { value: st.id, ...(st.id === who ? { selected: 1 } : {}) }, st.name));
-  const head = el("div", { class: "mnav" });
-  const body = el("div");
-  const paint = () => {
-    head.innerHTML = ""; body.innerHTML = "";
-    const lbl = new Date(mineAnchor + "T12:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
-    head.append(
-      el("button", { class: "btn sec", onclick: () => { mineAnchor = addDays(mineAnchor, -28); paint(); } }, "‹"),
-      el("b", { style: "flex:1;text-align:center;font-size:.9rem" }, lbl),
-      el("button", { class: "btn sec", onclick: () => { mineAnchor = addDays(mineAnchor, 28); paint(); } }, "›"));
-    let on = 0;
-    const grid = monthGrid(mineAnchor, { cell: (dISO) => {
-      const here = weekExists(dISO);
-      const past = dISO < todayISO();
-      const w = who ? whereIsPerson(who, dISO) : null;
-      if (w && !past) on++;                       // "days ahead" is the number anybody is counting
-      /* Rule 2: no explainer text in the UI. This panel used to carry a grey line under the grid
-         saying what a dot meant and why some weeks were faded — a legend, which is the rule's own
-         example of the UI not being clear enough (Ali, 8 Aug: "stop these grey explainers, how
-         many times do i have to tell you"). Both facts are now carried by the thing itself: the
-         word "super" instead of a dot nobody can decode, and a title on the days that hold
-         nothing. On-demand help is allowed; a sentence sitting on the screen is not. */
-      const c = el("button", { class: "mday" + (here ? "" : " mnone") + (past ? " mpast" : "") + (w ? " mon" : ""),
-        title: here ? "" : "Nothing written for this week yet",
-        onclick: () => { goToWeekFor(dISO); } },
-        el("span", {}, String(new Date(dISO + "T12:00:00").getDate())));
-      if (w) c.append(el("span", { class: "mwhat" },
-        w.kind === "night" ? "night" : w.kind === "fgh" ? "FGH"
-          : (w.pod || "") + (w.shift ? " " + w.shift : "") + (w.super ? " super" : "")));
-      return c;
-    } });
-    body.append(grid);
-    /* The count is a FACT, so it stays — beside the month it belongs to, not underneath in grey
-       with a legend attached to it. The empty state needs no sentence either: the dropdown above
-       already says "choose a person". */
-    if (who) head.append(el("span", { class: "mcount" }, on + " ahead"));
+  const people = activeStaff(todayISO()).filter(x => x.grade !== "CON");
+  const nameOf = id => { const s = people.find(p => p.id === id) || staffById(id); return s ? s.name : ""; };
+
+  /* Type-to-find replaces the dropdown (Ali, 26.08.24). Remembered in THIS browser only — who you
+     are is a personal preference, not rota data. */
+  const input = el("input", { type: "text", class: "minein", placeholder: "Type your name…",
+    autocomplete: "off", spellcheck: "false" });
+  if (who) input.value = nameOf(who);
+  const sugg = el("div", { class: "minesugg", style: "display:none" });
+  const cnt  = el("span", { class: "minecount" });
+  const list = el("div", { class: "minelist" });
+  let topMatch = null;
+
+  const showSugg = q => {
+    sugg.innerHTML = ""; const ql = (q || "").trim().toLowerCase();
+    const matches = people.filter(p => !ql || p.name.toLowerCase().includes(ql)).slice(0, 8);
+    topMatch = matches.length ? matches[0].id : null;
+    if (!matches.length) { sugg.style.display = "none"; return; }
+    matches.forEach((pp, i) => sugg.append(el("div", { class: "minesuggrow" + (i === 0 ? " hl" : ""),
+      onmousedown: e => { e.preventDefault(); choose(pp.id); } }, pp.name)));
+    sugg.style.display = "";
   };
-  /* Remembered in THIS browser only. Who you are is a personal preference, not rota data — in the
-     shared file it would be one field fought over by everyone, and a save every time somebody
-     picked themselves. The cost is a shared ward machine remembering whoever used it last, which
-     is one dropdown to put right. */
-  pick.onchange = () => { who = pick.value; store.set("myId", who); paint(); };
-  paint();
-  box.append(pick, head, body);
+  const choose = id => { who = id; store.set("myId", who); input.value = nameOf(id); sugg.style.display = "none"; paintList(); };
+  input.oninput = () => showSugg(input.value);
+  input.onfocus = () => showSugg(input.value);
+  input.onblur  = () => setTimeout(() => { sugg.style.display = "none"; }, 150);
+  input.onkeydown = e => { if (e.key === "Enter" && topMatch) { e.preventDefault(); choose(topMatch); } };
+
+  const phoneFlag = dISO => { const wk = data.weeks[mondayOf(dISO)]; if (!wk) return null;
+    const di = Math.round((new Date(dISO) - new Date(mondayOf(dISO))) / 86400000);
+    const day = wk.days && wk.days[di]; if (!day) return null;
+    if (day.phone === who) return "phone";
+    if (day.night && day.night.phone === who) return "night phone";
+    return null; };
+  const weekLabel = mon => { const tw = mondayOf(todayISO());
+    if (mon === tw) return "This week";
+    if (mon === addDays(tw, 7)) return "Next week";
+    const a = new Date(mon + "T12:00:00"), b = new Date(addDays(mon, 6) + "T12:00:00");
+    return a.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) + " – " +
+           b.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
+
+  const paintList = () => {
+    list.innerHTML = "";
+    if (!who) { cnt.textContent = ""; list.append(el("div", { class: "mineempty" }, "Type your name above to see your shifts.")); return; }
+    const today = todayISO();
+    let count = 0, lastMon = null;
+    for (let k = 0; k < 42; k++) {
+      const dISO = addDays(today, k);
+      if (!weekExists(dISO)) continue;
+      const w = whereIsPerson(who, dISO); if (!w) continue;
+      count++;
+      const mon = mondayOf(dISO);
+      if (mon !== lastMon) { lastMon = mon; list.append(el("div", { class: "minewk" }, weekLabel(mon))); }
+      const d = new Date(dISO + "T12:00:00");
+      const badges = el("div", { class: "minebadges" });
+      if (dISO === today) badges.append(el("span", { class: "minetoday" }, "TODAY"));
+      if (w.kind === "night") badges.append(el("span", { class: "minepod pN" }, "Night team"));
+      else if (w.kind === "fgh") badges.append(el("span", { class: "minepod pF" }, "Fairfield"));
+      else badges.append(el("span", { class: "minepod p" + (w.pod || "") }, "Pod " + (w.pod || "?")));
+      if (w.shift) badges.append(el("span", { class: "minesh" }, w.shift));
+      if (w.super) badges.append(el("span", { class: "minetag" }, "super"));
+      const pf = phoneFlag(dISO); if (pf) badges.append(el("span", { class: "mineph" }, "📞 " + pf));
+      const row = el("div", { class: "minerow" + (dISO === today ? " today" : ""), onclick: () => goToWeekFor(dISO) },
+        el("div", { class: "minedate" },
+          el("div", { class: "md" }, String(d.getDate())),
+          el("div", { class: "mw" }, d.toLocaleDateString("en-GB", { weekday: "short" }))),
+        badges);
+      list.append(row);
+    }
+    cnt.textContent = count ? (count + (count === 1 ? " shift ahead" : " shifts ahead")) : "";
+    if (!count) list.append(el("div", { class: "mineempty" }, "No upcoming shifts in the rota for you."));
+  };
+
+  const pickWrap = el("div", { class: "minepick" }, input, sugg);
+  box.append(el("div", { class: "minehdr" }, pickWrap, cnt), list);
+  paintList();
 }
+function mineInjectCss(){
+  if (document.getElementById("minecss")) return;
+  const st = document.createElement("style"); st.id = "minecss"; st.textContent = MINE_CSS; document.head.appendChild(st);
+}
+const MINE_CSS = `
+.minehdr{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:0 0 .8rem;flex-wrap:wrap}
+.minepick{position:relative;flex:1;min-width:14rem;max-width:22rem}
+.minein{width:100%;font:inherit;padding:.55rem .8rem;border:1px solid var(--hair);border-radius:10px;background:var(--card,#fff);color:var(--ink)}
+.minein:focus{outline:none;border-color:var(--ink)}
+.minesugg{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--card,#fff);border:1px solid var(--hair);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.10);overflow:hidden;z-index:20;max-height:16rem;overflow-y:auto}
+.minesuggrow{padding:.5rem .8rem;cursor:pointer}
+.minesuggrow.hl,.minesuggrow:hover{background:var(--podB,#e7f0fb)}
+.minecount{color:var(--muted);font-size:.85rem;white-space:nowrap}
+.minelist{}
+.minewk{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin:.8rem 0 .35rem}
+.minerow{display:flex;align-items:center;gap:.7rem;padding:.55rem .3rem;border-bottom:1px solid var(--hair);cursor:pointer}
+.minerow:last-child{border-bottom:none}
+.minerow.today{background:var(--podB,#e7f0fb);border-radius:10px;margin:0 -.3rem;padding:.55rem .6rem;border-bottom:none}
+.minedate{width:3.1rem;text-align:center;flex:none}
+.minedate .md{font-size:1.15rem;font-weight:800;line-height:1}
+.minedate .mw{font-size:.66rem;color:var(--muted);text-transform:uppercase}
+.minebadges{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;flex:1}
+.minetoday{font-size:.62rem;font-weight:800;color:#fff;background:var(--podBb,#2f5fae);border-radius:999px;padding:.06rem .45rem}
+.minepod{font-weight:700;padding:.05rem .45rem;border-radius:6px;font-size:.8rem;background:var(--hair);color:var(--ink)}
+.minepod.pA{background:var(--podA);color:var(--podAb)}.minepod.pB{background:var(--podB);color:var(--podBb)}.minepod.pC{background:var(--podC);color:var(--podCb)}.minepod.pD{background:var(--podD);color:var(--podDb)}.minepod.pE{background:var(--podE);color:var(--podEb)}
+.minepod.pN{background:#e6ebf5;color:#243b6b}.minepod.pF{background:var(--hair);color:var(--muted)}
+.minesh{font-size:.7rem;font-weight:700;color:var(--muted);border:1px solid var(--hair);border-radius:5px;padding:.02rem .32rem}
+.minetag{font-size:.66rem;background:var(--hair);color:var(--muted);border-radius:999px;padding:.03rem .4rem}
+.mineph{font-size:.68rem;font-weight:700;color:var(--podCb,#9a6b16);background:var(--podC,#fdf3e3);border-radius:999px;padding:.05rem .45rem}
+.mineempty{color:var(--muted);padding:1rem;text-align:center;background:var(--card,#fff);border:1px dashed var(--hair);border-radius:12px;margin-top:.4rem}
+`;
+
 function srRemoveFromDay(day, sid){
   const hits = [];
   for (const [pname, p] of Object.entries(day.pods || {})){
