@@ -107,7 +107,10 @@ table.rota th{background:var(--card);color:var(--muted);font-size:.62rem;text-tr
 table.rota td{border-bottom:1px solid var(--hair);border-right:1px solid var(--hair);padding:.5rem .5rem;vertical-align:top}
 table.rota td:last-child{border-right:0}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:.4rem;vertical-align:baseline}
-td.daylabel{background:var(--card);width:134px;min-width:134px;vertical-align:top}
+td.daylabel{background:var(--card);width:86px;min-width:86px;vertical-align:top}
+/* Slim by default; widen only when a day actually has someone benched (mirrors the old
+   To-allocate column, which collapsed when empty). */
+table.rota:has(td.daylabel .daybench .chip) td.daylabel{width:134px;min-width:134px}
 .daybench{margin-top:.45rem}
 .daybench .chip{width:100%;margin:.25rem 0}
 .daybench:has(.chip),.daybench:has(.addmenu-wrap){border-top:1px dashed var(--hair);padding-top:.45rem}
@@ -3981,7 +3984,7 @@ function renderWeekInner(){
      how the next person ends up re-deriving it. */
   const wrap = el("div", { class: "rota-wrap" });
   const tbl = el("table", { class: "rota" });
-  const headRow = el("tr", {}, el("th", { style: "width:12%" }, ""));
+  const headRow = el("tr", {}, el("th", {}, ""));
   for (const p of PODS) headRow.append(el("th", { class: "podth", style: "border-top-color:var(--pod" + p + "b)" }, "Pod " + p));
   headRow.append(el("th", { style: "width:14%;background:#f7f7f5" }, "Night team"));
   headRow.append(el("th", { class: "fghth", style: "width:9%" }, "Fairfield"));
