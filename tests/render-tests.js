@@ -559,6 +559,18 @@ const SEED = `(function(){
             "return t.indexOf('Password changed')>=0 && t.indexOf('moved 2 people')<0;})()") === true);
   ok("Raw still lists the stored records as JSON",
      w.eval("(function(){logView='raw';renderLog();return /\"msg\"|\\bmsg\\b/.test(document.getElementById('logList').textContent);})()") === true);
+  /* The routine roster pull / auto-allocation (kind:auto) stays OUT of the human views and only in
+     Raw — Ali, 26.08.24: "I don't need a change log when [the 2-hourly pull] happens". */
+  w.eval("var T=todayISO(); data.log=[" +
+    "{t:T+'T09:00:00Z',who:'Nick',kind:'manual',on:T,msg:'a',d:{act:'move',subj:'Sam Aziz',from:'A',to:'B'}}," +
+    "{t:T+'T06:36:00Z',who:'',kind:'auto',on:T,msg:'Optima sync: 3 added',d:{act:'batch',subj:'Optima added',n:3,unit:'person'}}," +
+    "{t:T+'T06:36:00Z',who:'',kind:'auto',on:T,msg:'Auto-filled week',d:{act:'batch',subj:'Auto-fill',facet:'week'}}" +
+    "]; logView='day'; renderLog();");
+  ok("the routine pull / auto-allocation is hidden from By rota day",
+     w.eval("(function(){var t=document.getElementById('logList').textContent;" +
+            "return t.indexOf('Sam Aziz')>=0 && t.indexOf('Optima')<0 && t.indexOf('auto-filled')<0 && t.indexOf('Auto-fill')<0;})()") === true);
+  ok("...but the pull is still in Raw for audit",
+     w.eval("(function(){logView='raw';renderLog();return document.getElementById('logList').textContent.indexOf('Optima sync')>=0;})()") === true);
   /* Leave the log populated and the view on the default for later tests. */
   w.eval("logView = 'day'; renderLog();");
 
@@ -596,6 +608,13 @@ const SEED = `(function(){
      w.eval("(function(){ const cell = document.querySelector('table.rota td.daylabel');" +
             "return !!cell && !!cell.querySelector('.daybench') && cell.classList.contains('zone')" +
             "  && !document.querySelector('table.rota td.tray'); })()") === true);
+
+  /* "This week" hides when there is only one week to be on (both arrows disabled) — 26.08.24. */
+  ok("the 'This week' button is redundant (hidden) exactly when neither week arrow can step",
+     w.eval("(function(){ switchTab('rota'); renderWeek(); paintWeekArrows();" +
+            "const t = document.getElementById('btnToday'); if (!t) return true;" +
+            "const stuck = document.getElementById('btnPrevWeek').disabled && document.getElementById('btnNextWeek').disabled;" +
+            "return t.classList.contains('solo') === stuck; })()") === true);
 
   ok("the unlock password hasher (sha256) is defined", w.eval("typeof sha256 === 'function'"));
   {

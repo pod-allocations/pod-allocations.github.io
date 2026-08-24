@@ -90,6 +90,9 @@ table{border-collapse:collapse;width:100%}
 .pill.expired{background:var(--red-bg);color:var(--red)}
 /* week bar */
 .weekbar{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.8rem}
+/* Only one week to be on (Sun night → Tue 14:00, before next week is written) makes "This week"
+   redundant — you cannot be anywhere else. Hidden then, shown the moment a second week opens. */
+.weekbar #btnToday.solo{display:none}
 .weekbar b{font-size:.95rem;min-width:215px;text-align:center;font-weight:700;letter-spacing:-.01em}
 .navarrow{background:var(--card);border:1px solid var(--line);border-radius:999px;width:36px;height:36px;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:background .12s,color .12s,border-color .12s}
 .navarrow:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -7501,7 +7504,7 @@ function clogGroup(entries, keyFn){ const m = new Map(); (entries || []).forEach
 function clogView(v){
   const today = todayISO();
   if (v === "other"){
-    const other = data.log.filter(e => !clogIsPrint(e) && !clogIsRota(e));
+    const other = data.log.filter(e => !clogIsPrint(e) && !clogIsRota(e) && logKind(e) !== "auto");
     const g = clogGroup(other, logMade);
     const keys = [...g.keys()].sort().reverse();
     if (!keys.length) return '<div class="empty">No admin changes.</div>';
@@ -7510,7 +7513,12 @@ function clogView(v){
       return '<details class="clgrp" open><summary class="clghead"><span class="clglabel">' + clogEsc(logDayLabel(k, today)) + '</span></summary><div class="clgbody">' + rows + '</div></details>';
     }).join("");
   }
-  const rota = data.log.filter(clogIsRota);
+  /* HUMAN CHANGES ONLY IN THE READABLE VIEWS (Ali, 26.08.24: "if it's just the pull that should be
+     happening every 2 hours… I don't need a change log when it happens"). The routine roster pull
+     and every auto-allocation are `kind:"auto"`; they stay in Raw for audit but are kept out of the
+     By-rota-day and By-day-changed narratives, which are about what people did. Whether the sync is
+     running is answered by the freshness row in Needs attention, not by logging every pull. */
+  const rota = data.log.filter(e => clogIsRota(e) && logKind(e) !== "auto");
   if (v === "made"){
     const g = clogGroup(rota, logMade);
     const keys = [...g.keys()].filter(k => k <= today).sort().reverse();
@@ -12029,6 +12037,10 @@ function paintWeekArrows(){
   if (next) { const ok = canStepWeek(1); next.disabled = !ok;
     next.title = ok ? "Next week" : (weekIsWritable(addDays(currentWeekKey, 7))
       ? lookAheadWhy(addDays(currentWeekKey, 7)) : writeGateWhy(addDays(currentWeekKey, 7))); }
+  /* "This week" only earns its place when there is somewhere else to be. When neither arrow can
+     step — the single-week window before next week is written — it is redundant, so it hides. */
+  const today = $("#btnToday");
+  if (today) today.classList.toggle("solo", !canStepWeek(1) && !canStepWeek(-1));
 }
 function stepWeek(n){
   const want = addDays(currentWeekKey, 7 * n);
