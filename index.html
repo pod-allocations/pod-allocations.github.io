@@ -10386,27 +10386,35 @@ function rawAttention(){
       go: () => switchTab("staff") });
   }
 
-    /* The consultant pod allocations arrive as a 4-week sheet dropped on the Import page. When the
-     imported cover is about to run out, say so HERE — before the board quietly starts showing
-     pods with no consultant line. Cover = any day ahead with a consultant picked on any pod. */
+    /* CONSULTANT COVER COMES FROM COVER NOW (Ali, 26.08.24: "thought we'd moved across to getting
+       them from the cover website"). This used to check only day.pods[p].cons — the field the old
+       4-week import wrote — so it nagged to import a sheet even while Cover was feeding cover fine.
+       Now a day ahead counts as covered if the LIVE Cover feed has it OR a legacy sheet did, and
+       the row only fires when Cover actually ANSWERED this session and still has a gap. A Cover that
+       was simply unreachable is a plumbing note on the consultant control, not a reason to nag for a
+       sheet, so it stays quiet. */
   {
     const today = todayISO();
+    const covDays = coverDays();
     let lastCover = null;
     for (const [k, wk] of Object.entries(data.weeks || {})) {
       wk.days.forEach((day, di) => {
         const dISO = addDays(k, di);
-        if (dISO >= today && PODS.some(p => day.pods[p] && day.pods[p].cons)) {
-          if (!lastCover || dISO > lastCover) lastCover = dISO;
-        }
+        if (dISO < today) return;
+        const crec = covDays[dISO];
+        const cslot = crec ? (crec.cur || crec.pods || crec) : null;
+        const covered = (cslot && PODS.some(p => cslot[p])) || PODS.some(p => day.pods[p] && day.pods[p].cons);
+        if (covered && (!lastCover || dISO > lastCover)) lastCover = dISO;
       });
     }
     const daysLeft = lastCover ? Math.round((new Date(lastCover) - new Date(today)) / 86400000) : -1;
-    /* The id carries the date the cover runs out, so importing the next sheet makes this a
-       different row: quieting "cover ends 24 Aug" cannot also quiet "cover ends 21 Sep". */
+    /* The id carries the date cover runs out, so filling the next weeks makes this a different row.
+       Fires on a genuine run-out from EITHER source; because Cover's own feed now counts as cover,
+       a board Cover is feeding never trips it — which is the whole of Ali's complaint. */
     if (daysLeft < 7) out.push({ kind: "cover", id: "cover:" + (lastCover || "none"), n: 1,
-      title: "Consultant cover needs the next Pod Allocations sheet",
-      body: lastCover ? "The imported consultant cover ends " + niceDate(lastCover) + ". Drop the new 4-week sheet on the Import page."
-                      : "No consultant cover imported for the days ahead. Drop the current 4-week Pod Allocations sheet on the Import page.",
+      title: "Consultant cover runs out soon",
+      body: lastCover ? "Cover for the pods ends " + niceDate(lastCover) + ". Fill the next weeks on the Cover site (consultants.salford.icu) — a 4-week Pod Allocations sheet on the Import page still works as a fallback."
+                      : "No consultant cover for the days ahead. Add it on the Cover site (consultants.salford.icu), or drop a 4-week Pod Allocations sheet on the Import page as a fallback.",
       go: () => switchTab("import") });
   }
 
