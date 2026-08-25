@@ -2906,7 +2906,14 @@ async function refreshCover(){
     data.cons.at = new Date().toISOString();
     data.cons.from = "cover";
   }
+  /* Whatever Cover just answered can change what the badge is telling the rota team -- most
+     directly "Consultant cover runs out soon" (rawAttention(), the "cover" row), which reads
+     coverDays() and is blind until this exact fetch resolves. renderWeek() alone leaves the
+     badge showing whatever was true before Cover answered. 26.08.25, Ali: "the rota team badge
+     says 2 even when no notifications waiting" -- proved live: force the pre-answer state, the
+     badge freezes on the stale count, and only an explicit updateTeamBadge() call clears it. */
   renderWeek();
+  updateTeamBadge();
 }
 function pruneOldWeeks(){
   const cutoff = addDays(todayISO(), -rule("retentionDays"));
@@ -6182,7 +6189,13 @@ function renderDayRow(day, di, dateISO, issues){
     }
     /* Consultant rota crosstalk: overnight on-call consultant from the consultant rota.
        TEST SITE ONLY — same rule as the pod corners above. */
-    const crecN = TESTMODE && coverDays()[dateISO];
+    /* Was `TESTMODE && coverDays()[dateISO]` -- left test-only when this was built, while
+       the day-pod corners above (this rule's own model) read coverDays() unconditionally
+       and have shown Cover's answer live all along. 26.08.25, Ali: the night on-call name
+       "should show the on call consultant from the cover site but is currently blank."
+       Proved live: Cover had an on-call name for every night of the visible week, TESTMODE
+       was false, and the gate alone -- not missing data -- kept every one of them blank. */
+    const crecN = coverDays()[dateISO];
     if (crecN && crecN.cur && crecN.cur.oncall && !day.nightCons) {
       night.append(el("div", { class: "conswrap" },
         el("span", { class: "consauto", title: consName(crecN.cur.oncall) + " — on call overnight (16:00–09:00), from Cover" },
