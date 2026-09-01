@@ -8859,29 +8859,6 @@ function autoFillDay(wk, di, wkKey, opts){
     }
   }
 
-  // Phone holder should sit in the busiest pod — they're tied up on calls, so put them where there's
-  // the most cover. Swap them with a long-day person from the biggest pod (keeps every count the same).
-  if (day.phone) {
-    const hPod = PODS.find(p => day.pods[p].assign.some(a => a.id === day.phone));
-    if (hPod) {
-      const busiest = PODS.slice().sort((a,b) => counts[b] - counts[a] || (a==="E") - (b==="E"))[0];
-      if (busiest !== hPod && counts[busiest] > counts[hPod]) {
-        // Least-moved first (see the note by leastMoved): the person who partners the holder's
-        // swap is chosen by the same fairness order as every other repair, not by list position.
-        const swap = day.pods[busiest].assign.filter(a => a.id && a.id !== day.phone && a.shift === "LD" && !wouldBeThird(a.id, hPod))
-          .sort((x, y) => (spare(x.id, hPod) ? 0 : 1) - (spare(y.id, hPod) ? 0 : 1) || leastMoved(x, y))[0];
-        const h = day.pods[hPod].assign.find(a => a.id === day.phone);
-        if (swap && h && !wouldBeThird(day.phone, busiest)) {
-          tryMove(() => {
-            day.pods[hPod].assign = day.pods[hPod].assign.filter(x => x !== h);
-            day.pods[busiest].assign = day.pods[busiest].assign.filter(x => x !== swap);
-            day.pods[hPod].assign.push({ id: swap.id, shift: swap.shift });
-            day.pods[busiest].assign.push({ id: h.id, shift: h.shift });
-          });
-        }
-      }
-    }
-  }
   // --- nights ---
   const nightIds = Object.keys(pool).filter(id => pool[id].kind === "night");
   if (!day.night.phone) {
@@ -8942,6 +8919,38 @@ function autoFillDay(wk, di, wkKey, opts){
     }
   }
 
+  /* MOVED TO HERE, AFTER THE AIRWAY REPAIR — 1 Sept 2026. It used to run BEFORE it, which let
+     the last pass to touch the pods undo it: the airway swap is free to move the phone holder,
+     so it could lift them out of the pod this had just chosen and drop them into a thin one,
+     with nothing left to notice. Measured: at the old position the phone's pod was never two or
+     more working bodies behind the biggest at the moment this ran, yet finished that way on 4.2%
+     of days. Headcounts were identical at both points — only the holder had moved. That is the
+     shape of the Friday a consultant reported.
+     Order matters here and is documented in CLAUDE.md, so this is a deliberate change to it and
+     not a tidy-up: the phone check is now the LAST thing that positions anybody. */
+  // Phone holder should sit in the busiest pod — they're tied up on calls, so put them where there's
+  // the most cover. Swap them with a long-day person from the biggest pod (keeps every count the same).
+  if (day.phone) {
+    const hPod = PODS.find(p => day.pods[p].assign.some(a => a.id === day.phone));
+    if (hPod) {
+      const busiest = PODS.slice().sort((a,b) => counts[b] - counts[a] || (a==="E") - (b==="E"))[0];
+      if (busiest !== hPod && counts[busiest] > counts[hPod]) {
+        // Least-moved first (see the note by leastMoved): the person who partners the holder's
+        // swap is chosen by the same fairness order as every other repair, not by list position.
+        const swap = day.pods[busiest].assign.filter(a => a.id && a.id !== day.phone && a.shift === "LD" && !wouldBeThird(a.id, hPod))
+          .sort((x, y) => (spare(x.id, hPod) ? 0 : 1) - (spare(y.id, hPod) ? 0 : 1) || leastMoved(x, y))[0];
+        const h = day.pods[hPod].assign.find(a => a.id === day.phone);
+        if (swap && h && !wouldBeThird(day.phone, busiest)) {
+          tryMove(() => {
+            day.pods[hPod].assign = day.pods[hPod].assign.filter(x => x !== h);
+            day.pods[busiest].assign = day.pods[busiest].assign.filter(x => x !== swap);
+            day.pods[hPod].assign.push({ id: swap.id, shift: swap.shift });
+            day.pods[busiest].assign.push({ id: h.id, shift: h.shift });
+          });
+        }
+      }
+    }
+  }
   normalizeNight(day);
   normalizePods(day);
   const nightAssigned = new Set([...day.night.AB, ...day.night.CDE, ...(day.night.E || [])]);
