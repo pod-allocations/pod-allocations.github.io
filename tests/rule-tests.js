@@ -1396,6 +1396,47 @@ async function main() {
   }
 
   // ---- summary --------------------------------------------------------------------------
+  /* PLACED LAST, AND THAT IS NOT COSMETIC. This probe draws from the same seeded RNG as every
+     other test, so sitting it near the top shifted the stream for everything after it — the
+     twelve-month simulation returned different pod sizes and a different neuro percentage purely
+     because this existed. It was briefly used to compare a change against a baseline and the two
+     runs were not comparable at all (1 Sept 2026). Anything added to this suite in future goes at
+     the END unless it deliberately needs the earlier stream. */
+  /* THE PHONE POD IS NOT LEFT SHORT OF WORKING BODIES -------------------------------------
+     Ali, 1 Sept 2026, relaying a consultant who found Pod C with two people AND the phone while A
+     and D had three. The holder is tied up on calls, so that pod was working one body against
+     three. Measured in WORKING bodies — headcount minus one for the pod holding the phone — which
+     is the only way the complaint reads as a number at all.
+     Randomised rather than the single real day, because that day is now fixed by name and a test
+     which only knew that day would go green on a rota with the same fault everywhere else. The
+     bound is a rate, not zero: on a thin day there is genuinely nobody to send.
+     THREE THOUSAND DAYS, NOT FOUR HUNDRED. The event runs at a few per cent, and 400 samples of a
+     4% event swing about two points either way on the draw alone — enough that the same build
+     passed or failed depending on where in the seeded stream this sat. A bound that noisy is not a
+     test, it is a coin. Measured 1 Sept 2026, the day it caught me out. */
+  console.log("Phone pod staffing");
+  {
+    let thin = 0, days = 0, worst = "";
+    for (let t = 0; t < 3000; t++) {
+      const n = 10 + rnd(8);
+      const ppl = Array.from({ length: n }, () => ({ shift: _rng() < 0.6 ? "LD" : "SD",
+        phoneHolder: _rng() < 0.5, neuro: _rng() < 0.3, airway: _rng() < 0.25 }));
+      const { wk, day } = seedDay(api, rnd(7), ppl);
+      api.autoFillDay(wk, wk.days.indexOf(day));
+      if (!day.phone) continue;
+      const c = podCounts(api, day);
+      const hPod = P.find(p => day.pods[p].assign.some(a => a.id === day.phone));
+      if (!hPod) continue;
+      days++;
+      const working = q => c[q] - (q === hPod ? 1 : 0);
+      const gap = Math.max(...P.filter(q => q !== hPod).map(working)) - working(hPod);
+      if (gap >= 2) { thin++; if (!worst) worst = JSON.stringify(c) + " phone on " + hPod; }
+    }
+    const pct = days ? Math.round(thin / days * 1000) / 10 : 0;
+    ok("the phone pod is rarely two or more working bodies behind (" + days + " days)",
+       days > 0 && thin / days <= 0.03, thin + "/" + days + " = " + pct + "%" + (worst ? ", e.g. " + worst : ""));
+  }
+
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
   if (errs.length) console.log("(page errors during load: " + errs.length + ")");
   if (fail) { console.log("\nFailures:\n - " + failures.join("\n - ")); process.exit(1); }
