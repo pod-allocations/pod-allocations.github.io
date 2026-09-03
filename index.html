@@ -10509,9 +10509,18 @@ function logSeenAt(){
 /* The badge counts what NOBODY HAS DEALT WITH. A greyed row is still on the page — that is the
    point of it — but it must not keep the number up, or pressing Sorted would appear to do nothing. */
 function attentionCount(){
-  const seen = logSeenAt();
-  const freshLog = data ? (data.log || []).filter(x => x && x.t > seen).length : 0;
-  return attentionItems().reduce((n, x) => n + (x.done ? 0 : x.n), 0) + unreadFeedback() + (freshLog ? 1 : 0);
+  /* THE CHANGE LOG NO LONGER COUNTS — 1 Sept 2026 (Ali: "dont need th +1 for change log").
+     This used to add 1 whenever anything had been written to the log since somebody last opened
+     it. The sync writes to the log every night at 04:30, so that +1 came back every morning and
+     the badge could never sit at zero for longer than a day — it read 1 before anyone had done
+     anything, and 2 with a single piece of feedback waiting, which is what he saw. A badge that is
+     always on is a badge people stop reading, and this file already has a rule about warnings that
+     always fire.
+     The comment above says the badge counts what NOBODY HAS DEALT WITH. A sync doing its job
+     overnight is not something anyone has to deal with — it is activity, not a task. The Log tab
+     keeps its own count of fresh entries (tabLogCount, set in updateTeamBadge), so the information
+     is still there for anyone who opens the drawer; it just no longer summons them. */
+  return attentionItems().reduce((n, x) => n + (x.done ? 0 : x.n), 0) + unreadFeedback();
 }
 function updateTeamBadge(){
   const n = data ? attentionCount() : 0;
