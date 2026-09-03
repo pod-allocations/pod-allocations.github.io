@@ -5291,7 +5291,33 @@ function feedbackCards(list, cap){
           ";font-size:.68rem;font-weight:700;padding:.1rem .5rem;border-radius:999px" }, f.kind) : null,
         el("span", { style: "font-size:.72rem;color:var(--muted)" },
           new Date(f.t).toLocaleString("en-GB") + " · " + (f.name || "anonymous"))),
-      el("div", { style: "font-size:.92rem" }, f.msg)));
+      el("div", { style: "font-size:.92rem" }, f.msg),
+      /* ACKNOWLEDGE IS A BUTTON NOW — 1 Sept 2026 (Ali: "have a physical acknowelge button and then
+         grey out when clicked"). It used to happen by itself: opening the Feedback tab marked
+         every message read for everybody. That cleared the badge, which is what it was for, but it
+         meant you could not read one message, leave the other for later, and still see that one
+         was outstanding — the list went grey in a block whether you had dealt with it or not.
+         One message, one button, one decision. The card already greys itself on `read`, so the
+         feedback is immediate and needs no new styling. Who pressed it is recorded on the message
+         rather than in the change log: the log is for changes to the rota (CLOG_ROTA), and
+         somebody reading their post is not one.
+         Behind edit mode and saved at once, exactly like the Check button on the staff list — this
+         writes to the shared file, so it takes the edit lock rather than inventing a second way to
+         write, which is how this project has broken itself before. */
+      f.read
+        ? el("div", { style: "margin-top:.45rem;font-size:.72rem;color:var(--muted)" },
+            "\u2713 Acknowledged" + (f.readBy ? " by " + f.readBy : "") +
+            (f.readAt ? " \u00b7 " + new Date(f.readAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""))
+        : el("div", { style: "margin-top:.5rem" },
+            el("button", { class: "btn sec", style: "font-size:.74rem;padding:.3rem .7rem",
+              title: "Mark this one as dealt with — it greys out and comes off the badge",
+              onclick: async () => {
+                if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+                f.read = true; f.readBy = editorName(); f.readAt = new Date().toISOString();
+                try { const local = readFeedbackLocal(); local.add(feedbackKey(f));
+                      store.set("fbRead", JSON.stringify([...local].slice(-400))); } catch(e){}
+                markDirty(); saveFile(true); renderFeedback(); updateTeamBadge();
+              } }, "Acknowledge"))));
   }
   return wrap;
 }
@@ -6630,6 +6656,11 @@ function readFeedbackLocal(){
 }
 function feedbackKey(f){ return (f && (f.t || "")) + "|" + (f && (f.name || "")); }
 function isFeedbackRead(f){ return !!(f && f.read) || readFeedbackLocal().has(feedbackKey(f)); }
+/* NO LONGER CALLED — 1 Sept 2026. Opening the Feedback tab used to run this and mark every
+   message read for everybody at once; each message now carries its own Acknowledge button. Kept
+   rather than removed because it is the one place that knows how to write the shared mark and this
+   browser's local one together, and it is what a "mark all" would be built from. If you are here
+   because the badge is not clearing, the per-message handler in feedbackCards is what to look at. */
 function markFeedbackRead(){
   const fb = (data && data.feedback) || [];
   if (!fb.some(f => !isFeedbackRead(f))) return;
@@ -8149,7 +8180,11 @@ function switchTab(tab){
   if (tab === "log") renderLogGate();
   if (tab === "settings") renderSettingsGate();
   if (tab === "overrides") renderOverridesGate();
-  if (tab === "feedback") { renderFeedback(); markFeedbackRead(); }
+  /* Opening the tab NO LONGER marks everything read — each message has its own Acknowledge button
+     (1 Sept 2026). markFeedbackRead() below is left in place but is now called from nowhere; it is
+     kept rather than deleted because it is the only thing that knows how to write the shared and
+     local read marks together, and whatever replaces bulk-acknowledge will want it. */
+  if (tab === "feedback") renderFeedback();
   /* PAST THE SHIELD IS EDITING (Ali, 12 Aug: "if somebody logs into the rota team bit past the
      shield it should enter edit mode and block others from saving until theyve stopped using").
      The rota-team password and edit mode were two separate ideas, and the gap between them is
