@@ -1447,6 +1447,7 @@ async function main() {
      on the day the suite happens to run. */
   console.log("Rota-team badge");
   {
+    const SRC = fs.readFileSync(APP, "utf8");
     const d = api.data;
     d.feedback = [];
     d.log = d.log || [];
@@ -1460,6 +1461,15 @@ async function main() {
     d.feedback = [{ t: new Date().toISOString(), who: "A tester", msg: "something to read" }];
     ok("…but a piece of unread feedback still does", api.attentionCount() === before + 1,
        before + " then " + api.attentionCount());
+    /* ACKNOWLEDGE IS PER MESSAGE, NOT PER VISIT — 1 Sept 2026. Opening the tab used to mark the lot
+       read, so you could not leave one outstanding. Asserted on the source rather than by clicking,
+       because the button lives inside a card builder that needs a rendered page: what matters is
+       that the automatic call is gone and that each card gets its own control. */
+    ok("opening the Feedback tab no longer marks everything read",
+       /if \(tab === "feedback"\) renderFeedback\(\);/.test(SRC) &&
+       !/renderFeedback\(\); markFeedbackRead\(\);/.test(SRC));
+    ok("…each message carries its own Acknowledge button", /}, "Acknowledge"\)\)\)\);/.test(SRC));
+    ok("…and it records who pressed it", /f\.readBy = editorName\(\);/.test(SRC));
   }
 
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
