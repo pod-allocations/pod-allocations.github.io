@@ -74,6 +74,7 @@ function loadApp() {
     mondayOf, todayISO, addDays, poolFor, staffById, canHoldPhone, isPhoneShadow,
     isPhoneSupervisor, isActiveOn, currentAssignShift, inFairfield, addToFairfield,
     fghMembers, countsInNumbers, poolState, removeAssign, attentionItems, srDetectGhosts, srRemoveFromDay,
+    attentionCount: typeof attentionCount !== "undefined" ? attentionCount : null,
     planDayFix: typeof planDayFix !== "undefined" ? planDayFix : null,
     skillHeldBack: typeof skillHeldBack !== "undefined" ? skillHeldBack : null,
     migratePendingSkills: typeof migratePendingSkills !== "undefined" ? migratePendingSkills : null,
@@ -1435,6 +1436,30 @@ async function main() {
     const pct = days ? Math.round(thin / days * 1000) / 10 : 0;
     ok("the phone pod is rarely two or more working bodies behind (" + days + " days)",
        days > 0 && thin / days <= 0.03, thin + "/" + days + " = " + pct + "%" + (worst ? ", e.g. " + worst : ""));
+  }
+
+  /* THE BADGE COUNTS TASKS, NOT ACTIVITY -----------------------------------------------------
+     Ali, 1 Sept 2026: the rota-team badge "hold[s] a persistent 2 - there was one bit of feedback
+     waiting". It was one unread message plus a standing +1 for "the change log has moved since
+     anyone last looked" — and the sync writes to the log every night, so that +1 returned every
+     morning and the badge could never rest at zero. Asserted as a DELTA rather than an absolute,
+     because what matters is that writing to the log changes nothing, whatever else is outstanding
+     on the day the suite happens to run. */
+  console.log("Rota-team badge");
+  {
+    const d = api.data;
+    d.feedback = [];
+    d.log = d.log || [];
+    d.logSeen = "2000-01-01T00:00:00.000Z";
+    const before = api.attentionCount();
+    d.log.unshift({ t: new Date().toISOString(), who: "allocate sync", kind: "auto", msg: "the sync ran overnight" });
+    const after = api.attentionCount();
+    ok("the nightly sync writing to the change log does not raise the badge",
+       api.attentionCount !== null && after === before, before + " then " + after);
+    /* And the half that SHOULD count still does, or this would pass on a badge that counts nothing. */
+    d.feedback = [{ t: new Date().toISOString(), who: "A tester", msg: "something to read" }];
+    ok("…but a piece of unread feedback still does", api.attentionCount() === before + 1,
+       before + " then " + api.attentionCount());
   }
 
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
