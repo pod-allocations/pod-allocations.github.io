@@ -541,6 +541,65 @@ async function main() {
     wk.roster = null; wk.days[1] = api.blankDay();
   }
 
+  /* 8g) STANDING ON THE BOARD WHILE OPTIMA HAS THEM OFF -------------------------------------
+     Mahmoud Gaballah, Mon 7 Sept 2026. Allocated to Pod D on a Salford short day, then moved by
+     Optima to "FGH LD". The Fairfield column is computed live from the roster so it followed at
+     once; the pod chip is stored, so it stayed. He was on the board twice and every check on the
+     day passed, because the day/night pair only ever compared two of the three roster states.
+     The last assertion is the one that keeps this honest: a hand-added extra is a decision, and
+     warning about it would be the daily housekeeping noise this suite exists to keep out. */
+  console.log("On the board while Optima has them off");
+  {
+    const wkKey = api.mondayOf(api.todayISO());
+    api.setWeek(wkKey);
+    const wk = api.getWeek(wkKey);
+    wk.days[1] = api.blankDay();
+    const day = wk.days[1];
+    const dISO = api.addDays(wkKey, 1);
+
+    const atFgh  = mkStaff(api, { name: "Away At Fairfield", fgh: true });
+    const offDay = mkStaff(api, { name: "Rostered Off Today" });
+    const locum  = mkStaff(api, { name: "Came In On A Day Off" });
+    wk.roster = { [dISO]: {
+      [atFgh.id]:  { kind: "off", code: "FGH LD" },
+      [offDay.id]: { kind: "off", code: "" },
+      [locum.id]:  { kind: "off", code: "" }
+    } };
+    day.pods.A.assign.push({ id: atFgh.id, shift: "SD" });
+    day.pods.B.assign.push({ id: offDay.id, shift: "SD" });
+    day.pods.C.assign.push({ id: locum.id, shift: "SD" });
+    day.extras.push({ id: locum.id, kind: "day", code: "SD" });   // added by hand, deliberately
+
+    const msgs = api.checkDay(day, dISO, 1, wk).map(i => i.msg).join(" | ");
+    ok("someone in a pod whom Optima has at Fairfield is flagged",
+      new RegExp(atFgh.name + " is on the board but Optima has them off").test(msgs), msgs);
+    ok("...and the message says where they actually are",
+      /Away At Fairfield[^|]*they are at Fairfield/.test(msgs), msgs);
+    ok("...and it is amber, not red — the day is out of date, not broken",
+      api.checkDay(day, dISO, 1, wk).filter(i => /is on the board but Optima has them off/.test(i.msg))
+        .every(i => !i.hard), msgs);
+    ok("someone in a pod whom Optima simply has off is flagged too",
+      new RegExp(offDay.name + " is on the board but Optima has them off").test(msgs), msgs);
+    ok("...but someone added by hand as an extra is left alone",
+      !new RegExp(locum.name + " is on the board but Optima has them off").test(msgs), msgs);
+
+    // Night team, same rule.
+    const nightOff = mkStaff(api, { name: "Night Off At Fairfield", nights: true, fgh: true });
+    wk.roster[dISO][nightOff.id] = { kind: "off", code: "FGH Night." };
+    day.night.AB.push(nightOff.id);
+    ok("...and it covers the night team as well as the pods",
+      new RegExp(nightOff.name + " is on the board but Optima has them off")
+        .test(api.checkDay(day, dISO, 1, wk).map(i => i.msg).join(" | ")));
+
+    // Take them out and the flag goes — which is the fix the board offers.
+    day.pods.A.assign = day.pods.A.assign.filter(a => a.id !== atFgh.id);
+    ok("...and taking them out of the pod clears it",
+      !new RegExp(atFgh.name + " is on the board but Optima has them off")
+        .test(api.checkDay(day, dISO, 1, wk).map(i => i.msg).join(" | ")));
+
+    wk.roster = null; wk.days[1] = api.blankDay();
+  }
+
   // 8e) Ghost detection: consultants are not Optima people ----------------------------------
   console.log("Optima ghost check");
   {
