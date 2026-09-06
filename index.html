@@ -68,7 +68,30 @@ body.viewmode #summaryBanner{display:none}
 body:not(.demo) .demopill{display:none}
 body:not(.demo) #btnResetDemo{display:none}
 #saveState.saved{color:var(--green);background:var(--green-bg)} #saveState.unsaved{color:var(--red);background:var(--red-bg)} #saveState.saving{color:var(--amber);background:var(--amber-bg)}
-main{padding:.6rem 1.6rem 4rem;max-width:1550px}
+/* FITTING THE BOARD, AND WHY THE OBVIOUS FIX WAS THE WRONG ONE.
+   `max-width:1550px` sat here from the first build, and it looked like the reason the Fairfield
+   column fell off the right. It was not. Measured on the live page at Ali's own window, 6 Sept:
+
+       window inner        1440        (screen 1512 x 982 logical, Retina — big in pixels,
+       main                1362         1512 POINTS to CSS, which is what the layout gets)
+       .rota-wrap client   1310
+       table natural       1584        134 + 195 + 226 + 195 + 206 + 194 + 244 + 189
+       hidden               274
+
+   1362 never reached 1550, so the cap was not binding and removing it recovered nineteen pixels of
+   padding. The table simply needed 1584 and the window had 1310. Eight columns of full names at
+   `white-space:nowrap` set that 1584 from the inside: the widest chip in a column IS the column.
+
+   Shrinking type to close a 274px gap meant going to a .64rem chip and it STILL did not fit, and a
+   name too small to read at 05:45 is not a fix. The space the board actually has is vertical — the
+   day rows are mostly white. So let a long name wrap inside its chip instead. Measured after:
+   hidden 0, table 1310, and the whole week grew 44px taller. Nothing truncated, nothing shrunk.
+   Scoped to chips inside the rota table so the tray, the bench and the mobile cards are untouched.
+
+   The cap goes too — on a genuinely wide external monitor it was still capping the board at 1550
+   for no reason — but it is the second line here that does the work. */
+main{padding:.6rem 1rem 4rem}
+table.rota td .chip{white-space:normal}
 .card{background:var(--card);border:0.5px solid var(--line);border-radius:18px;padding:1.1rem 1.3rem;margin-bottom:1rem}
 h2{font-size:.72rem;margin:.1rem 0 .8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
 button.btn{background:var(--ink);color:#fff;border:0;border-radius:12px;padding:.5rem 1rem;font-weight:600;font-size:.84rem;cursor:pointer;font-family:inherit}
@@ -184,7 +207,11 @@ td.daylabel .d{font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
    day and had simply been drawn off the board. */
 td.nighttd{position:relative}
 td.nighttd .conswrap{position:absolute;top:.5rem;right:.55rem;left:auto;margin:0;min-height:0;max-width:62%;justify-content:flex-end;z-index:2}
-td.nighttd .conswrap .conssel,td.nighttd .conswrap .consauto{font-size:.6rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:right}
+/* The night column's on-call consultant was the only consultant on the board in capitals, so a row
+   read "Harris ... Harris ... HARRIS" and the shouted one looked like a different kind of thing.
+   It is the same fact as the pod consultant above it. Weight and tracking stay — it still has to
+   hold its own against the pod headers — but the caps go. Ali, 6 Sept. */
+td.nighttd .conswrap .conssel,td.nighttd .conswrap .consauto{font-size:.6rem;font-weight:800;letter-spacing:.02em;text-transform:none;color:var(--muted);text-align:right}
 td.nighttd .subhead:first-of-type{margin-top:0;padding-right:6.5rem}
 .zone.nzone{min-height:46px;border-radius:10px;padding:.2rem;transition:background .12s}
 body:not(.viewmode) .nzone{outline:1px dashed transparent;outline-offset:-2px}
@@ -6393,6 +6420,31 @@ function checkDay(day, dateISO, di, wk){
       if (rk[id] && rk[id].kind === "night")
         S(name(id) + " is in a pod but Optima has them on nights (" + (rk[id].code || "night") +
           ") — they need moving to the night team.");
+  }
+  /* STANDING SOMEWHERE WHEN OPTIMA HAS THEM NOWHERE. The pair above catch a day/night mix-up,
+     because both sides are shifts and each was checked against the other. Nobody ever checked the
+     third state: rostered OFF. Mahmoud Gaballah, Mon 7 Sept 2026 — allocated to Pod D while Optima
+     had him on a Salford short day, then moved to "FGH LD". The Fairfield column is computed live
+     from the roster, so he appeared there the moment it changed; the pod chip is stored, so it
+     stayed put. He was on the board twice, every check on the day passed, and it took a person
+     noticing (Ali, 6 Sept). One occurrence in 58 weeks — rare, and invisible precisely because it
+     is rare.
+     poolFor() has always excluded kind "off", so a re-run or a sync drops them by itself; this is
+     the backstop for the window before that, and it is what makes the state explainable rather
+     than merely wrong. Soft, not hard: the day is not broken, it is out of date.
+     Anyone added by hand as an extra is skipped — putting somebody on who Optima has off is a
+     deliberate act, not a stale chip, and flagging it would be the "housekeeping every day" noise
+     that got the nights tick-check narrowed on 31 Jul. */
+  if (rk) {
+    const plOff = poolFor(day, dateISO);
+    for (const id of new Set([...dayIds, ...nightIds])) {
+      if (!rk[id] || rk[id].kind !== "off") continue;
+      if (plOff[id] && plOff[id].extra) continue;
+      const code = rk[id].code || "";
+      S(name(id) + " is on the board but Optima has them off" + (code ? " (" + code + ")" : "") +
+        (/^FGH/i.test(code) ? " — they are at Fairfield, so take them out of the pod."
+                            : " — they need taking off the day."));
+    }
   }
   const podOccurrences = {};
   for (const p of PODS) for (const a of day.pods[p].assign) if (a.id) (podOccurrences[a.id] = podOccurrences[a.id] || []).push(p);
