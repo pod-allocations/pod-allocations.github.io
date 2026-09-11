@@ -394,13 +394,25 @@ const SEED = `(function(){
   {
     const src = fs.readFileSync(PAGE, "utf8");
     const at = src.indexOf("async function nameLocum");
-    const fn = src.slice(at, at + 2800);
+    const fn = src.slice(at, at + 6000);   // the comment block grew, 26.09.11
     ok("naming a locum searches the whole staff list, not only other locums",
        at > 0 && !/find\(x => x\.adhoc && \(x\.name/.test(fn));
     ok("...and matches an alias the person already carries",
        /aliases \|\| \[\]\)\.some\(a => nameKey\(a\) === wanted\)/.test(fn));
     ok("...and only creates a record when nobody of that name exists",
        fn.indexOf("data.staff.push(named)") > fn.indexOf("} else {"));
+    /* LOOSELY, NOT JUST EXACTLY. Ali, 26.09.11: "if matches or similar then
+       assume those skills... only show if new". The three passes have to be the
+       SAME comparisons the duplicate warning uses, or a name one accepts is a
+       name the other complains about — which is how the hollow records began. */
+    ok("...matching the same words in a different order",
+       /nameWords\(x\.name\) === nameWords\(nm\)/.test(fn));
+    ok("...and a name within two letters",
+       /nameDistance\(x\.name, nm\) <= 2/.test(fn));
+    ok("...and somebody already known is not offered as a new person",
+       /named\.triaged = true/.test(fn));
+    ok("...while zlocum placeholders are never matched against",
+       /zlocum\/i\.test\(x\.name/.test(fn));
     /* And the warning has to tell the two records apart. It read "X and X look like the same
        person", which is true and unusable. */
     ok("the duplicate warning does not name the same person twice",

@@ -11909,14 +11909,43 @@ async function nameLocum(s, di){
      Now: the real person is found first, by name or by an alias they already carry, and the
      placeholder name is remembered as an alias so the next import matches them too. A new record
      is created only when nobody of that name exists at all — which is what a genuine locum is. */
+  /* AND MATCH LOOSELY, NOT JUST EXACTLY. Ali, 26.09.11: "when locum has name
+     check if matches currently on unit first. if matches or similar then assume
+     those skills. if matches locum then youre sorted, only show if new etc."
+
+     Three passes, in falling confidence, and the SAME comparisons the duplicate
+     warning uses — so a name this accepts can never be a name that warning then
+     complains about. That was the whole failure mode: one place matched on
+     exact text, another matched on near-enough, and the gap between them was
+     where hollow records were born.
+
+       1. exact name, or an alias they already carry
+       2. the same words in a different order — "Latham Cathryn"
+       3. within two letters — a typo, or Cathy for Cathryn
+
+     A match takes their record and therefore their grade and skills, which is
+     the point: a locum slot filled by somebody the unit already knows is not a
+     stranger, and the allocator should treat them as what they are. The typed
+     spelling is kept as an alias so the next import lands on them directly.
+
+     Anything that matches nothing is genuinely new, gets its own record, and is
+     the only kind that should appear on the new-people list. */
   const wanted = nameKey(nm);
-  let named = (data.staff || []).find(x => x.active !== false && !x.placeholder &&
-    (nameKey(x.name) === wanted || (x.aliases || []).some(a => nameKey(a) === wanted)));
+  const pool = (data.staff || []).filter(x => x.active !== false && !x.placeholder
+                                           && !/zlocum/i.test(x.name || ""));
+  const hasAlias = x => (x.aliases || []).some(a => nameKey(a) === wanted);
+  let named = pool.find(x => nameKey(x.name) === wanted || hasAlias(x))
+           || pool.find(x => nameWords(x.name) === nameWords(nm))
+           || pool.find(x => nameDistance(x.name, nm) <= 2);
   if (named){
-    if (nameKey(named.name) !== wanted){
+    /* Remember the spelling that was typed, so the next import matches without
+       having to be near-enough all over again. */
+    if (nameKey(named.name) !== wanted && !hasAlias(named)){
       named.aliases = named.aliases || [];
-      if (!named.aliases.some(a => nameKey(a) === wanted)) named.aliases.push(nm);
+      named.aliases.push(nm);
     }
+    /* Somebody already known is not a new person, whatever their record says. */
+    named.triaged = true;
   } else {
     const slug = "loc-" + (nm.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "x");
     named = (data.staff || []).find(x => x.id === slug);
