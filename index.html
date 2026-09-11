@@ -1165,20 +1165,21 @@ pre.rawlog{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monos
 
    Asked by SHAPE, not width: a phone on its side is not wide, it is short.
    ============================================================================ */
-@media (orientation:landscape) and (max-height:600px){
-  aside{display:none !important}
-  body.navopen aside{display:flex !important}   /* unless it was opened on purpose */
-
-  #topbar{padding:.2rem .6rem !important;min-height:0 !important}
-  #topbar h1{font-size:.82rem !important}
-  main{padding:.2rem .6rem !important}
-
-  /* The rows are the whole game: seven days at full height do not fit 393px. */
-  .rota-wrap{overflow:visible !important;max-height:none !important}
-  table.rota td,table.rota th{padding:4px 8px !important}
-  table.rota td{font-size:13px !important}
-  table.rota th{font-size:9px !important;padding:2px 8px !important}
-}
+/* DRIVEN BY A CLASS, NOT A MEDIA QUERY — 11 Sept, second attempt. The media
+   query was correct and parsed and still did not fire on Ali's iPhone, so the
+   page measures itself instead: wider than it is tall, and short. Arithmetic,
+   not feature detection. */
+body.sideways aside{display:none !important}
+body.sideways.navopen aside{display:flex !important}   /* unless opened on purpose */
+body.sideways #topbar{padding:.2rem .6rem !important;min-height:0 !important}
+body.sideways #topbar h1{font-size:.82rem !important}
+body.sideways main{padding:.2rem .6rem !important}
+/* A resident day is a whole team per pod, so this buys back what it can — the
+   week still scrolls here, unlike Cover where a pod is one name. */
+body.sideways .rota-wrap{overflow:visible !important;max-height:none !important}
+body.sideways table.rota td,body.sideways table.rota th{padding:4px 8px !important}
+body.sideways table.rota td{font-size:13px !important}
+body.sideways table.rota th{font-size:9px !important;padding:2px 8px !important}
 
 </style>
 
@@ -12347,6 +12348,21 @@ addEventListener("resize", setStick);
 addEventListener("load", setStick);
 try { new ResizeObserver(setStick).observe(document.getElementById("topbar")); } catch(e){}
 startUp();
+</script>
+<script>
+/* SIDEWAYS ON A PHONE. iOS fires orientationchange before the new dimensions
+   are readable, hence the delayed re-check. */
+(function(){
+  function set(){
+    document.body.classList.toggle("sideways",
+      window.innerWidth > window.innerHeight && window.innerHeight <= 600);
+  }
+  addEventListener("resize", set);
+  addEventListener("orientationchange", function(){ setTimeout(set, 250); });
+  if (document.readyState === "loading") addEventListener("DOMContentLoaded", set);
+  else set();
+  setTimeout(set, 400);
+})();
 </script>
 </body>
 </html>
