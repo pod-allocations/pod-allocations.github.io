@@ -383,6 +383,30 @@ const SEED = `(function(){
 
   /* Anything the page depends on being SEEN has to be a shape we ship. The funnel was the
      character ⌷ and rendered as an empty box on every column. */
+  /* ---- NAMING A LOCUM MUST NOT MINT A SECOND COPY OF A REAL PERSON -----------------------
+     Ali, 26.09.11, looking at two Cathryn Lathams: "what on earth has gone on here?"
+
+     `nameLocum` searched `x.adhoc && name matches` — locum records only — so a registrar already
+     on the staff list could never be found, and the code fell through to cloning the zlocum
+     placeholder: a second record, same name, adhoc, no grade, no skills, silently ignored by the
+     allocator. Source-level assertions, because the flow is a prompt and because what went wrong
+     was one clause in one lookup. */
+  {
+    const src = fs.readFileSync(PAGE, "utf8");
+    const at = src.indexOf("async function nameLocum");
+    const fn = src.slice(at, at + 2800);
+    ok("naming a locum searches the whole staff list, not only other locums",
+       at > 0 && !/find\(x => x\.adhoc && \(x\.name/.test(fn));
+    ok("...and matches an alias the person already carries",
+       /aliases \|\| \[\]\)\.some\(a => nameKey\(a\) === wanted\)/.test(fn));
+    ok("...and only creates a record when nobody of that name exists",
+       fn.indexOf("data.staff.push(named)") > fn.indexOf("} else {"));
+    /* And the warning has to tell the two records apart. It read "X and X look like the same
+       person", which is true and unusable. */
+    ok("the duplicate warning does not name the same person twice",
+       /There are two " \+ d\.keep\.name \+ "s/.test(src));
+  }
+
   ok("no missing-glyph characters in the page source",
      !/[\u2300-\u23FF\u2B00-\u2BFF]/.test(
        fs.readFileSync(PAGE, "utf8").replace(/\/\*[\s\S]*?\*\//g, "")));

@@ -10462,13 +10462,25 @@ function rawAttention(){
      it is wrong while it stays true. */
   for (const d of suspectedDuplicates()) {
     out.push({ kind: "dup", id: "dup:" + d.keep.id + ":" + d.dup.id, n: 1,
-      title: d.dup.name + " and " + d.keep.name + " look like the same person",
-      body: "They are " + d.why + ". \u201c" + d.dup.name + "\u201d came from the Optima import as a "
-          + "one-off locum, so it carries no grade and no skills — anything set against "
-          + d.keep.name + " is being ignored when the rota is worked out.",
-      actLabel: "Merge them",
+      /* THE TITLE HAS TO TELL THEM APART. When the two records carry the identical name this
+         read "Cathryn Latham and Cathryn Latham look like the same person", which is true and
+         useless — you cannot tell which record is which, or which one you are keeping. So an
+         exact match says the name once and describes the copy by what is WRONG with it. */
+      title: d.why === "the same name"
+        ? "There are two " + d.keep.name + "s"
+        : d.dup.name + " and " + d.keep.name + " look like the same person",
+      body: (d.why === "the same name"
+          ? "One is a locum record with no grade and no skills, so the allocator ignores it."
+          : "They are " + d.why + ", and one is a locum record with no grade or skills.")
+          + " Merging keeps the real record and moves everything across.",
+      /* ONE PRESS FOR AN EXACT NAME. Ali, 26.09.11: "if its the same auto merge and then have a
+         button for agree". Merging deletes a staff record and nothing here deletes without being
+         asked, so it is not silent — but there is nothing to decide when the names are identical,
+         so the second dialog goes and Agree does it. */
+      actLabel: d.why === "the same name" ? "Agree" : "Merge them",
       act: async () => {
-        if (!(await uiConfirm("\u201c" + d.dup.name + "\u201d becomes an alias of " + d.keep.name
+        if (d.why !== "the same name" &&
+            !(await uiConfirm("\u201c" + d.dup.name + "\u201d becomes an alias of " + d.keep.name
             + ", every shift moves across, and the duplicate record goes. The rota itself does not change.",
             { title: "Merge into " + d.keep.name + "?", okLabel: "Merge" }))) return;
         if (!EDIT_MODE && !(await enterEdit())) return;
@@ -11829,8 +11841,27 @@ async function nameLocum(s, di){
   const nm = who.trim();
   data.locumMap = data.locumMap || {};
   data.locumMap[date + "|" + s.name] = nm;
-  let named = (data.staff || []).find(x => x.adhoc && (x.name || "").toLowerCase() === nm.toLowerCase());
-  if (!named){
+  /* LOOK AT THE WHOLE STAFF LIST, NOT JUST THE LOCUMS. Ali, 26.09.11, on finding two
+     Cathryn Lathams: "what on earth has gone on here?"
+
+     This searched `x.adhoc && name matches` — locum records only — so it could never find a
+     registrar who was already on the staff list, and fell through to cloning the zlocum
+     PLACEHOLDER. The clone inherited adhoc:true, no grade and no skills, which meant typing a
+     real person's name into a locum slot minted a hollow second copy of them that the allocator
+     then ignored. Every duplicate the board has complained about was made this way.
+
+     Now: the real person is found first, by name or by an alias they already carry, and the
+     placeholder name is remembered as an alias so the next import matches them too. A new record
+     is created only when nobody of that name exists at all — which is what a genuine locum is. */
+  const wanted = nameKey(nm);
+  let named = (data.staff || []).find(x => x.active !== false && !x.placeholder &&
+    (nameKey(x.name) === wanted || (x.aliases || []).some(a => nameKey(a) === wanted)));
+  if (named){
+    if (nameKey(named.name) !== wanted){
+      named.aliases = named.aliases || [];
+      if (!named.aliases.some(a => nameKey(a) === wanted)) named.aliases.push(nm);
+    }
+  } else {
     const slug = "loc-" + (nm.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "x");
     named = (data.staff || []).find(x => x.id === slug);
     if (!named){
