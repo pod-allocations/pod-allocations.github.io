@@ -8038,6 +8038,33 @@ table{width:100%;border-collapse:collapse}td{vertical-align:top;padding:8px;bord
 .sh{display:inline-block;background:#d8dde0;border-radius:3px;font-size:9px;font-weight:800;padding:1px 3px;vertical-align:middle}.aw{color:#005EB8;font-weight:700}
 .note{font-size:11px;color:#4c6272;padding:4px 14px 20px}
 @media print{.day{page-break-inside:avoid}}
+/* ============================================================================
+   SIDEWAYS ON A PHONE, THE WHOLE WEEK — 11 September 2026
+   Ali: "if go into landscape view you see whole week at a time not just one day
+   (for both boards)". This is the resident board's half; Cover carries the
+   same block.
+
+   The board's phone breakpoint is 820px and a standard iPhone sideways is 852,
+   so it is ALREADY drawing the week table rather than the one-day cards — what
+   it is not doing is giving the week the screen. The sidebar alone is a fifth
+   of it, on a screen only ~393 tall.
+
+   Asked by SHAPE, not width: a phone on its side is not wide, it is short.
+   ============================================================================ */
+@media (orientation:landscape) and (max-height:600px){
+  aside{display:none !important}
+  body.navopen aside{display:flex !important}   /* unless it was opened on purpose */
+
+  #topbar{padding:.2rem .6rem !important;min-height:0 !important}
+  #topbar h1{font-size:.82rem !important}
+  main{padding:.2rem .6rem !important}
+
+  /* The rows are the whole game: seven days at full height do not fit 393px. */
+  .rota-wrap{overflow:visible !important;max-height:none !important}
+  table.rota td,table.rota th{padding:4px 8px !important}
+  table.rota td{font-size:13px !important}
+  table.rota th{font-size:9px !important;padding:2px 8px !important}
+}
 </style></head><body>
 <div class="top"><h1>CCU Pod Allocations — ${weekLabel(currentWeekKey)}</h1>
 <div class="meta">Published ${new Date().toLocaleString("en-GB")} · READ-ONLY — changes happen at short notice · A = airway trained · supernumerary staff not counted in totals</div></div>
