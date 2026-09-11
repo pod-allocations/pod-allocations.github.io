@@ -413,9 +413,16 @@ const SEED = `(function(){
        /\.triaged = true/.test(fn));
 
     /* BOTH doors, or the bug comes back through whichever was missed. */
-    const adhoc = src.slice(src.indexOf("function addAdhocPerson"), src.indexOf("function addAdhocPerson") + 1800);
+    const adhoc = src.slice(src.indexOf("function addAdhocPerson"), src.indexOf("function addAdhocPerson") + 3200);
     ok("the Add locum/bank button asks it before making a record",
-       /const known = knownPerson\(name\)/.test(adhoc) && /if \(!known\) data\.staff\.push\(s\)/.test(adhoc));
+       /const known = \(pickedId && staffById\(pickedId\)\) \|\| knownPerson\(name\)/.test(adhoc)
+       && /if \(!known\) data\.staff\.push\(s\)/.test(adhoc));
+    /* Picking a person out of the list beats guessing from the letters — two people can share
+       a surname, and the matcher would have to choose between them. */
+    ok("...and an explicit pick wins over the fuzzy match",
+       /pickedId && staffById\(pickedId\)/.test(adhoc));
+    ok("...somebody added here is marked as put in on purpose",
+       /day\.handAdded\[s\.id\] = true/.test(adhoc));
     const ln = src.slice(src.indexOf("async function nameLocum"), src.indexOf("async function nameLocum") + 2200);
     ok("and so does naming a zLocum placeholder",
        /let named = knownPerson\(nm\)/.test(ln));
@@ -425,6 +432,50 @@ const SEED = `(function(){
     /* And the warning still has to tell two same-named records apart. */
     ok("the duplicate warning does not name the same person twice",
        /There are two " \+ d\.keep\.name \+ "s/.test(src));
+
+    /* ---- THE NAME BOX LOOKS BEFORE IT MAKES ANYBODY ------------------------------------
+       Ali, 26.09.11: "if exist allow to select when creating locum if makes sense." The
+       dialog used to be a bare text field, which is what forced a rota lead who needed a
+       known person on a shift Allocate had not caught up with to mint a stranger. */
+    const dlg = src.slice(src.indexOf("function adhocDialog"), src.indexOf("function adhocDialog") + 2600);
+    ok("the locum dialog offers people already on the unit",
+       /adhocMatches\(/.test(dlg) && /picked = x/.test(dlg));
+    ok("...and still lets you add somebody genuinely new",
+       /as someone new/.test(dlg) && /forcedNew = true/.test(dlg));
+    ok("...the pick is what gets passed on, not the letters in the box",
+       /addAdhocPerson\(di, picked \? picked\.name : nameIn\.value/.test(src));
+    ok("...the search ignores zlocum placeholders, which are slots and not people",
+       /zlocum/i.test(src.slice(src.indexOf("function adhocPool"), src.indexOf("function adhocPool") + 400)));
+    ok("...a match is shown with its grade, so two similar names are told apart",
+       /function adhocDesc/.test(src));
+
+    /* ---- THE LOOP: the board must not flag what it was told -----------------------------
+       Anyone added by hand is by definition not on Allocate for that day. Without this the
+       Optima check raised them every morning and offered "Remove from day" — i.e. offered to
+       delete the cover that had just been arranged. */
+    const gh = src.slice(src.indexOf("function srDetectGhosts"), src.indexOf("function srDetectGhosts") + 3600);
+    ok("the Optima check knows who was put in by hand",
+       /const byHand = new Set\(Object\.keys\(day\.handAdded \|\| \{\}\)\)/.test(gh));
+    ok("...including from before the mark existed, via the day's extras",
+       /day\.extras \|\| \[\]\)\.forEach\(x => \{ if \(x && x\.id\) byHand\.add\(x\.id\)/.test(gh)
+       && /fghExtras/.test(gh));
+    ok("...and skips them", /if \(byHand\.has\(sid\)\) continue/.test(gh));
+    ok("...but still catches a shift Allocate has dropped",
+       /if \(s && !\(sid in roster\)\) out\.push/.test(gh));
+
+    /* ---- WORDING ------------------------------------------------------------------------
+       "Optima" is the supplier's name for it; everyone on the unit says Allocate. And the
+       mismatch card asked you to pick a winner every morning without ever saying the choice
+       was permanent — which is why it looked like it had done nothing. */
+    ok("the cards say Allocate, which is what people call it",
+       /Allocate has dropped these shifts/.test(src)
+       && /not on Allocate for this day/.test(src));
+    ok("the mismatch card says the choice sticks",
+       /Saying which is right settles it for good/.test(src));
+    ok("...and its buttons name the two sides rather than two codes",
+       /Ours is right/.test(src) && /Use Allocate: /.test(src));
+    ok("no card offers to remove somebody for a reason it invented",
+       !/Off the Optima rota but still allocated/.test(src));
   }
 
   ok("no missing-glyph characters in the page source",

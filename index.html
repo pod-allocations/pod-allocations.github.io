@@ -1208,6 +1208,32 @@ body.sideways table.rota td.col-D{background:var(--podD) !important}
 body.sideways table.rota td.col-E{background:var(--podE) !important}
 body.sideways .chip{padding:.2rem .4rem .2rem .3rem !important;font-size:.72rem !important;margin:.1rem !important}
 
+
+/* ── The locum name box, which now searches ────────────────────────────────
+   Ali, 26.09.11: "if exist allow to select when creating locum". A locum who
+   turns out to be one of ours must keep their own record, because the grade
+   and the skills are what the allocator reads. */
+.adsearching{border-radius:9px 9px 0 0 !important;border-bottom-color:var(--hair) !important}
+.adres{border:1px solid var(--line);border-top:0;border-radius:0 0 9px 9px;overflow:hidden;
+  background:#fff;max-height:198px;overflow-y:auto}
+.adres:empty{display:none}
+.adrow{display:flex;align-items:center;gap:.5rem;width:100%;padding:.42rem .6rem;background:#fff;
+  border:0;border-bottom:1px solid var(--hair);font:inherit;text-align:left;cursor:pointer}
+.adrow:last-child{border-bottom:0}
+.adrow:hover,.adrow:focus{background:#f4f4f0;outline:none}
+.adav{width:26px;height:26px;border-radius:99px;background:#ecebe6;flex:none;display:flex;
+  align-items:center;justify-content:center;font-size:.62rem;font-weight:800;color:#6f7278}
+.adwho{flex:1;min-width:0}
+.adwho b{display:block;font-size:.85rem;font-weight:700;letter-spacing:-.01em}
+.adwho s{display:block;text-decoration:none;font-size:.7rem;color:var(--muted)}
+.adrow.adnew .adav{background:#fff;border:1px dashed #cfcfc8;color:#b9b9b3}
+.adrow.adnew .adwho b{font-weight:600;color:#5b5e66}
+.adpick{display:flex;align-items:center;gap:.5rem;padding:.42rem .6rem;background:#e4f2f0;
+  border:1px solid #1f7a70;border-top:0;border-radius:0 0 9px 9px}
+.adpick .adav{background:#1f7a70;color:#fff}
+.adpick .adwho s{color:#3d6a64}
+.adpick .adchg{margin-left:auto;font:inherit;font-size:.72rem;background:none;border:0;
+  color:#13544c;text-decoration:underline;cursor:pointer;padding:0}
 </style>
 
 </head>
@@ -9751,7 +9777,7 @@ function applyFixedDay(di, fixed, changes){
   markDirty(); renderWeek();
 }
 /* ---- Add a one-off (locum / bank / NHSp) person, just for a single day ---- */
-function addAdhocPerson(di, name, shift, dest){
+function addAdhocPerson(di, name, shift, dest, pickedId){
   const wk = getWeek(currentWeekKey);
   const day = wk.days[di];
   const dateISO = addDays(currentWeekKey, di);
@@ -9761,7 +9787,8 @@ function addAdhocPerson(di, name, shift, dest){
      two people who had come off the Optima rota were needed on nights, were
      typed in here, and got blank records the allocator then ignored. Being off
      Optima is not the same as being a stranger. */
-  const known = knownPerson(name);
+  const known = (pickedId && staffById(pickedId)) || knownPerson(name);
+  if (known) known.triaged = true;
   const s = known || { id: "loc-" + uid(), name, grade: "", airway: false, phoneHolder: false, phoneSupervisor: false, phoneShadow: false,
     transfer: false, neuro: false, supernum: false, nights: shift === "N", fgh: dest === "fairfield", fghNights: false, fghSuper: false,
     start: dateISO, end: dateISO, active: true, adhoc: true };
@@ -9769,7 +9796,12 @@ function addAdhocPerson(di, name, shift, dest){
   if (dest === "fairfield") { day.fghExtras = day.fghExtras || []; day.fghExtras.push({ id: s.id, tag: shift }); }
   else if (dest === "night") { day.extras = day.extras || []; day.extras.push({ id: s.id, kind: "night", code: "N" }); day.night.CDE.push(s.id); }
   else { day.extras = day.extras || []; day.extras.push({ id: s.id, kind: "day", code: shift === "LD" ? "LD" : "SD" }); }
-  logEntry("Added " + name + " (locum/bank) — " + (dest === "fairfield" ? "Fairfield" : dest === "night" ? "night team" : "to allocate") + " (" + dayShort(di) + ")", "manual", dateOfDi(di));
+  /* PUT HERE ON PURPOSE. Allocate will not have this shift — that is the whole reason
+     somebody had to type it in — so without this mark the Optima check flags them the next
+     morning and offers to remove the cover that was just arranged. Ali, 26.09.11, on seeing
+     the loop drawn out: "ia gree with all". */
+  day.handAdded = day.handAdded || {}; day.handAdded[s.id] = true;
+  logEntry("Added " + s.name + (known ? "" : " (locum/bank)") + " — " + (dest === "fairfield" ? "Fairfield" : dest === "night" ? "night team" : "to allocate") + " (" + dayShort(di) + ")", "manual", dateOfDi(di));
   markDirty(); renderWeek();
 }
 /* ================= TRIAL FEEDBACK =================
@@ -9861,12 +9893,84 @@ function feedbackDialog(){
   msg.focus();
 }
 
+/* ── Who is already on the unit ───────────────────────────────────────────────────────────────
+   The one question "Add a one-off person" never asked. Cover booked at short notice is very
+   often one of our own doing an extra shift, and Allocate does not know about it yet — so the
+   picker cannot offer them and the only door left is a free-text name box. When that box made a
+   fresh blank record, the person arrived with no grade and no skills and the allocator ignored
+   them; that is how there came to be two Cathryn Lathams (Ali, 26.09.11: "what on earth has gone
+   on here?"). Now the box looks first, and typing a name you already employ offers you them. */
+function adhocPool(){
+  return (data.staff || []).filter(x => x.active !== false && !x.placeholder
+                                     && !/zlocum/i.test(x.name || ""));
+}
+function adhocMatches(q){
+  q = (q || "").trim().toLowerCase();
+  if (q.length < 2) return [];
+  const starts = [], inside = [];
+  for (const x of adhocPool()){
+    const names = [x.name || ""].concat(x.aliases || []);
+    let rank = -1;
+    for (const nm of names){
+      const n = nm.toLowerCase(); if (!n) continue;
+      if (n.startsWith(q) || n.split(/\s+/).some(w => w.startsWith(q))) { rank = 0; break; }
+      if (n.includes(q)) rank = 1;
+    }
+    if (rank === 0) starts.push(x); else if (rank === 1) inside.push(x);
+  }
+  return starts.concat(inside).slice(0, 6);
+}
+/* What the record is worth to the allocator, said in the row — because picking the right person
+   is the whole point, and two people with similar names are told apart by their grade. */
+function adhocDesc(x){
+  const bits = [];
+  if (x.grade) bits.push(x.grade);
+  if (x.supernum) bits.push("supernumerary");
+  if (x.airway) bits.push("airway");
+  if (x.transfer) bits.push("transfer");
+  if (x.neuro) bits.push("neuro");
+  if (x.nights) bits.push("nights");
+  return bits.join(" \u00b7 ") || "no grade or skills recorded";
+}
+function adhocInitials(n){
+  return (String(n || "").trim().split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(w => w[0]).join("") || "?").toUpperCase();
+}
 function adhocDialog(di, prefillName, presetDest){
   const m = $("#modal"); m.innerHTML = "";
   m.append(el("h3", {}, presetDest === "fairfield" ? "Add someone to Fairfield" : "Add a one-off person"));
-  m.append(el("p", { class: "fixsub" }, "For a locum, bank or NHSp name that isn't on the staff list — just for this day."));
-  const nameIn = el("input", { type: "text", placeholder: "e.g. Dr Okafor (locum)", style: "width:100%" }); nameIn.value = prefillName || "";
-  m.append(el("label", { class: "adlbl" }, "Name"), nameIn);
+  const nameIn = el("input", { type: "text", placeholder: "Start typing a name", style: "width:100%",
+    autocomplete: "off", autocorrect: "off", spellcheck: "false" });
+  nameIn.value = prefillName || "";
+  const res = el("div", { class: "adres" });
+  let picked = null, forcedNew = false;
+  function clearPick(){ picked = null; forcedNew = false; drawRes(); nameIn.focus(); }
+  function drawRes(){
+    res.innerHTML = ""; res.className = "adres";
+    nameIn.classList.remove("adsearching");
+    if (picked){
+      res.className = "adpick";
+      res.append(el("span", { class: "adav" }, adhocInitials(picked.name)),
+                 el("span", { class: "adwho" }, el("b", {}, picked.name), el("s", {}, adhocDesc(picked))),
+                 el("button", { class: "adchg", type: "button", onclick: clearPick }, "change"));
+      nameIn.classList.add("adsearching");
+      return;
+    }
+    if (forcedNew) return;
+    const q = nameIn.value.trim();
+    const ms = adhocMatches(q);
+    ms.forEach(x => res.append(el("button", { class: "adrow", type: "button",
+      onclick: () => { picked = x; nameIn.value = x.name; drawRes(); } },
+      el("span", { class: "adav" }, adhocInitials(x.name)),
+      el("span", { class: "adwho" }, el("b", {}, x.name), el("s", {}, adhocDesc(x))))));
+    if (q.length >= 2) res.append(el("button", { class: "adrow adnew", type: "button",
+      onclick: () => { forcedNew = true; drawRes(); nameIn.focus(); } },
+      el("span", { class: "adav" }, "+"),
+      el("span", { class: "adwho" }, el("b", {}, "Add \u201c" + q + "\u201d as someone new"))));
+    if (res.childNodes.length) nameIn.classList.add("adsearching");
+  }
+  nameIn.oninput = () => { picked = null; forcedNew = false; drawRes(); };
+  m.append(el("label", { class: "adlbl" }, "Name"), nameIn, res);
   let shift = "LD", dest = presetDest || "bench";
   const seg = (opts, cur, set) => { const wrap = el("div", { class: "seg" }); opts.forEach(([v,l]) => { const b = el("button", { class: "segbtn" + (v===cur()?" on":""), onclick: () => { set(v); wrap.querySelectorAll(".segbtn").forEach(x=>x.classList.remove("on")); b.classList.add("on"); } }, l); wrap.append(b); }); return wrap; };
   m.append(el("label", { class: "adlbl" }, "Shift"), seg([["LD","Long day"],["SD","Short day"],["N","Night"]], () => shift, v => shift = v));
@@ -9874,8 +9978,9 @@ function adhocDialog(di, prefillName, presetDest){
   m.append(el("div", { class: "adnote" }, "“To allocate” drops them on the bench to drag into a pod."));
   m.append(el("div", { class: "dlg-btns" },
     el("button", { class: "btn ghost", onclick: closeModal }, "Cancel"),
-    el("button", { class: "btn", onclick: () => { if (!nameIn.value.trim()) { nameIn.focus(); return; } addAdhocPerson(di, nameIn.value, dest === "night" ? "N" : shift, dest); closeModal(); toast("Added " + nameIn.value.trim().split(" ")[0]); } }, "Add")));
+    el("button", { class: "btn", onclick: () => { if (!nameIn.value.trim()) { nameIn.focus(); return; } addAdhocPerson(di, picked ? picked.name : nameIn.value, dest === "night" ? "N" : shift, dest, picked && picked.id); closeModal(); toast("Added " + (picked ? picked.name : nameIn.value.trim()).split(" ")[0]); } }, "Add")));
   $("#modalBg").style.display = "flex";
+  drawRes();
   setTimeout(() => nameIn.focus(), 30);
 }
 function fixIcon(kind){
@@ -10445,14 +10550,16 @@ function rawAttention(){
   const clashes = review.length;
   if (clashes) out.push({ kind: "clash", id: "clash:" + attnSig(review.map(c => (c && (c.date || "")) + (c && (c.name || "")))),
     n: clashes, title: "Allocate disagrees with the board",
-    body: clashes === 1 ? "One day where somebody's shift here doesn't match Optima. Pick which is right." : clashes + " days where somebody's shift here doesn't match Optima. Pick which is right.",
+    body: (clashes === 1 ? "One shift where the board and Allocate say different things."
+                         : clashes + " shifts where the board and Allocate say different things.")
+        + " Saying which is right settles it for good.",
     go: () => { const e = $("#syncReview"); if (e) e.scrollIntoView({ behavior: "smooth", block: "center" }); } });
 
   const ghosts = (typeof srDetectGhosts === "function") ? srDetectGhosts() : [];
   if (ghosts.length) out.push({ kind: "ghost", id: "ghost:" + attnSig(ghosts.map(g => (g && (g.sid || g.name || "")) + (g && (g.date || "")))),
-    n: ghosts.length, title: "Off the Optima rota but still allocated",
+    n: ghosts.length, title: "Allocate has dropped these shifts",
     body: ghosts.slice(0, 6).map(g => g.name).join(", ") + (ghosts.length > 6 ? " and " + (ghosts.length - 6) + " more" : "")
-      + " — the sync clears these on its next run; these are the ones it could not.",
+      + " — still in the day's allocations. The sync clears most of these itself; these are the ones it could not.",
     go: () => { const e = $("#syncReview"); if (e) e.scrollIntoView({ behavior: "smooth", block: "center" }); } });
 
   /* ONE ROW PER PERSON, not one row listing six of them. Checking somebody is a thing you do to a
@@ -11905,6 +12012,15 @@ function srDetectGhosts(){
       if (date < todayISO) continue;
       const roster = wk.roster[date]; if (!roster) continue;
       const day = wk.days[di]; if (!day) continue;
+      /* SOMEBODY PUT IN BY HAND IS NOT A GHOST. This check asks "is everyone allocated here on
+         Allocate's list for the day", and anyone added through Add-a-one-off-person is, by
+         definition, not — that is why they had to be typed in. So the check used to restate its
+         own input back as a fault and offer to Remove from day: press it and the cover you just
+         arranged disappears. It keeps firing for the case it was built for, which is Allocate
+         dropping a shift the board is still holding. */
+      const byHand = new Set(Object.keys(day.handAdded || {}));
+      (day.extras || []).forEach(x => { if (x && x.id) byHand.add(x.id); });
+      (day.fghExtras || []).forEach(x => { if (x && x.id) byHand.add(x.id); });
       const sids = new Set();
       for (const p of Object.values(day.pods || {})){
         (p.assign || []).forEach(a => { if (a && a.id) sids.add(a.id); });
@@ -11923,6 +12039,7 @@ function srDetectGhosts(){
       for (const sid of sids){
         const s = staffById(sid);
         if (s && s.grade === "CON") continue;   // consultants are never on Optima
+        if (byHand.has(sid)) continue;         // put here on purpose — see above
         if (s && !(sid in roster)) out.push({ di, date, sid, name: s.name });
       }
     }
@@ -12070,25 +12187,25 @@ function renderSyncReview(){
   el.style.cssText = "margin:0 0 12px;display:grid;gap:8px";
   let html = "";
   if (ghosts.length){
-    html += "<div style='font-size:13px;color:#5f5e5a'>Off the Optima rota but still allocated — remove them, and tick to auto-cover with the fewest moves:</div>" +
+    html += "<div style='font-size:13px;color:#5f5e5a'>Allocate no longer has these shifts, but the board still does:</div>" +
       ghosts.map((g, i) =>
         "<div style='background:#fff;border:1px solid #e3e3de;border-left:3px solid #d85a30;padding:9px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px'>" +
         "<span style='min-width:150px'><b style='font-size:14px'>" + esc(g.name) + "</b><br><span style='color:#888780;font-size:12px'>" + srDateLabel(g.date) + "</span></span>" +
-        "<span style='color:#5f5e5a'>no longer on the Optima rota, still in the day's allocations</span>" +
+        "<span style='color:#5f5e5a'>not on Allocate for this day</span>" +
         "<span style='margin-left:auto;display:flex;gap:10px;align-items:center'>" +
         "<label style='display:inline-flex;gap:5px;align-items:center;color:#5f5e5a'><input type='checkbox' id='srRe" + i + "' checked> re-allocate to cover (fewest moves)</label>" +
         "<button data-gi='" + i + "'>Remove from day</button></span></div>").join("");
   }
   if (items.length){
-    html += "<div style='font-size:13px;color:#5f5e5a'>Optima check — someone changed these shifts here, but Optima says different. Pick the correct version:</div>" +
+    html += "<div style='font-size:13px;color:#5f5e5a'>Allocate says something different for these shifts. Whichever you keep, the sync stops asking:</div>" +
       items.map((c, i) =>
         "<div style='background:#fff;border:1px solid #e3e3de;border-left:3px solid #ef9f27;padding:9px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px'>" +
         "<span style='min-width:150px'><b style='font-size:14px'>" + esc(c.name) + "</b><br><span style='color:#888780;font-size:12px'>" + srDateLabel(c.date) + "</span></span>" +
-        "<span style='color:#5f5e5a'>shown here</span> " + chip(c.app) +
-        " <span style='color:#5f5e5a'>Optima</span> " + chip(c.allocate) +
+        "<span style='color:#5f5e5a'>board</span> " + chip(c.app) +
+        " <span style='color:#5f5e5a'>Allocate</span> " + chip(c.allocate) +
         "<span style='margin-left:auto;display:flex;gap:6px'>" +
-        "<button data-sr='keep' data-i='" + i + "'>Keep " + esc(c.app || "blank") + "</button>" +
-        "<button data-sr='take' data-i='" + i + "'>Use Optima: " + esc(c.allocate) + "</button></span></div>").join("");
+        "<button data-sr='keep' data-i='" + i + "'>Ours is right</button>" +
+        "<button data-sr='take' data-i='" + i + "'>Use Allocate: " + esc(c.allocate) + "</button></span></div>").join("");
   }
   el.innerHTML = html;
   el.querySelectorAll("button[data-sr]").forEach(b => b.onclick = () => resolveSyncClash(+b.dataset.i, b.dataset.sr));
@@ -12110,7 +12227,7 @@ function resolveSyncClash(i, how){
   data.syncReview.splice(i, 1);
   logEntry("Optima check " + c.date + " " + c.name + ": " + (how === "take" ? "changed to Optima's version (" + c.allocate + ")" : "kept " + (c.app || "blank") + " — Optima won't override it"), "auto", c.date);
   markDirty(); renderAll();
-  toast(how === "take" ? "Changed to Optima's version: " + c.allocate : "Kept " + (c.app || "blank") + " — Optima won't override it");
+  toast(how === "take" ? "Changed to Allocate's version: " + c.allocate : "Kept " + (c.app || "blank") + " — Allocate won't override it again");
 }
 function renderAll(){ withScrollKept(renderAllInner); }
 function renderAllInner(){ fillStartDates(); recomputeHistoric(); snapVisibleWeeks(); renderWeek(); renderAutoNotice(); renderStaffGate(); renderFairGate(); renderImportGate(); renderLogGate(); renderOverridesGate(); renderTeamGate(); renderSyncReview(); updateTeamBadge(); }

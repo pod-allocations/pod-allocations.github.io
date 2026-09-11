@@ -1,0 +1,18 @@
+Locum cover that hasn't reached Allocate — the three fixes Ali agreed to on 11 Sept.
+
+1. The "Add a one-off person" name box now searches the staff list. Type a few letters and
+   anyone already on the unit is offered, with their grade and skills shown so two similar
+   names are told apart. Picking them uses THEIR record, so the allocator sees the grade.
+   Adding somebody genuinely new is still the last row.
+
+2. The Optima check no longer flags people who were put in by hand. Anyone added that way is
+   by definition not on Allocate for the day — that is why they had to be typed in — so the
+   check was restating its own input as a fault and offering "Remove from day", i.e. offering
+   to delete the cover that had just been arranged. It still raises a shift Allocate really
+   has dropped.
+
+3. Wording on both cards: they say Allocate rather than Optima, the mismatch card says the
+   choice sticks, and its buttons name the two sides instead of two codes.
+
+Tests: render 296 passed / 1 failed (pre-existing on untouched HEAD, unrelated) ·
+rule 134/0 · strength 135/0 · new locum-dialog-probe 22/0.
