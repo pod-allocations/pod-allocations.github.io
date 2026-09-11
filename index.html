@@ -9756,10 +9756,16 @@ function addAdhocPerson(di, name, shift, dest){
   const day = wk.days[di];
   const dateISO = addDays(currentWeekKey, di);
   name = (name || "").trim(); if (!name) return;
-  const s = { id: "loc-" + uid(), name, grade: "", airway: false, phoneHolder: false, phoneSupervisor: false, phoneShadow: false,
+  /* SOMEBODY ALREADY ON THE UNIT KEEPS THEIR OWN RECORD — and therefore their
+     grade and their skills. This is where both September duplicates were made:
+     two people who had come off the Optima rota were needed on nights, were
+     typed in here, and got blank records the allocator then ignored. Being off
+     Optima is not the same as being a stranger. */
+  const known = knownPerson(name);
+  const s = known || { id: "loc-" + uid(), name, grade: "", airway: false, phoneHolder: false, phoneSupervisor: false, phoneShadow: false,
     transfer: false, neuro: false, supernum: false, nights: shift === "N", fgh: dest === "fairfield", fghNights: false, fghSuper: false,
     start: dateISO, end: dateISO, active: true, adhoc: true };
-  data.staff.push(s);
+  if (!known) data.staff.push(s);
   if (dest === "fairfield") { day.fghExtras = day.fghExtras || []; day.fghExtras.push({ id: s.id, tag: shift }); }
   else if (dest === "night") { day.extras = day.extras || []; day.extras.push({ id: s.id, kind: "night", code: "N" }); day.night.CDE.push(s.id); }
   else { day.extras = day.extras || []; day.extras.push({ id: s.id, kind: "day", code: shift === "LD" ? "LD" : "SD" }); }
@@ -11503,6 +11509,41 @@ function nameKey(n){
     .replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
 }
 function nameWords(n){ return nameKey(n).split(" ").filter(Boolean).sort().join(" "); }
+/* IS THIS SOMEBODY WE ALREADY KNOW? Ali, 26.09.11: "when locum has name check if
+   matches currently on unit first. if matches or similar then assume those
+   skills. if matches locum then youre sorted, only show if new etc."
+
+   ONE function, because there are TWO doors a typed name comes through — the
+   Add locum/bank button and naming a zLocum placeholder — and on 11 Sept the
+   unit found out what happens when they disagree. Both Cathryn Latham (ACCP)
+   and Shadman Zaman (ST) came off the Optima rota in August, were still needed
+   on nights in September, and were added by hand through the locum button. That
+   button looked at nothing: it minted a fresh record with no grade and no
+   skills, so the unit had two of each and the allocator ignored the new one.
+
+   Three passes, falling confidence, and deliberately the SAME comparisons
+   `suspectedDuplicates` uses — a name this accepts must never be a name that
+   warning then complains about:
+     1. exact name, or an alias already carried
+     2. same words, different order
+     3. within two letters — a typo, or a shortening
+   zLocum placeholders are excluded: they are slots, not people. */
+function knownPerson(nm){
+  const wanted = nameKey(nm);
+  const pool = (data.staff || []).filter(x => x.active !== false && !x.placeholder
+                                           && !/zlocum/i.test(x.name || ""));
+  const hasAlias = x => (x.aliases || []).some(a => nameKey(a) === wanted);
+  const hit = pool.find(x => nameKey(x.name) === wanted || hasAlias(x))
+           || pool.find(x => nameWords(x.name) === nameWords(nm))
+           || pool.find(x => nameDistance(x.name, nm) <= 2);
+  if (!hit) return null;
+  /* Keep the spelling that was typed, so the next import lands directly. */
+  if (nameKey(hit.name) !== wanted && !hasAlias(hit)){
+    hit.aliases = hit.aliases || []; hit.aliases.push(nm);
+  }
+  hit.triaged = true;          // already known is not a new person
+  return hit;
+}
 function nameDistance(a, b){
   const x = nameKey(a), y = nameKey(b);
   if (Math.abs(x.length - y.length) > 3) return 99;
@@ -11909,44 +11950,10 @@ async function nameLocum(s, di){
      Now: the real person is found first, by name or by an alias they already carry, and the
      placeholder name is remembered as an alias so the next import matches them too. A new record
      is created only when nobody of that name exists at all — which is what a genuine locum is. */
-  /* AND MATCH LOOSELY, NOT JUST EXACTLY. Ali, 26.09.11: "when locum has name
-     check if matches currently on unit first. if matches or similar then assume
-     those skills. if matches locum then youre sorted, only show if new etc."
+  /* The same matcher the Add locum/bank button uses — see knownPerson(). */
+  let named = knownPerson(nm);
+  if (!named) {
 
-     Three passes, in falling confidence, and the SAME comparisons the duplicate
-     warning uses — so a name this accepts can never be a name that warning then
-     complains about. That was the whole failure mode: one place matched on
-     exact text, another matched on near-enough, and the gap between them was
-     where hollow records were born.
-
-       1. exact name, or an alias they already carry
-       2. the same words in a different order — "Latham Cathryn"
-       3. within two letters — a typo, or Cathy for Cathryn
-
-     A match takes their record and therefore their grade and skills, which is
-     the point: a locum slot filled by somebody the unit already knows is not a
-     stranger, and the allocator should treat them as what they are. The typed
-     spelling is kept as an alias so the next import lands on them directly.
-
-     Anything that matches nothing is genuinely new, gets its own record, and is
-     the only kind that should appear on the new-people list. */
-  const wanted = nameKey(nm);
-  const pool = (data.staff || []).filter(x => x.active !== false && !x.placeholder
-                                           && !/zlocum/i.test(x.name || ""));
-  const hasAlias = x => (x.aliases || []).some(a => nameKey(a) === wanted);
-  let named = pool.find(x => nameKey(x.name) === wanted || hasAlias(x))
-           || pool.find(x => nameWords(x.name) === nameWords(nm))
-           || pool.find(x => nameDistance(x.name, nm) <= 2);
-  if (named){
-    /* Remember the spelling that was typed, so the next import matches without
-       having to be near-enough all over again. */
-    if (nameKey(named.name) !== wanted && !hasAlias(named)){
-      named.aliases = named.aliases || [];
-      named.aliases.push(nm);
-    }
-    /* Somebody already known is not a new person, whatever their record says. */
-    named.triaged = true;
-  } else {
     const slug = "loc-" + (nm.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "x");
     named = (data.staff || []).find(x => x.id === slug);
     if (!named){

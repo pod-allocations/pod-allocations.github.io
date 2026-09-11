@@ -383,38 +383,46 @@ const SEED = `(function(){
 
   /* Anything the page depends on being SEEN has to be a shape we ship. The funnel was the
      character ⌷ and rendered as an empty box on every column. */
-  /* ---- NAMING A LOCUM MUST NOT MINT A SECOND COPY OF A REAL PERSON -----------------------
-     Ali, 26.09.11, looking at two Cathryn Lathams: "what on earth has gone on here?"
+  /* ---- A TYPED NAME MUST NOT MINT A SECOND COPY OF A REAL PERSON -------------------------
+     Ali, 26.09.11, on finding two Cathryn Lathams: "what on earth has gone on here?"
 
-     `nameLocum` searched `x.adhoc && name matches` — locum records only — so a registrar already
-     on the staff list could never be found, and the code fell through to cloning the zlocum
-     placeholder: a second record, same name, adhoc, no grade, no skills, silently ignored by the
-     allocator. Source-level assertions, because the flow is a prompt and because what went wrong
-     was one clause in one lookup. */
+     THE LOG SAYS EXACTLY WHAT HAPPENED. Both she (ACCP) and Shadman Zaman (ST) came off the
+     Optima rota in August, were still needed on nights on 11 Sept, and were typed into the
+     "Add locum / bank" box. That function looked at nothing at all — it minted a fresh record
+     with no grade and no skills — so the unit had two of each and the allocator ignored the
+     new one.
+
+     There are TWO doors a typed name comes through: that button, and naming a zLocum
+     placeholder. The first fix went to the second door only, which fixed nothing that had
+     actually happened. Both now go through one `knownPerson`, and these assertions exist to
+     keep it that way — the failure mode is two matchers drifting apart. */
   {
     const src = fs.readFileSync(PAGE, "utf8");
-    const at = src.indexOf("async function nameLocum");
-    const fn = src.slice(at, at + 6000);   // the comment block grew, 26.09.11
-    ok("naming a locum searches the whole staff list, not only other locums",
-       at > 0 && !/find\(x => x\.adhoc && \(x\.name/.test(fn));
-    ok("...and matches an alias the person already carries",
-       /aliases \|\| \[\]\)\.some\(a => nameKey\(a\) === wanted\)/.test(fn));
-    ok("...and only creates a record when nobody of that name exists",
-       fn.indexOf("data.staff.push(named)") > fn.indexOf("} else {"));
-    /* LOOSELY, NOT JUST EXACTLY. Ali, 26.09.11: "if matches or similar then
-       assume those skills... only show if new". The three passes have to be the
-       SAME comparisons the duplicate warning uses, or a name one accepts is a
-       name the other complains about — which is how the hollow records began. */
-    ok("...matching the same words in a different order",
+    const at = src.indexOf("function knownPerson(");
+    const fn = src.slice(at, at + 1400);
+    ok("there is one shared matcher for a typed name", at > 0);
+    ok("...matching an exact name or an alias already carried",
+       /nameKey\(x\.name\) === wanted \|\| hasAlias\(x\)/.test(fn));
+    ok("...the same words in a different order",
        /nameWords\(x\.name\) === nameWords\(nm\)/.test(fn));
     ok("...and a name within two letters",
        /nameDistance\(x\.name, nm\) <= 2/.test(fn));
+    ok("...never a zlocum placeholder, which is a slot and not a person",
+       /zlocum/i.test(fn));
     ok("...and somebody already known is not offered as a new person",
-       /named\.triaged = true/.test(fn));
-    ok("...while zlocum placeholders are never matched against",
-       /zlocum\/i\.test\(x\.name/.test(fn));
-    /* And the warning has to tell the two records apart. It read "X and X look like the same
-       person", which is true and unusable. */
+       /\.triaged = true/.test(fn));
+
+    /* BOTH doors, or the bug comes back through whichever was missed. */
+    const adhoc = src.slice(src.indexOf("function addAdhocPerson"), src.indexOf("function addAdhocPerson") + 1800);
+    ok("the Add locum/bank button asks it before making a record",
+       /const known = knownPerson\(name\)/.test(adhoc) && /if \(!known\) data\.staff\.push\(s\)/.test(adhoc));
+    const ln = src.slice(src.indexOf("async function nameLocum"), src.indexOf("async function nameLocum") + 2200);
+    ok("and so does naming a zLocum placeholder",
+       /let named = knownPerson\(nm\)/.test(ln));
+    ok("neither keeps a matcher of its own",
+       !/nameDistance/.test(adhoc) && !/nameDistance/.test(ln));
+
+    /* And the warning still has to tell two same-named records apart. */
     ok("the duplicate warning does not name the same person twice",
        /There are two " \+ d\.keep\.name \+ "s/.test(src));
   }
