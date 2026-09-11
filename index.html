@@ -1181,6 +1181,33 @@ body.sideways table.rota td,body.sideways table.rota th{padding:4px 8px !importa
 body.sideways table.rota td{font-size:13px !important}
 body.sideways table.rota th{font-size:9px !important;padding:2px 8px !important}
 
+/* SIDEWAYS MEANS THE WEEK TABLE, WHATEVER THE WIDTH — 11 Sept. The phone block
+   above (max-width:820px) turns the table into stacked cards. Ali's iPhone is
+   under that width even on its side — Display Zoom shrinks the page's idea of
+   its own width — so phone mode never let go and the rules above only tightened
+   a table that was not being drawn. This puts the table back, undoing each
+   card declaration in turn, whenever the page is short and wide. A resident day
+   is a whole team per pod, so it still scrolls; what it no longer does is stack
+   thirty-five cards down one column. */
+body.sideways .daystrip{display:none !important}
+body.sideways table.rota{display:table !important;min-width:0 !important;width:100% !important}
+body.sideways table.rota thead{display:table-header-group !important}
+body.sideways table.rota tbody{display:table-row-group !important}
+body.sideways table.rota tr{display:table-row !important}
+body.sideways table.rota td{display:table-cell !important;border-radius:0 !important;
+  margin:0 !important;background:var(--card) !important}
+body.sideways table.rota td::before{content:none !important;display:none !important}
+body.sideways td.daylabel{display:table-cell !important;position:sticky !important;left:0;
+  background:var(--card) !important;width:auto !important}
+body.sideways td.daylabel .dn,body.sideways td.daylabel .d{display:inline !important}
+body.sideways td.daylabel:not(:has(.ptoken)):not(:has(.chip)){display:table-cell !important}
+body.sideways table.rota td.col-A{background:var(--podA) !important}
+body.sideways table.rota td.col-B{background:var(--podB) !important}
+body.sideways table.rota td.col-C{background:var(--podC) !important}
+body.sideways table.rota td.col-D{background:var(--podD) !important}
+body.sideways table.rota td.col-E{background:var(--podE) !important}
+body.sideways .chip{padding:.2rem .4rem .2rem .3rem !important;font-size:.72rem !important;margin:.1rem !important}
+
 </style>
 
 </head>
