@@ -168,5 +168,26 @@ const SEED = `(function(){
   ok("...but a shift Allocate really has dropped is still raised",
      g2.some(g => g.sid === "r3"), g2.map(g => g.name).join(", ") || "none");
 
+  /* ---- the edit lock, driven ------------------------------------------------------------
+     Nick's lock sat in the file for 149 minutes because he closed the tab instead of pressing
+     Done. It never kept anyone out — the gate has always honoured the six minutes — but the
+     record stayed, so the data claimed an editor who had gone home. */
+  console.log("\n-- the edit lock --");
+  ok("a lock made just now is live",
+     ev('lockLive({ by:"Someone", at:new Date().toISOString() })') === true);
+  ok("...one seven minutes old is not",
+     ev('lockLive({ by:"Someone", at:new Date(Date.now()-7*60*1000).toISOString() })') === false);
+  ok("...and neither is a malformed one",
+     ev('lockLive({ by:"Someone" })') === false && ev('lockLive(null)') === false);
+
+  ev('data.editLock = { by:"Nicholas Coffin", at:new Date(Date.now()-149*60*1000).toISOString() }');
+  ok("a 149-minute-old lock is cleared when asked", ev("tidyDeadLock()") === true
+     && ev("data.editLock") === null);
+
+  ev('data.editLock = { by:"Someone Else", at:new Date().toISOString() }');
+  ok("...but a live one is left exactly where it is", ev("tidyDeadLock()") === false
+     && !!ev("data.editLock"));
+  ev("data.editLock = null");
+
   report();
 })().catch(e => { console.error(e); process.exit(1); });

@@ -476,6 +476,28 @@ const SEED = `(function(){
        /Ours is right/.test(src) && /Use Allocate: /.test(src));
     ok("no card offers to remove somebody for a reason it invented",
        !/Off the Optima rota but still allocated/.test(src));
+
+    /* ---- THE EDIT LOCK MUST NOT OUTLIVE THE EDITOR --------------------------------------
+       Nicholas Coffin's lock sat in the file from 17:40 to 20:10 on 11 Sept because he closed
+       the tab rather than pressing Done, and exitEdit never ran. It never kept anyone OUT —
+       the check has always honoured LOCK_MS — but the record stayed, so the data claimed an
+       editor who had gone home. One place asks the question now, and a dead lock is cleared. */
+    ok("six minutes is still what makes a lock live", /const LOCK_MS = 6 \* 60 \* 1000/.test(src));
+    ok("one place decides whether a lock is live",
+       /function lockLive\(l\)\{ return !!\(l && l\.at && \(Date\.now\(\) - Date\.parse\(l\.at\)\) < LOCK_MS\); \}/.test(src));
+    ok("...and the Edit gate asks it rather than doing the sum again",
+       /if \(lockLive\(lock\) && lock\.by !== n\.trim\(\)\)/.test(src)
+       && !/\(Date\.now\(\) - Date\.parse\(lock\.at\)\) < LOCK_MS/.test(src));
+    ok("a dead lock is cleared, not carried", /function tidyDeadLock\(\)/.test(src)
+       && /if \(data && data\.editLock && !lockLive\(data\.editLock\)\)/.test(src));
+    ok("...on load and on the sync poll",
+       (src.match(/\btidyDeadLock\(\);/g) || []).length >= 2);
+    ok("...but never by writing — a viewer must not touch the shared file",
+       !/tidyDeadLock[\s\S]{0,400}?markDirty\(\)/.test(src.slice(src.indexOf("function tidyDeadLock"),
+                                                                 src.indexOf("function tidyDeadLock") + 420)));
+    ok("closing the tab hands the lock back",
+       /addEventListener\("pagehide"/.test(src)
+       && /if \(!EDIT_MODE \|\| !data \|\| !data\.editLock\) return;[\s\S]{0,120}data\.editLock = null/.test(src));
   }
 
   ok("no missing-glyph characters in the page source",

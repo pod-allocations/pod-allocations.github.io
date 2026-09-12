@@ -1,18 +1,16 @@
-Locum cover that hasn't reached Allocate — the three fixes Ali agreed to on 11 Sept.
+The edit lock must not outlive the editor — 12 Sept.
 
-1. The "Add a one-off person" name box now searches the staff list. Type a few letters and
-   anyone already on the unit is offered, with their grade and skills shown so two similar
-   names are told apart. Picking them uses THEIR record, so the allocator sees the grade.
-   Adding somebody genuinely new is still the last row.
+Nicholas Coffin's lock sat in the file from 17:40 to 20:10 on 11 Sept because he closed the
+tab rather than pressing Done, so exitEdit() never ran. It never kept anyone OUT — the Edit
+gate has always honoured LOCK_MS, six minutes — but the record stayed, so the board's own
+data claimed an editor who had gone home.
 
-2. The Optima check no longer flags people who were put in by hand. Anyone added that way is
-   by definition not on Allocate for the day — that is why they had to be typed in — so the
-   check was restating its own input as a fault and offering "Remove from day", i.e. offering
-   to delete the cover that had just been arranged. It still raises a shift Allocate really
-   has dropped.
+  · lockLive(l) — one place decides whether a lock is live; the Edit gate asks it rather
+    than repeating the arithmetic.
+  · tidyDeadLock() — clears an expired lock, in memory only, on load and on the sync poll.
+    A viewer must never write to the shared file, so the next editor persists the tidy-up.
+  · pagehide — closing the tab hands the lock back, best effort, on top of the expiry rather
+    than instead of it. pagehide not beforeunload, which is unreliable on iOS.
 
-3. Wording on both cards: they say Allocate rather than Optima, the mismatch card says the
-   choice sticks, and its buttons name the two sides instead of two codes.
-
-Tests: render 296 passed / 1 failed (pre-existing on untouched HEAD, unrelated) ·
-rule 134/0 · strength 135/0 · new locum-dialog-probe 22/0.
+Tests: render 303 passed / 1 failed (pre-existing on untouched HEAD, unrelated) ·
+rule 134/0 · strength 135/0 · locum-dialog-probe 27/0 (five new, driving the lock).

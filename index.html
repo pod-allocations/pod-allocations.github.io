@@ -2245,6 +2245,19 @@ function editorNameOptions(){
   return list.sort((a,b) => a.name.localeCompare(b.name)).map(s => s.name);
 }
 const LOCK_MS = 6 * 60 * 1000;
+/* A LOCK NOBODY IS HOLDING SHOULD NOT LOOK LIKE ONE. Closing the tab is how most people leave
+   edit mode — exitEdit() never runs, so the lock record is simply abandoned. It has always
+   EXPIRED correctly after LOCK_MS, so nobody was ever kept out; but it stayed in the file, and
+   anything reading data.editLock without repeating the age arithmetic saw an editor who went
+   home hours ago. Nicholas Coffin's sat there from 17:40 to 20:10 on 11 Sept. One place to ask
+   the question, and a dead lock is cleared rather than carried. */
+function lockLive(l){ return !!(l && l.at && (Date.now() - Date.parse(l.at)) < LOCK_MS); }
+function tidyDeadLock(){
+  /* In memory only — a viewer must never write to the shared file (see saveFile). The next
+     person to edit persists the tidy-up, and until then nothing is misled. */
+  if (data && data.editLock && !lockLive(data.editLock)) { data.editLock = null; return true; }
+  return false;
+}
 let lockBeat = null;
 function startLockHeartbeat(){
   clearInterval(lockBeat);
@@ -2307,7 +2320,7 @@ async function enterEditInner(){
   if (!n || !n.trim()) return;
   await syncP; // by now the latest copy (including anyone else's lock) has loaded
   const lock = data.editLock;
-  if (lock && lock.at && (Date.now() - Date.parse(lock.at)) < LOCK_MS && lock.by !== n.trim()) {
+  if (lockLive(lock) && lock.by !== n.trim()) {
     const mins = Math.max(1, Math.round((Date.now() - Date.parse(lock.at)) / 60000));
     await uiAlert((lock.by || "Someone") + " is editing right now (started " + mins + " min ago). Only one person can edit at a time — it frees up automatically within a few minutes of them finishing.", { title: "Someone else is editing" });
     return;
@@ -2517,6 +2530,7 @@ async function relaySave(silent){
 }
 async function syncLatest(){
   if (DEMO) return false;                     // the demo is self-contained; nothing to sync to
+  tidyDeadLock();                             // ...even on the poll that decides to do nothing
   if (!data || EDIT_MODE || dirty) return false;
   const cur = await readMaster();
   if (cur && cur.savedAt && cur.savedAt !== loadedSavedAt) {
@@ -2549,6 +2563,18 @@ function resetIdle(){
   }, 5 * 60 * 1000);
 }
 ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, resetIdle, { passive: true }));
+/* CLOSING THE TAB IS LEAVING. Done calls exitEdit and hands the lock back; shutting the laptop
+   does not, which is how every abandoned lock in the log was made. Best effort by nature — the
+   browser may kill the page before the write lands — so this is a courtesy on top of the six
+   minute expiry, never instead of it. pagehide rather than beforeunload: beforeunload does not
+   fire reliably on iOS, and half the unit is on a phone. */
+window.addEventListener("pagehide", () => {
+  try {
+    if (!EDIT_MODE || !data || !data.editLock) return;
+    data.editLock = null;
+    if (fileHandle || relayUrl()) saveFile(true);   // deliberately not awaited — the page is going
+  } catch(e){}
+});
 async function exitEdit(){
   clearTimeout(idleTimer);
   clearInterval(lockBeat);
@@ -2928,6 +2954,7 @@ function loadData(d){
   if (!d || typeof d !== "object" || !Array.isArray(d.staff)) { uiAlert("That file doesn't look like a rota file. Look for " + DATA_FILE_NAME + " in the shared folder.", { title: "Wrong file" }); return; }
   data = d;
   data.weeks = data.weeks || {}; data.log = data.log || []; data.ignoredNames = data.ignoredNames || [];
+  tidyDeadLock();                       // an abandoned lock is not an editor
   // Migrate the old two-way phone skill into the new three: holder / supervisor / shadow.
   for (const s of data.staff) {
     if (s.phoneHolder === undefined) s.phoneHolder = !!s.phoneFull;
