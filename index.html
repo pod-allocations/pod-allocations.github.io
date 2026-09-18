@@ -1234,6 +1234,35 @@ body.sideways .chip{padding:.2rem .4rem .2rem .3rem !important;font-size:.72rem 
 .adpick .adwho s{color:#3d6a64}
 .adpick .adchg{margin-left:auto;font:inherit;font-size:.72rem;background:none;border:0;
   color:#13544c;text-decoration:underline;cursor:pointer;padding:0}
+
+/* ── WHO CAN… — 18 Sept. The pod was the thing being looked for and the faintest text on the
+   row; now it is a chip in that pod's own colour, so it is found by colour rather than read. */
+.wcsub{font-size:.72rem;color:var(--muted);margin:.15rem 0 0}
+.wcchip{font-size:.74rem;font-weight:600;border:1px solid var(--line);border-radius:999px;
+  padding:.24rem .62rem;color:#4a4d55;background:#fff;font-family:inherit;cursor:pointer;
+  display:inline-flex;align-items:center;gap:.3rem}
+.wcchip.on{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700}
+.wcchip.zero{opacity:.45}
+.wcchip .n{font-size:.64rem;font-weight:700;opacity:.6}
+.wcchip.on .n{opacity:.75}
+.wcgrp{font-size:.55rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);padding:.5rem 0 .2rem;border-bottom:1px solid var(--hair)}
+.wcrow{display:flex;align-items:center;gap:.55rem;padding:.4rem 0;border-bottom:1px solid var(--hair)}
+.wcrow:last-child{border-bottom:0}
+.wcav{width:27px;height:27px;border-radius:99px;flex:none;display:flex;align-items:center;
+  justify-content:center;font-size:.6rem;font-weight:800;letter-spacing:-.02em}
+.wcwho{flex:1;min-width:0}
+.wcwho b{display:block;font-size:.9rem;font-weight:600;letter-spacing:-.01em}
+.wcwho s{display:block;text-decoration:none;font-size:.68rem;color:var(--muted)}
+.wcpod{font-size:.6rem;font-weight:800;border-radius:6px;padding:.14rem .42rem;white-space:nowrap}
+.wcpA{background:var(--podA);color:var(--podAb)}
+.wcpB{background:var(--podB);color:var(--podBb)}
+.wcpC{background:var(--podC);color:var(--podCb)}
+.wcpD{background:var(--podD);color:var(--podDb)}
+.wcpE{background:var(--podE);color:var(--podEb)}
+.wcpN{background:#eceaf2;color:#4a4757}
+.wcempty{padding:1rem .2rem;text-align:center;color:var(--muted);font-size:.86rem;line-height:1.5}
+.wcnext{color:#4a4d55;margin-top:.35rem}
 </style>
 
 </head>
@@ -11548,40 +11577,112 @@ function renderGradeDefaults(box){
    trade. This answers it directly, and works for any skill, so PICC is not a special case. */
 function whoCanDialog(){
   const m = $("#modal"); m.innerHTML = "";
-  m.append(el("h3", {}, "Who can…"));
   const FIND_KEYS = ["airway", "phoneHolder", "transfer", "picc", "echo"];
-  const opts = FIND_KEYS.map(k => [k, ((FLAGS.find(f => f[0] === k) || [])[1] || k)]);
-  let pickKey = "picc";
-  const list = el("div", { style: "margin-top:.7rem" });
-  const chips = el("div", { style: "display:flex;gap:.35rem;flex-wrap:wrap" });
+  /* Short words. The full FLAGS labels ("Airway trained", "FUSIC Heart (echo)") wrapped the chip
+     row onto two lines on a phone, and the row is meant to be read in one glance. */
+  const SHORT = { airway: "Airway", phoneHolder: "Phone", transfer: "Transfer", picc: "PICC", echo: "Echo" };
+  let pickKey = "airway";
+
+  const head = el("div");
+  const chips = el("div", { style: "display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.5rem" });
+  const list = el("div", { style: "margin-top:.6rem" });
+
+  /* Everyone allocated on a day, with where they are and what they are doing. Nights are kept
+     apart because being on at 4am is not the same answer as being on now. */
+  const onDay = (day) => {
+    const out = { day: [], night: [] };
+    if (!day) return out;
+    for (const pd of PODS)
+      for (const a of (day.pods[pd].assign || []))
+        if (a && a.id) out.day.push({ id: a.id, pod: pd, where: "Pod " + pd, shift: a.shift || "" });
+    const n = day.night || {};
+    for (const id of [].concat(n.AB || [], n.CDE || [], n.E || []))
+      if (id) out.night.push({ id, pod: "N", where: "Night", shift: "N" });
+    return out;
+  };
+  const shiftWord = s => s === "LD" ? "8–8" : s === "SD" ? "8–4" : s === "N" ? "8pm–8.30am" : "";
+  const initials = nm => (String(nm || "").trim().split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(w => w[0]).join("") || "?").toUpperCase();
+
+  const row = (e) => {
+    const s = staffById(e.id); if (!s) return null;
+    const bits = [s.grade, shiftWord(e.shift)].filter(Boolean);
+    /* Holding the phone is worth saying here: half the time the question behind "who is airway
+       trained" is really "who can I actually pull away from what they are doing". */
+    const dayRec = e.__day;
+    if (dayRec && dayRec.phone === e.id) bits.push("holds the phone");
+    return el("div", { class: "wcrow" },
+      el("span", { class: "wcav wcp" + e.pod }, initials(s.name)),
+      el("span", { class: "wcwho" }, el("b", {}, s.name), el("s", {}, bits.join(" · "))),
+      el("span", { class: "wcpod wcp" + e.pod }, e.where));
+  };
+
   const draw = () => {
-    list.innerHTML = "";
+    list.innerHTML = ""; head.innerHTML = "";
     const date = todayISO();
     const wk = (data.weeks || {})[mondayOf(date)];
     const di = wk ? Math.round((new Date(date) - new Date(mondayOf(date))) / 86400000) : -1;
     const day = wk && wk.days ? wk.days[di] : null;
+    const all = onDay(day);
+    all.day.forEach(e => e.__day = day); all.night.forEach(e => e.__day = day);
+    const has = e => { const s = staffById(e.id); return !!(s && s[pickKey]); };
+    const hitD = all.day.filter(has), hitN = all.night.filter(has);
+    const total = all.day.length + all.night.length;
+
+    head.append(el("h3", { style: "margin:0" }, "Who can…"));
+    head.append(el("div", { class: "wcsub" },
+      (SHORT[pickKey] || pickKey) + " · " +
+      (hitD.length + hitN.length ? (hitD.length + hitN.length) + " of " + total : "none of the " + total) +
+      " on today · " + fmtDate(date)));
+
     if (!day) { list.append(el("div", { class: "empty" }, "Nothing allocated for today.")); return; }
-    const where = id => {
-      for (const pd of PODS) if (day.pods[pd].assign.some(a => a && a.id === id)) return "Pod " + pd;
-      if (day.night && ((day.night.AB || []).includes(id) || (day.night.CDE || []).includes(id) || (day.night.E || []).includes(id))) return "night";
-      return "";
-    };
-    const found = [...dayAllAssigned(day)].map(id => staffById(id)).filter(p => p && p[pickKey]);
-    if (!found.length) { list.append(el("div", { class: "empty" }, "Nobody on today.")); return; }
-    for (const pp of found) list.append(el("div", { style: "display:flex;gap:.6rem;align-items:center;padding:.35rem 0;border-top:1px solid var(--hair)" },
-      el("span", { style: "flex:1;font-size:.92rem" }, pp.name),
-      el("span", { style: "font-size:.78rem;color:var(--muted)" }, where(pp.id))));
+    if (!hitD.length && !hitN.length) {
+      /* AN EMPTY LIST IS THE ANSWER THAT NEEDS TO DO SOMETHING. The person asking still has a job
+         to do, and tomorrow costs nothing to look up. */
+      const t = addDays(date, 1);
+      const w2 = (data.weeks || {})[mondayOf(t)];
+      const d2 = w2 && w2.days ? w2.days[Math.round((new Date(t) - new Date(mondayOf(t))) / 86400000)] : null;
+      const nx = [].concat(onDay(d2).day, onDay(d2).night)
+        .map(e => staffById(e.id)).filter(p => p && p[pickKey]).map(p => p.name);
+      const box = el("div", { class: "wcempty" }, el("div", {}, "Nobody on today is signed off for this."));
+      if (nx.length) box.append(el("div", { class: "wcnext" },
+        "Tomorrow: " + nx.slice(0, 4).join(", ") + (nx.length > 4 ? " and " + (nx.length - 4) + " more" : "")));
+      list.append(box);
+      return;
+    }
+    if (hitD.length) {
+      list.append(el("div", { class: "wcgrp" }, "Days"));
+      hitD.sort((a, b) => a.pod.localeCompare(b.pod) ||
+        String((staffById(a.id) || {}).name).localeCompare(String((staffById(b.id) || {}).name)));
+      for (const e of hitD) { const r = row(e); if (r) list.append(r); }
+    }
+    if (hitN.length) {
+      list.append(el("div", { class: "wcgrp" }, "Nights"));
+      for (const e of hitN) { const r = row(e); if (r) list.append(r); }
+    }
   };
+
   const paint = () => {
     chips.innerHTML = "";
-    for (const [k, label] of opts) {
-      const b = el("button", { class: "btn sec", style: "font-size:.76rem;padding:.2rem .6rem" + (k === pickKey ? ";background:var(--ink);color:#fff" : ""),
-        onclick: () => { pickKey = k; paint(); draw(); } }, label);
+    const date = todayISO();
+    const wk = (data.weeks || {})[mondayOf(date)];
+    const di = wk ? Math.round((new Date(date) - new Date(mondayOf(date))) / 86400000) : -1;
+    const day = wk && wk.days ? wk.days[di] : null;
+    const all = onDay(day);
+    for (const k of FIND_KEYS) {
+      const n = [].concat(all.day, all.night)
+        .filter(e => { const s = staffById(e.id); return !!(s && s[k]); }).length;
+      const b = el("button", { class: "wcchip" + (k === pickKey ? " on" : "") + (n ? "" : " zero"),
+        title: ((FLAGS.find(f => f[0] === k) || [])[1] || k),
+        onclick: () => { pickKey = k; paint(); draw(); } },
+        SHORT[k] || k, el("span", { class: "n" }, String(n)));
       chips.append(b);
     }
   };
+
   paint(); draw();
-  m.append(chips, list, el("div", { class: "modalbtns" }, el("button", { class: "btn", onclick: closeModal }, "Close")));
+  m.append(head, chips, list,
+    el("div", { class: "modalbtns" }, el("button", { class: "btn", onclick: closeModal }, "Close")));
   $("#modalBg").style.display = "flex";
 }
 function renderLogGate(){ renderGate("L", "#logCard", () => {

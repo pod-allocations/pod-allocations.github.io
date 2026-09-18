@@ -518,6 +518,26 @@ const SEED = `(function(){
        !/PHONE_SKILLS = \[[^\]]*echo/.test(src));
     ok("the page says a blank means the portal does not know, not 'cannot'",
        /a blank only means the portal does not know/.test(src));
+
+    /* ---- WHO CAN… ------------------------------------------------------------------------
+       Ali, 26.09.18: "agree proposed who can buukd please". Driven rather than read, because
+       the point of the change is what it looks like: the pod as a coloured chip, days and
+       nights apart, counts on the chips, and an empty answer that still helps. */
+    w.eval("whoCanDialog()");
+    const wc = w.document.getElementById("modal");
+    ok("Who can… opens", /Who can/.test(wc.textContent || ""));
+    ok("...and says which day it is, so a screenshot still means something tomorrow",
+       !!wc.querySelector(".wcsub") && /\d/.test(wc.querySelector(".wcsub").textContent));
+    const wcChips = [...wc.querySelectorAll(".wcchip")];
+    ok("...with a chip per skill", wcChips.length === 5, wcChips.length + " chips");
+    ok("...each carrying a count", wcChips.every(c => !!c.querySelector(".n")));
+    ok("...and a chip nobody has is greyed rather than offering an empty list",
+       wcChips.some(c => c.className.includes("zero")) || wcChips.every(c => +c.querySelector(".n").textContent > 0));
+    ok("...the pod rides in a coloured chip, not grey text",
+       !wc.querySelector(".wcrow") || !!wc.querySelector(".wcpod"));
+    ok("...days and nights are separated", (wc.querySelectorAll(".wcgrp").length >= 1)
+       || !!wc.querySelector(".wcempty"));
+    w.eval("try{ closeModal(); }catch(e){}");
   }
 
   ok("no missing-glyph characters in the page source",
