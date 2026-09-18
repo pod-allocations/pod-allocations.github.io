@@ -1,33 +1,34 @@
-Monday remembers Sunday — the week-boundary continuity fix, 18 Sept.
+Echo and lung ultrasound accreditation, from the Salford Critical Care portal — 18 Sept.
 
-Ali, from the unit: "lack of continuity for peopl on a pod over the weekend but differnet one
-on monday - its difficult as treated by week at present."
+Ali: "link into my critcareultrasound site and in the search box show who is echo and lung US
+accredted as a skill" · "it msut only show accredited not in trainign".
 
-THE FIRST DIAGNOSIS WAS WRONG. The obvious candidate was the Saturday-pod hold in autoFillDay
-(-3000, ratified 29 Jul) stopping at Sunday — but autoFillDay is the FALLBACK path. Since
-26.08.20 the live writer is Planner.writeWeek.
+Two FIND skills, exactly like PICC — searchable from Who can…, read by nothing in the
+allocator, and they never move anybody between pods. Icons are a heart and a pair of lungs,
+coloured from the portal's own module accents so the two systems agree at a glance.
 
-THE REAL CAUSE was one line and its absence. rollHistory has always finished every week with
-`hist.home = week.home || hist.home` and NOTHING HAS EVER READ IT. Home pods were chosen from
-scratch every week, so `offHome` — the cost that keeps a person in one place — meant nothing
-across the boundary. Monday had no memory of Sunday by construction, not by a missing rule.
+ONLY ACCREDITED, NEVER IN TRAINING. The source is a view created for this and nothing else,
+public.v_accredited_for_rota, which reads the portal's Accreditation table alone. TrainingCycle
+and Competency — where somebody part-way through lives — are not in it and are never queried.
+Leavers are excluded at source: that is what takes 36 rows down to 20 people (16 echo, 4 lung).
 
-Seeding `home` from it directly was tried first and BROKE RATIFIED RULE 5: a carried person
-claimed their pod before the long-day and airway sort ran, taking a slot a long day needed.
-So the carry is scored instead, at 14 — beneath the long-day term (40) and the airway term
-(20), where it can tip a choice between equal pods and never take a pod the day needs.
+A BLANK IS NOT A NO. The portal knows ~30 people and the unit has ~130, so the sync only ever
+GRANTS and never revokes. Removing an accreditation stays a deliberate human act on the Staff
+page, because the portal not mentioning somebody is not evidence about them.
 
-Measured on the real 13-week Optima roster (tests/monday-hold-sim.js, new):
-  Sunday→Monday same pod    14.3%  ->  38.1%
-  Pods per person per week  1.156  ->  1.137
-  Pod E with no long day        6  ->      5
-  Within-week same pod      92.1%  ->  91.2%   (the only cost)
+NAMES DO NOT MATCH AND THE SYNC DOES NOT GUESS. The portal says "Dong Lin", the rota says
+"Lin Dong"; "Dave Garwood" against "David Garwood". Matching is exact, then the same words in
+any order, and nothing looser — a near-spelling match would risk granting a clinical skill to
+the wrong person. Anything unmatched is printed for a human. Two people of one name are left
+alone. Runs report-only unless given --apply.
 
-Tests: planner suite (gold standard, matched pair) ALL 1413 PASS · rule 133 passed / 1 failed,
-identical to pristine in an in-place A/B (pre-existing "Pod E biggest 22 days 6.0%") ·
-render 303/1 pre-existing · strength 135/0 · locum probe 27/0.
+  index.html                                   FLAGS, icons, colours, SK_COLS, FIND_KEYS
+  docs/CCU Pod Allocator/allocate-pull/ultrasound_sync.py   new
+  (and a read-only view in the ultrasound Supabase — additive, no data changed)
 
-NOTE FOR THE NEXT SESSION: the deployed planner.js and the copy the gold-standard suite tests
-against (docs/CCU Pod Allocator/resident/planner.js) had DRIFTED — the deployed one carries
-airwayLDPairGap (26.08.25) and the tested one did not, so the suite has never been run against
-what is actually live. Both copies carry this change; the drift itself still needs closing.
+Tests: render 310 passed / 1 failed (pre-existing, unrelated) · strength 135/0 · locum probe
+27/0. Six new assertions, including that neither skill is a pod rule or a phone rule.
+
+STILL TO DO: this is the resident board, where Who can… already exists. Cover has no search
+yet — that is the next piece, and the DPIA needs this flow adding to Section 4 of both
+assessments before it is switched on.

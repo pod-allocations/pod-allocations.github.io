@@ -3155,6 +3155,20 @@ const FLAGS = [
   ["neuro","Neuro placement","rule","#6A2C91","On a neuro placement — auto-fill aims to keep more of their shifts on Pods C & D."],
   ["supernum","Supernumerary — never counted","rule","#72243E","Doesn't count towards pod numbers (e.g. supernumerary or purely learning)."],
   ["picc","PICC line","find","","Trained to insert PICC lines. Deliberately not a board icon — asked for a few times a week, not read off every pod. Use Who can… to see who is on today."],
+  /* ── ACCREDITED, NEVER IN TRAINING ───────────────────────────────────────────────────────
+     Held in the Salford Critical Care ultrasound portal and copied here nightly. Both are
+     "find" skills like PICC: nothing in the allocator reads them and they never move anybody
+     between pods — they answer "who on today can scan this".
+
+     A TICK MEANS ACCREDITED. The portal's accreditation table is the only thing read; training
+     cycles and part-finished competencies are never queried, so somebody working towards it
+     cannot appear here (Ali, 26.09.18: "it msut only show accredited not in trainign").
+
+     AND AN ABSENCE MEANS NOTHING. The portal knows about roughly thirty people and the unit has
+     about a hundred and thirty, so a blank is "the portal has not heard of them", not "they
+     cannot do it". That is why there is no negative state and no "not accredited" badge. */
+  ["echo","FUSIC Heart (echo)","find","","Accredited in FUSIC Heart at the Salford Critical Care ultrasound portal. Copied from there nightly — a tick means accredited, and a blank only means the portal does not know."],
+  ["lungus","FUSIC Lung","find","","Accredited in FUSIC Lung at the Salford Critical Care ultrasound portal. Copied from there nightly — a tick means accredited, and a blank only means the portal does not know."],
   /* NOT A PERSON. Ali, 26.08.15: "how do we handle locum and neurology resitsrat their attnetion
      things are annoying." They were annoying because the board has two kinds of record and treated
      them as one. "Locum Doctor - Non Airway" and "Neurology Registrar" are STANDING SLOTS that a
@@ -3243,6 +3257,10 @@ const SK_ICON = {
      laryngoscope OR an arm — `ti-arm` and `ti-elbow` render blank — and a syringe is the one
      glyph everyone already reads as "a line going in". Redrawn here as a path because the app
      does not load an icon font; everything on this page is inline SVG. */
+  /* A heart and a pair of lungs. Anatomy rather than a probe, because both modules would carry
+     the same probe and the pair has to be told apart at 14px. */
+  echo: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 28.2S3.8 20.4 3.8 12.2C3.8 7.7 7.2 4.8 10.8 4.8c2.3 0 4.2 1.2 5.2 3 1-1.8 2.9-3 5.2-3 3.6 0 7 2.9 7 7.4 0 8.2-12.2 16-12.2 16z"/></svg>',
+  lungus: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3.2v11.4"/><path d="M11.4 9.2c1.8.5 2.6 1.9 2.6 3.9v10.3c0 3-1.3 4.6-3.6 4.6-2.6 0-4.6-2.3-4.6-6.1 0-5.4 2.2-10.6 5.6-12.7z"/><path d="M20.6 9.2c-1.8.5-2.6 1.9-2.6 3.9v10.3c0 3 1.3 4.6 3.6 4.6 2.6 0 4.6-2.3 4.6-6.1 0-5.4-2.2-10.6-5.6-12.7z"/></svg>',
   picc: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 29.5l6.5-6.5"/><rect x="9.8" y="11.6" width="14.5" height="8.8" rx="1.6" transform="rotate(-45 17 16)"/><path d="M21.5 8.5l5 5"/><path d="M25 3.6l5.4 5.4"/></svg>',
   /* Brain and hospital are the icon set's own — Ali preferred them to the ones I drew. */
   neuro: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4.5c-3.2 0-5.4 1.9-5.9 4.3-2.4.4-4 2.2-4 4.5 0 1.2.45 2.3 1.2 3.1-.9.9-1.3 2-1.1 3.2.3 1.9 1.9 3.3 3.9 3.5.5 2.4 2.7 4.2 5.4 4.2h.5z"/><path d="M16 4.5c3.2 0 5.4 1.9 5.9 4.3 2.4.4 4 2.2 4 4.5 0 1.2-.45 2.3-1.2 3.1.9.9 1.3 2 1.1 3.2-.3 1.9-1.9 3.3-3.9 3.5-.5 2.4-2.7 4.2-5.4 4.2H16z"/><path d="M16 4.5v22.8"/></svg>',
@@ -3257,6 +3275,9 @@ const SK_ICON = {
 /* The colour each icon takes when the person HAS the skill. Off is one flat grey, set once. */
 const SK_COL = { airway: "#0C447C", phoneHolder: "#27500A", phoneSupervisor: "#1B5E20",
   phoneShadow: "#8A5A00", transfer: "#085041", picc: "#3C3489", neuro: "#6A2C91",
+  /* Darkened from the ultrasound portal's own module accents (#FF453A heart, #30D158 lung) so the
+     two systems agree at a glance while still reading on this page's paper background. */
+  echo: "#B3261E", lungus: "#1B6E3A",
   supernum: "#72243E", nights: "#444441", fgh: "#854F0B", fghNights: "#633806" };
 /* Column order and the word under each icon, in ONE list so the header, the body, the sort and
    the filters can never disagree about which columns exist or what they are called. The third
@@ -3268,6 +3289,8 @@ const SK_COLS = [
   ["phoneShadow", "Shadow", "Still learning the phone — can only carry it alongside a supervisor"],
   ["transfer", "Transfer", "Trained to escort transfers off the unit"],
   ["picc", "PICC", "Trained to insert PICC lines"],
+  ["echo", "Echo", "Accredited in FUSIC Heart — from the ultrasound portal, nightly"],
+  ["lungus", "Lung US", "Accredited in FUSIC Lung — from the ultrasound portal, nightly"],
   ["neuro", "Neuro", "On a neuro placement — auto-fill leans them towards Pods C and D"],
   ["supernum", "Extra", "Supernumerary — never counted towards pod numbers"],
   ["nights", "Nights", "Available to be put on night shifts"],
@@ -11528,7 +11551,7 @@ function renderGradeDefaults(box){
 function whoCanDialog(){
   const m = $("#modal"); m.innerHTML = "";
   m.append(el("h3", {}, "Who can…"));
-  const FIND_KEYS = ["airway", "phoneHolder", "transfer", "picc"];
+  const FIND_KEYS = ["airway", "phoneHolder", "transfer", "picc", "echo", "lungus"];
   const opts = FIND_KEYS.map(k => [k, ((FLAGS.find(f => f[0] === k) || [])[1] || k)]);
   let pickKey = "picc";
   const list = el("div", { style: "margin-top:.7rem" });
