@@ -499,25 +499,23 @@ const SEED = `(function(){
        /addEventListener\("pagehide"/.test(src)
        && /if \(!EDIT_MODE \|\| !data \|\| !data\.editLock\) return;[\s\S]{0,120}data\.editLock = null/.test(src));
 
-    /* ---- ECHO AND LUNG ULTRASOUND -------------------------------------------------------
+    /* ---- ECHO ACCREDITATION --------------------------------------------------------------
        Ali, 26.09.18: "show who is echo and lung US accredted as a skill" · "it msut only show
-       accredited not in trainign". Two FIND skills, exactly like PICC: searchable, and read by
-       nothing in the allocator. The assertions that matter are the last two — that neither is a
-       pod rule and neither is a phone rule, because a skill that quietly started moving people
-       between pods is the failure mode worth guarding. */
-    ok("echo and lung are skills the page knows about",
-       /\["echo","FUSIC Heart \(echo\)","find"/.test(src)
-       && /\["lungus","FUSIC Lung","find"/.test(src));
-    ok("...both searchable from Who can…",
-       /const FIND_KEYS = \["airway", "phoneHolder", "transfer", "picc", "echo", "lungus"\]/.test(src));
-    ok("...both have a column on the staff page",
-       /\["echo", "Echo",/.test(src) && /\["lungus", "Lung US",/.test(src));
-    ok("...both have an icon, so neither draws an empty square",
-       /^\s*echo: '<svg/m.test(src) && /^\s*lungus: '<svg/m.test(src));
-    ok("neither changes who goes in which pod",
-       !/POD_SKILLS = \[[^\]]*echo/.test(src) && !/POD_SKILLS = \[[^\]]*lungus/.test(src));
-    ok("neither changes who carries the phone",
-       !/PHONE_SKILLS = \[[^\]]*echo/.test(src) && !/PHONE_SKILLS = \[[^\]]*lungus/.test(src));
+       accredited not in trainign" · then, on seeing it: "lung US not required really, remove
+       that". So ONE find skill, exactly like PICC: searchable, and read by nothing in the
+       allocator. The last two assertions are the ones that matter — a find skill that quietly
+       started moving people between pods is the failure mode worth guarding against. */
+    ok("echo is a skill the page knows about",
+       /\["echo","FUSIC Heart \(echo\)","find"/.test(src));
+    ok("...searchable from Who can…",
+       /const FIND_KEYS = \["airway", "phoneHolder", "transfer", "picc", "echo"\]/.test(src));
+    ok("...with a column on the staff page", /\["echo", "Echo",/.test(src));
+    ok("...and an icon, so it never draws an empty square", /^\s*echo: '<svg/m.test(src));
+    ok("lung ultrasound is gone entirely, not just hidden", !/lungus/.test(src));
+    ok("echo does not change who goes in which pod",
+       !/POD_SKILLS = \[[^\]]*echo/.test(src));
+    ok("...nor who carries the phone",
+       !/PHONE_SKILLS = \[[^\]]*echo/.test(src));
     ok("the page says a blank means the portal does not know, not 'cannot'",
        /a blank only means the portal does not know/.test(src));
   }
