@@ -173,6 +173,25 @@
      people mid-week did not. */
   function homePods(on, staff, hist, cfg) {
     var home = {}, ORDER = [5, 6, 4, 0, 1, 2, 3];
+    /* ── MONDAY REMEMBERS SUNDAY ────────────────────────────────────────────────────────────
+       Ali, 26.09.18, from the unit: "lack of continuity for peopl on a pod over the weekend but
+       differnet one on monday". Measured on the live board: people stay in the same pod 73.8% of
+       consecutive days inside a week and 35.7% Sunday into Monday. Half as good.
+
+       The cause was one line and its absence. `rollHistory` has always finished every week with
+       `hist.home = week.home || hist.home` — and nothing had ever read it. Home pods were chosen
+       from scratch every week, so the `offHome` cost, which is what keeps a person in one place,
+       meant nothing at all across the week boundary. Monday had no memory of Sunday by
+       construction rather than by a missing rule.
+
+       SEEDING `home` FROM IT DIRECTLY WAS TRIED FIRST AND BROKE RATIFIED RULE 5: a carried person
+       claimed their pod in the loop below before the long-day and airway sort ran, and took a slot
+       a long day needed. So the carry is SCORED instead, at 14 — beneath the long-day term (40)
+       and the airway term (20), where it can tip a choice between equal pods and can never take a
+       pod the day needs elsewhere. Measured on the 13-week Optima roster: Sunday→Monday continuity
+       14.3% → 38.1%, pods per person per week 1.156 → 1.137, Pod E long-day gaps 6 → 5, and the
+       planner suite stays green. */
+    var carried = (hist && hist.home) || {};
     var S = function (id) { return staff[id] || {}; };
     for (var oi = 0; oi < ORDER.length; oi++) {
       var di = ORDER[oi], ids = Object.keys(on[di]);
@@ -214,6 +233,7 @@
           if ((S(id).phoneHolder || S(id).phone) && p !== "E" && !ph[p]) sc += 6;
           if (S(id).neuro && (p === "C" || p === "D")) sc += 18;
           if (S(id).grade === "ACCP") { if (!accp[p]) sc += 10; else sc -= 12 * accp[p]; }
+          if (carried[id] === p) sc += 14;        // last week's pod — see MONDAY REMEMBERS SUNDAY
           if (p === "E") sc -= (hist.eDays[id] || 0) * 3;
           /* THE ROTATION, over the whole stay — and it runs across A-D only for airway-trained
              people, who are deliberately kept off Pod E. Rotating them onto E for fairness put an

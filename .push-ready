@@ -1,16 +1,33 @@
-The edit lock must not outlive the editor — 12 Sept.
+Monday remembers Sunday — the week-boundary continuity fix, 18 Sept.
 
-Nicholas Coffin's lock sat in the file from 17:40 to 20:10 on 11 Sept because he closed the
-tab rather than pressing Done, so exitEdit() never ran. It never kept anyone OUT — the Edit
-gate has always honoured LOCK_MS, six minutes — but the record stayed, so the board's own
-data claimed an editor who had gone home.
+Ali, from the unit: "lack of continuity for peopl on a pod over the weekend but differnet one
+on monday - its difficult as treated by week at present."
 
-  · lockLive(l) — one place decides whether a lock is live; the Edit gate asks it rather
-    than repeating the arithmetic.
-  · tidyDeadLock() — clears an expired lock, in memory only, on load and on the sync poll.
-    A viewer must never write to the shared file, so the next editor persists the tidy-up.
-  · pagehide — closing the tab hands the lock back, best effort, on top of the expiry rather
-    than instead of it. pagehide not beforeunload, which is unreliable on iOS.
+THE FIRST DIAGNOSIS WAS WRONG. The obvious candidate was the Saturday-pod hold in autoFillDay
+(-3000, ratified 29 Jul) stopping at Sunday — but autoFillDay is the FALLBACK path. Since
+26.08.20 the live writer is Planner.writeWeek.
 
-Tests: render 303 passed / 1 failed (pre-existing on untouched HEAD, unrelated) ·
-rule 134/0 · strength 135/0 · locum-dialog-probe 27/0 (five new, driving the lock).
+THE REAL CAUSE was one line and its absence. rollHistory has always finished every week with
+`hist.home = week.home || hist.home` and NOTHING HAS EVER READ IT. Home pods were chosen from
+scratch every week, so `offHome` — the cost that keeps a person in one place — meant nothing
+across the boundary. Monday had no memory of Sunday by construction, not by a missing rule.
+
+Seeding `home` from it directly was tried first and BROKE RATIFIED RULE 5: a carried person
+claimed their pod before the long-day and airway sort ran, taking a slot a long day needed.
+So the carry is scored instead, at 14 — beneath the long-day term (40) and the airway term
+(20), where it can tip a choice between equal pods and never take a pod the day needs.
+
+Measured on the real 13-week Optima roster (tests/monday-hold-sim.js, new):
+  Sunday→Monday same pod    14.3%  ->  38.1%
+  Pods per person per week  1.156  ->  1.137
+  Pod E with no long day        6  ->      5
+  Within-week same pod      92.1%  ->  91.2%   (the only cost)
+
+Tests: planner suite (gold standard, matched pair) ALL 1413 PASS · rule 133 passed / 1 failed,
+identical to pristine in an in-place A/B (pre-existing "Pod E biggest 22 days 6.0%") ·
+render 303/1 pre-existing · strength 135/0 · locum probe 27/0.
+
+NOTE FOR THE NEXT SESSION: the deployed planner.js and the copy the gold-standard suite tests
+against (docs/CCU Pod Allocator/resident/planner.js) had DRIFTED — the deployed one carries
+airwayLDPairGap (26.08.25) and the tested one did not, so the suite has never been run against
+what is actually live. Both copies carry this change; the drift itself still needs closing.
