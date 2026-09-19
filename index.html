@@ -335,6 +335,7 @@ table.rota:not(:has(td.tray .chip)) td.tray .trayhint::after{content:"drop";font
 .hlp .exdot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:.02em;margin-right:.15rem}
 .adnote{font-size:.72rem;color:var(--muted);margin-top:.5rem}
 .seg{display:flex;gap:.3rem}
+#fairSeg .segbtn{flex:0 0 auto;padding:.42rem .8rem}
 .segbtn{flex:1;font-size:.78rem;font-weight:600;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:.5rem .3rem;cursor:pointer;font-family:inherit}
 .segbtn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .fghadd{margin-top:.4rem;width:100%;font-size:.66rem;font-weight:600;background:var(--card);color:var(--muted);border:1px dashed var(--line);border-radius:8px;padding:.35rem .3rem;cursor:pointer;font-family:inherit}
@@ -1507,6 +1508,7 @@ body.sideways .chip{padding:.2rem .4rem .2rem .3rem !important;font-size:.72rem 
     </div>
     <div class="card" id="fairCard">
       <p style="font-size:.8rem;color:var(--muted);line-height:1.6">Everything here covers the last twelve months. The pod columns show how each person's days have been spread across pods A to E, so 100% in one column means they have never worked anywhere else. The phone columns show how often someone held the referral phone as a share of the days they were eligible to hold it, which is why a person who joined last month can be compared fairly against someone who has been here all year. Hover any figure for the counts behind it. Rows are ordered by total pod days.</p>
+      <div class="seg" id="fairSeg" style="margin-bottom:.8rem"></div>
       <div style="overflow-x:auto"><table class="fair" id="fairTable"></table></div>\n      <div id="driftBox"></div>
     </div>
   </section>
@@ -7293,11 +7295,35 @@ function renderFairness(){
       }
     });
   }
-  const rows = Object.entries(counts).map(([id, c]) => {
+  let rows = Object.entries(counts).map(([id, c]) => {
     const s = staffById(id);
     return s ? { s, c, total: PODS.reduce((n,p) => n + c.pods[p], 0) } : null;
   }).filter(r => r && !r.s.noFair)   /* an ad-hoc locum marked "leave out of fairness" is not shown */
     .sort((a,b) => b.total - a.total || a.s.name.localeCompare(b.s.name));
+  /* ── ONLY THE PEOPLE STILL HERE, BY DEFAULT ─────────────────────────────────────────────
+     Ali, 26.09.19: "in fairness tab only show people who are still on the unit. other can be
+     hidden behind a tab or something." Twelve months of history means twelve months of leavers
+     in the table, and the person you are looking for is under them. Option A of the mockups:
+     the board's own segmented control, On the unit / Left / Everyone, remembered per device.
+     `isActiveOn` is the same test the drift panel was fixed to use on 15 Aug. The unit totals
+     under the table stay everyone-for-twelve-months whichever segment is showing, so the
+     baseline does not move when the list does. */
+  const here = r => isActiveOn(r.s, todayISO());
+  const allRows = rows;
+  const nHere = rows.filter(here).length, nLeft = rows.length - nHere;
+  let fairView = store.get("fairView") || "here";
+  if (fairView === "left" && !nLeft) fairView = "here";
+  const seg = $("#fairSeg");
+  if (seg) {
+    seg.innerHTML = "";
+    [["here", "On the unit", nHere], ["left", "Left", nLeft], ["all", "Everyone", rows.length]].forEach(([k, lbl, n]) => {
+      if (k === "left" && !nLeft) return;
+      const b = el("button", { class: "segbtn" + (k === fairView ? " on" : ""), type: "button" }, lbl, el("small", { style: "opacity:.6;margin-left:.35rem" }, String(n)));
+      b.onclick = () => { store.set("fairView", k); renderFairness(); };
+      seg.append(b);
+    });
+  }
+  rows = fairView === "here" ? rows.filter(here) : fairView === "left" ? rows.filter(r => !here(r)) : rows;
   const podDot = { A: "var(--podAb)", B: "var(--podBb)", C: "var(--podCb)", D: "var(--podDb)", E: "var(--podEb)" };
   const head = el("tr", {}, el("th", { style: "min-width:150px" }, "Name"));
   for (const p of PODS) head.append(el("th", {}, el("span", { class: "dot", style: "background:" + podDot[p] }), p));
@@ -7330,7 +7356,7 @@ function renderFairness(){
     }
     body.append(tr);
   }
-  if (!rows.length) body.append(el("tr", {}, el("td", { colspan: "9", class: "empty" }, "No allocations saved yet.")));
+  if (!rows.length) body.append(el("tr", {}, el("td", { colspan: "9", class: "empty" }, allRows.length ? "Nobody in this view." : "No allocations saved yet.")));
   tbl.append(body);
   /* ── THE NUMBER THE WHOLE TABLE WAS MISSING ───────────────────────────────────────────────
      Every row says how much ONE person is moved about. Nothing said what the unit does, so
@@ -7342,20 +7368,20 @@ function renderFairness(){
      somebody here for four weeks does not count the same as somebody here for forty. Two rows,
      because the twelve-month figure is the baseline and this week is the thing that moves. */
   const pairs = [];
-  for (const { c } of rows)
+  for (const { c } of allRows)
     for (const k in c.wkPods) pairs.push({ wk: k, n: c.wkPods[k].size });
   if (pairs.length) {
     const curWk = mondayOf(todayISO());
     const mean = a => a.reduce((n, x) => n + x.n, 0) / a.length;
     const three = a => Math.round(100 * a.filter(x => x.n >= 3).length / a.length);
-    const grand = rows.reduce((n, r) => n + r.total, 0);
+    const grand = allRows.reduce((n, r) => n + r.total, 0);
     const foot = el("tfoot");
     const line = (label, set, strong) => {
       if (!set.length) return null;
       const tr = el("tr", { class: "fairtot" + (strong ? " fairtot-hi" : "") });
       tr.append(el("td", { style: "font-weight:700;text-align:left" }, label));
       for (const p of PODS) {
-        const n = rows.reduce((t, r) => t + r.c.pods[p], 0);
+        const n = allRows.reduce((t, r) => t + r.c.pods[p], 0);
         tr.append(el("td", { title: n + " pod day" + (n === 1 ? "" : "s") + " in Pod " + p },
                     strong && grand ? Math.round(n / grand * 100) + "%" : ""));
       }
@@ -7373,7 +7399,7 @@ function renderFairness(){
     if (now) foot.append(now);
     if (foot.children.length) tbl.append(foot);
   }
-  renderDrift(rows);
+  renderDrift(allRows);
 }
 
 /* Whoever is furthest behind goes first, every single day — so under its own steam the engine does
