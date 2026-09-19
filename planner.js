@@ -111,12 +111,14 @@
                               // behind a 600 saving elsewhere. Until a gate-aware budget exists,
                               // the phone pass may not make the week one point worse. On the
                               // 13-week bench that is 75 of 91 days in a fullest pod (was 71).
-    spareLDBudget: 400,       // Ali, 26.09.19: "if theres more than 5 LD on the phone LD needs to
+    spareLDBudget: 1900,      // Ali, 26.09.19: "if theres more than 5 LD on the phone LD needs to
                               // double up with the extra LD" -- a RULE. When choosing the holder
                               // cannot satisfy it, the holder is swapped, long day for long day,
                               // into the pod that has two. Long-day counts do not change, Pod E is
-                              // never touched, so no long-day gate can move; what it may cost is
-                              // a home-pod day or a move, which is what this budget covers.
+                              // never touched, so no long-day gate can move. Priced just under
+                              // the cheapest rule (eLongDayEarly), so it may spend any preference
+                              // -- a weekend pair broken both ways, 1200, was what w/c 21 Sept
+                              // needed on the Sunday -- and can never buy a broken rule.
     phoneMaxPerWeek: 2,
     phoneMinShifts: 2,        // never the phone in your first two rostered shifts
     weekMoveCap: 1,           // moves per person per week before it costs extra
