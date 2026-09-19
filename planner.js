@@ -104,13 +104,15 @@
     // thresholds
     newDays: 91,              // inside this many days of starting = "new"
     eMemoryDecay: 0.88,       // how fast Pod E fairness forgets, per week
-    phoneBusiestBudget: 0,    // R06 · what moving the holder into the busiest pod may cost the
-                              // week. ZERO, deliberately: 130 (two off-home days and a move)
+    phoneBusiestBudget: 1900, // R06 · what moving the holder into the busiest pod may cost the
+                              // week. 1900 since the 19 Sept repricing: under the cheapest rule, so
+                              // it may spend any preference and never a rule. (Was 0: at the old
+                              // prices 130 (two off-home days and a move)
                               // was tried on 19 Sept and let a swap through that broke rule 5 on
                               // 2026-10-20, because cost deltas net out -- a 520 gate can hide
                               // behind a 600 saving elsewhere. Until a gate-aware budget exists,
                               // the phone pass may not make the week one point worse. On the
-                              // 13-week bench that is 75 of 91 days in a fullest pod (was 71).
+                              // 13-week bench that was 75 of 91 days in a fullest pod.) Now 83.
     spareLDBudget: 1900,      // Ali, 26.09.19: "if theres more than 5 LD on the phone LD needs to
                               // double up with the extra LD" -- a RULE. When choosing the holder
                               // cannot satisfy it, the holder is swapped, long day for long day,
@@ -764,8 +766,10 @@
      pod that has two. Same shift both ways, so every pod keeps its long-day count and Pod E is
      untouched -- the long-day gates cannot move. Bounded by spareLDBudget for what it may cost in
      continuity. */
+  var spareLDUnreachable = {};
   function phoneToSpareLD(plan, on, home, staff, hist, isNew, cfg, phone) {
     var base = weekCost(plan, on, home, staff, hist, isNew, cfg);
+    spareLDUnreachable = {};
     for (var di = 0; di < 7; di++) {
       var who = phone[di];
       if (!who || on[di][who] !== "LD") continue;
@@ -775,7 +779,7 @@
         for (var i = 0; i < list.length; i++) if (on[di][list[i]] === "LD") ldIn[p]++;
         if (list.indexOf(who) >= 0) hPod = p;
       }
-      if (!hPod || ldIn[hPod] >= 2) continue;
+      if (!hPod) continue;
       /* Cover is checked by hand as well as by cost: after the swap both pods must still have
          airway or transfer if they had it before, so the budget can never buy a bare pod. */
       var S2 = function (id) { return staff[id] || {}; };
@@ -784,10 +788,14 @@
         for (var k = 0; k < l.length; k++) if (S2(l[k]).airway || S2(l[k]).transfer) return true;
         return false;
       };
-      var done = false;
-      for (var pj = 0; pj < AD.length && !done; pj++) {
-        var to = AD[pj];
+      var done = false, cheapest = null;
+      /* Fullest doubled pod first -- Ali, 26.09.19 evening: "tuesday phone holder is on smallest
+         pod!" when A and B both had two long days and A simply came first. */
+      var order = AD.slice().sort(function (a, b) { return (byPod[b] || []).length - (byPod[a] || []).length; });
+      for (var pj = 0; pj < order.length && !done; pj++) {
+        var to = order[pj];
         if (to === hPod || ldIn[to] < 2) continue;
+        if ((byPod[to] || []).length <= (byPod[hPod] || []).length && ldIn[hPod] >= 2) continue;
         var lds = (byPod[to] || []).filter(function (x) { return on[di][x] === "LD"; });
         var hadH = covered(hPod), hadT = covered(to);
         for (var b = 0; b < lds.length && !done; b++) {
@@ -795,9 +803,12 @@
           var c = weekCost(plan, on, home, staff, hist, isNew, cfg);
           var stillCovered = (!hadH || covered(hPod)) && (!hadT || covered(to));
           if (stillCovered && c <= base + (cfg.spareLDBudget || 0)) { base = c; done = true; }
-          else swapIn(byPod, hPod, lds[b], to, who);
+          else { if (cheapest == null || c - base < cheapest) cheapest = c - base; swapIn(byPod, hPod, lds[b], to, who); }
         }
       }
+      /* Every way of doubling up broke a rule (the budget sits under the cheapest rule, so a
+         refusal at rule price is a rule). Say so, rather than leave it to look like a miss. */
+      if (!done && ldIn[hPod] < 2 && cheapest != null && cheapest >= cfg.eLongDayEarly) spareLDUnreachable[di] = cheapest;
     }
     return plan;
   }
@@ -850,6 +861,7 @@
       var staffed = 0;
       for (var p1 = 0; p1 < PODS.length; p1++) if ((plan[di][PODS[p1]] || []).length) staffed++;
       if (ldOn < staffed) notes.push({ di: di, kind: "longDayFloor", text: "only " + ldOn + " long days rostered for " + staffed + " staffed pods" });
+      if (spareLDUnreachable[di] != null) notes.push({ di: di, kind: "spareLDUnreachable", text: "the phone cannot double up with the spare long day without breaking a rule" });
       for (var p2 = 0; p2 < AD.length; p2++) {
         var pod = AD[p2], list = plan[di][pod] || [];
         if (!list.length) continue;
