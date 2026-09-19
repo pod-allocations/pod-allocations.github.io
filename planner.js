@@ -474,9 +474,20 @@
       if (!strict.length) strict = cands.filter(function (x) { return (week[x] || 0) < cfg.phoneMaxPerWeek; });
       if (!strict.length) strict = cands;
       if (!strict.length) { out.push(null); run = null; continue; }
+      /* R06 — THE PHONE HOLDER WHERE THERE IS MOST COVER. Fairness decides first; among people
+         equally owed a turn, the one already standing in a fuller pod is preferred, because the
+         holder is answering referrals rather than standing a bed and a pod of two loses more
+         than a pod of three. This rule lived only in the old day-by-day repair chain and never
+         reached the planner; found 19 Sept with the phone in a two-person pod on two days. */
+      var podSizeOf = function (id) {
+        for (var pi = 0; pi < PODS.length; pi++)
+          if ((plan[di][PODS[pi]] || []).indexOf(id) >= 0) return (plan[di][PODS[pi]] || []).length;
+        return 0;
+      };
       strict.sort(function (a, b) {
         var ra = hist.phoneHeld[a] / (hist.phoneElig[a] || 1), rb = hist.phoneHeld[b] / (hist.phoneElig[b] || 1);
         return ra - rb || (hist.phoneHeld[a] - hist.phoneHeld[b]) ||
+               (podSizeOf(b) - podSizeOf(a)) ||
                String(S(a).name || a).localeCompare(String(S(b).name || b));
       });
       var pick = strict[0];
@@ -658,6 +669,42 @@
     return plan;
   }
 
+  /* ── THE PHONE HOLDER STANDS IN THE BUSIEST POD ───────────────────────────────────────────
+     R06, as a preference: after the holder is chosen, if their pod is not among the fullest,
+     swap them with a same-shift person in a fuller pod -- and keep it only if the week is no
+     worse on anything else. Never Pod E (rule 4), never a swap that raises the cost. */
+  function phoneToBusiest(plan, on, home, staff, hist, isNew, cfg, phone) {
+    var base = weekCost(plan, on, home, staff, hist, isNew, cfg);
+    for (var di = 0; di < 7; di++) {
+      var who = phone[di];
+      if (!who) continue;
+      var byPod = plan[di], hPod = null, max = 0;
+      for (var pi = 0; pi < PODS.length; pi++) {
+        var n = (byPod[PODS[pi]] || []).length;
+        if ((byPod[PODS[pi]] || []).indexOf(who) >= 0) hPod = PODS[pi];
+        if (PODS[pi] !== "E" && n > max) max = n;
+      }
+      if (!hPod || (byPod[hPod] || []).length >= max) continue;
+      var done = false;
+      var order = PODS.slice().sort(function (a, b) { return (byPod[b] || []).length - (byPod[a] || []).length; });
+      for (var pj = 0; pj < order.length && !done; pj++) {
+        var to = order[pj];
+        if (to === "E" || to === hPod || (byPod[to] || []).length < max) continue;
+        var takers = (byPod[to] || []).filter(function (x) { return on[di][x] === on[di][who]; });
+        for (var b = 0; b < takers.length && !done; b++) {
+          swapIn(byPod, hPod, who, to, takers[b]);
+          var c = weekCost(plan, on, home, staff, hist, isNew, cfg);
+          /* A PREFERENCE: taken only when the week is no worse on anything else. A budget was
+             tried (130) and let a net-neutral swap walk through rule 5, because cost deltas
+             net out; the only safe bar is "not one point worse". */
+          if (c <= base) { base = c; done = true; }
+          else swapIn(byPod, hPod, takers[b], to, who);
+        }
+      }
+    }
+    return plan;
+  }
+
   /* ── 6 · SUPERNUMERARIES, LAST, COUNTED NOWHERE ──────────────────────────────────────────
      Sorted at the very end, where they cannot make a pod too big, too small or short of a long
      day. Neurology registrars are always supernumerary and go to C or D. */
@@ -666,10 +713,22 @@
     var out = [];
     for (var di = 0; di < 7; di++) {
       var list = supers[di] || [], byPod = plan[di], put = {};
+      var hasAccp = function (p) {
+        var l = byPod[p] || [];
+        for (var k = 0; k < l.length; k++) if (String(S(l[k]).grade || "").toUpperCase() === "ACCP") return true;
+        return false;
+      };
       for (var i = 0; i < list.length; i++) {
         var id = list[i];
+        var isAccp = String(S(id).grade || "").toUpperCase() === "ACCP";
         var want = S(id).neuro ? ["C", "D"] : PODS.slice();
+        /* Ali, 26.09.19: a supernumerary ACCP goes on a pod WITH a counted ACCP -- that is who
+           they are learning beside -- and two supernumeraries never share a pod. Smallest pod
+           only breaks the ties that are left. Neuro registrars keep C/D. */
         want.sort(function (a, b) {
+          var sa = (put[a] ? 1 : 0) - (put[b] ? 1 : 0);
+          if (sa) return sa;
+          if (isAccp) { var aa = (hasAccp(b) ? 1 : 0) - (hasAccp(a) ? 1 : 0); if (aa) return aa; }
           return ((byPod[a] || []).length + (put[a] || 0)) - ((byPod[b] || []).length + (put[b] || 0));
         });
         var p = want[0] || "C";
@@ -723,6 +782,8 @@
       if (c < best) { best = c; plan = alt; }
     }
     var phone = pickPhone(plan, d.on, staff, hist, cfg, input.weekKey);
+    /* The holder stands where there is most cover (R06), where that costs nothing. */
+    plan = phoneToBusiest(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
     /* The spare long day goes beside the phone holder — after the phone is known, and only where
        it costs nothing. It is a preference and may break nothing. */
     plan = spareLongDayToPhone(plan, d.on, home, staff, hist, d.isNew, cfg, phone);

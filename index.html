@@ -10610,7 +10610,7 @@ async function applyDuePendingSkills(silent){
    somebody is what the row was asking for). The row must still grey rather than vanish, so the
    title is copied into the store when it is pressed and drawn from there for its three days. */
 const SORTED_GREY_DAYS = 3;
-const LIVE_KINDS = ["clash", "ghost", "unver", "dup", "cover", "noexp", "retn"];
+const LIVE_KINDS = ["clash", "ghost", "unver", "dup", "cover", "noexp", "retn", "sync", "unwritten"];
 function sortedOf(id){ return (data && data.sorted && data.sorted[id]) || null; }
 /* Rows that summarise a SET — the clashes, the ghosts — carry a signature of that set in their id,
    so quieting today's three clashes cannot also quiet tomorrow's fourth. A new fact is a new row. */
@@ -10623,6 +10623,51 @@ function attnSig(parts){
 function rawAttention(){
   if (!data) return [];
   const out = [];
+
+  /* ── THE TWO THINGS THAT WOULD HAVE CAUGHT 19 SEPTEMBER ───────────────────────────────────
+     The Allocate sync failed every two hours from 15 September — a Playwright click on Allocate's
+     "Rostering" tab timing out — and NOTHING SAID SO. The health panel knew ("sync is behind") but
+     the health panel is not where anybody looks; this page is. The week of 21 September was
+     therefore never written, sat with twenty people on the bench every day, and was found by Ali
+     on the Saturday. The last sync had landed 113 hours earlier.
+
+     So: two rows here, both LIVE kinds, so they cannot be greyed away while still true.
+
+     THE THRESHOLD IS THE HEALTH PANEL'S OWN (26 hours), not a new number: the sync runs every two
+     hours through the day, so a day and a bit of silence is already three missed runs. */
+  const hrs = (typeof hoursSince === "function") ? hoursSince(data.lastSync) : null;
+  if (hrs === null || hrs > 26) {
+    const days = hrs === null ? null : Math.floor(hrs / 24);
+    out.push({ kind: "sync", id: "sync:stale", n: 1,
+      title: hrs === null ? "The Allocate sync has never landed"
+           : "The Allocate sync has not landed for " + (days >= 1 ? days + " day" + (days === 1 ? "" : "s") : Math.round(hrs) + " hours"),
+      body: (data.lastSync ? "Last landed " + new Date(data.lastSync).toLocaleString("en-GB",
+               { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + ". " : "")
+          + "Nothing new from Optima is reaching the board and no week is being written. "
+          + "The run log on GitHub says why.",
+      go: () => switchTab("rotateam") });
+  }
+
+  /* A WEEK THAT SHOULD HAVE BEEN WRITTEN AND HAS NOT. Writable (the Monday 14:00 clock has
+     passed), a roster on it, and not one person in a pod on any day. This is the exact shape of
+     19 September, and it is visible here rather than only as a wall of bench on the board. */
+  for (const wkKey of Object.keys(data.weeks || {}).sort()) {
+    if (wkKey < visibleFrom()) continue;
+    if (typeof weekIsWritable !== "function" || !weekIsWritable(wkKey)) continue;
+    const wk = data.weeks[wkKey]; if (!wk || !wk.days) continue;
+    const rostered = new Set();
+    for (let di = 0; di < 7; di++)
+      for (const id of Object.keys((wk.roster || {})[addDays(wkKey, di)] || {})) rostered.add(id);
+    if (!rostered.size) continue;
+    const placed = wk.days.reduce((n, d) => n + (d ? assignedIds(d).size : 0), 0);
+    if (placed) continue;
+    out.push({ kind: "unwritten", id: "unwritten:" + wkKey, n: 1,
+      title: "Week of " + fmtDate(wkKey) + " has nobody in a pod",
+      body: rostered.size + " people are rostered that week and none of them is allocated. "
+          + "It should have been written at " + String(rule("writeHour")).padStart(2, "0") + ":00 on "
+          + DAYNAMES[rule("writeDay")] + ".",
+      go: () => { currentWeekKey = wkKey; switchTab("pods"); renderAll(); } });
+  }
   const review = data.syncReview || [];
   const clashes = review.length;
   if (clashes) out.push({ kind: "clash", id: "clash:" + attnSig(review.map(c => (c && (c.date || "")) + (c && (c.name || "")))),
