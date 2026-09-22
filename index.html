@@ -1998,6 +1998,14 @@ document.addEventListener("pointerup", e => {
   renderWeek();
 }, { passive: true });
 let loadedSavedAt = null, conflictToastShown = false;
+/* A NAME IS NOT AN IDENTITY — 26.09.22. The stale-copy guard below used to treat any newer save
+   carrying the same EDITOR NAME as this screen's own echo and adopt it. Two screens signed in as
+   the same person are not one screen, and neither is the overnight sync, which saves under a name
+   as well. So a board left open on a phone or a wall screen quietly overwrote every allocation the
+   sync wrote, all day, every day — the week of 28 Sept was written five times and blanked five
+   times before anybody noticed. This id is minted per page load; only a save carrying THIS id is
+   ours. Everything else is somebody else's and blocks the save. */
+const SAVE_SID = Math.random().toString(36).slice(2) + Date.now().toString(36);
 const PRISTINE_HTML = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
 {
   const sf = document.getElementById("staticFallback");
@@ -2466,8 +2474,9 @@ async function readMaster(){
 async function staleBlocked(cur, silent){
   if (!(cur && cur.savedAt && loadedSavedAt && cur.savedAt !== loadedSavedAt)) return false;
   if (Date.parse(cur.savedAt) <= Date.parse(loadedSavedAt)) return false; // propagation lag, not a conflict
-  // Our own save (e.g. a background autosave that landed a moment ago) is never a conflict — adopt it.
-  if (cur.savedBy && cur.savedBy === editorName()) { loadedSavedAt = cur.savedAt; return false; }
+  // THIS PAGE's own save (a background autosave that landed a moment ago) is never a conflict — adopt
+  // it. Matched on the session id, never on the editor's name: see SAVE_SID.
+  if (cur.savedSid && cur.savedSid === SAVE_SID) { loadedSavedAt = cur.savedAt; return false; }
   updateSaveState("failed");
   const who = cur.savedBy ? " by " + cur.savedBy : "";
   if (silent) {
@@ -2514,7 +2523,7 @@ function relayFetch(payload){
 async function relaySave(silent){
   if (TESTMODE) {
     data.savedAt = new Date().toISOString();
-    data.savedBy = editorName();
+    data.savedBy = editorName(); data.savedSid = SAVE_SID;
     try { localStorage.setItem(TEST_KEY, JSON.stringify(data)); } catch(e){}
     dirty = false; updateSaveState("saved");
     if (!silent) toast("Saved on this device only — the live rota is untouched");
@@ -2526,7 +2535,7 @@ async function relaySave(silent){
   updateSaveState("saving");
   const savingSig = rotaSig(data);            // exactly what we're about to send
   data.savedAt = new Date().toISOString();
-  data.savedBy = editorName();
+  data.savedBy = editorName(); data.savedSid = SAVE_SID;
   // Hosted mode writes the data object straight to pod-data.json; local relay mode posts the whole page.
   const posted = await relayFetch(HOSTED ? JSON.stringify(data) : JSON.stringify({ html: serializeDocument() }));
   if (!posted) {
@@ -2906,7 +2915,7 @@ async function saveFileInner(silent){
   if (DEMO) {
     const savingSig = rotaSig(data);
     data.savedAt = new Date().toISOString();
-    data.savedBy = editorName();
+    data.savedBy = editorName(); data.savedSid = SAVE_SID;
     try { localStorage.setItem(DEMO_KEY, JSON.stringify(data)); } catch(e){}
     loadedSavedAt = data.savedAt;
     if (rotaSig(data) === savingSig) { dirty = false; updateSaveState("saved"); }
@@ -2948,7 +2957,7 @@ async function saveFileInner(silent){
       updateSaveState("saving");
       const savingSig = rotaSig(data);
       data.savedAt = new Date().toISOString();
-      data.savedBy = editorName();
+      data.savedBy = editorName(); data.savedSid = SAVE_SID;
       const w = await fileHandle.createWritable();
       await w.write(serializeDocument()); await w.close();
       loadedSavedAt = data.savedAt;
@@ -2964,7 +2973,7 @@ async function saveFileInner(silent){
     }
   } else {
     data.savedAt = new Date().toISOString();
-    data.savedBy = editorName();
+    data.savedBy = editorName(); data.savedSid = SAVE_SID;
     downloadText(serializeDocument(), SELF_NAME, "text/html");
     dirty = false; updateSaveState("saved");
     toast("Downloaded " + SELF_NAME + " — move it into the shared Teams folder, replacing the old one");
