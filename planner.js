@@ -816,30 +816,63 @@
   /* ── 6 · SUPERNUMERARIES, LAST, COUNTED NOWHERE ──────────────────────────────────────────
      Sorted at the very end, where they cannot make a pod too big, too small or short of a long
      day. Neurology registrars are always supernumerary and go to C or D. */
-  function placeSupers(plan, supers, staff) {
+  /* ── THE ONE PLACE THE SUPERNUMERARY RULE LIVES ──────────────────────────────────────────
+     Ali, 26.09.23: "if two rules clearly thats an issue." He was right, and it had already bitten.
+     This rule existed here, and a second copy of it was written into the overnight sync, and the
+     two disagreed about what to do when there are two supernumerary ACCPs and only one pod with a
+     counted ACCP on it. A rule with two implementations is two rules, and the one people see is
+     whichever ran last. So it is a function, exported, and everything that needs the answer asks
+     it: the planner when a week is written, the sync when somebody arrives after it was, and the
+     board's day check when a human puts one somewhere by hand.
+
+     `counted` is who is IN THE NUMBERS on each pod, `taken` is how many supernumeraries each pod
+     already holds. The order below is an order, not a set of wishes — each tier only breaks ties
+     the one above it left:
+
+       1. A neurology registrar is supernumerary and belongs on C or D. Nothing outranks it.
+       2. Not a pod that already holds a supernumerary — two on one pod is one person's teaching
+          split in half.
+       3. A pod with somebody counted on it. An empty pod teaches nobody, and is only chosen when
+          nothing else exists.
+       4. For an ACCP, a pod holding a COUNTED ACCP. That is who they are learning beside, and it
+          is the whole reason the placement exists — a supernumerary ACCP standing with an ST and
+          an FY2 is on the unit and being taught by nobody who does their job.
+       5. The smallest pod.
+
+     Returns a pod letter, or null if there is no pod at all. */
+  function superPodFor(counted, taken, person, staff) {
     var S = function (id) { return staff[id] || {}; };
+    var want = (person && person.neuro) ? ["C", "D"] : PODS.slice();
+    want = want.filter(function (p) { return counted[p] !== undefined; });
+    if (!want.length) return null;
+    var isAccp = String((person && person.grade) || "").toUpperCase() === "ACCP";
+    var size = function (p) { return (counted[p] || []).length; };
+    var hasAccp = function (p) {
+      var l = counted[p] || [];
+      for (var k = 0; k < l.length; k++) if (String(S(l[k]).grade || "").toUpperCase() === "ACCP") return true;
+      return false;
+    };
+    want.sort(function (a, b) {
+      var t = ((taken[a] || 0) ? 1 : 0) - ((taken[b] || 0) ? 1 : 0);      // 2
+      if (t) return t;
+      var st = (size(b) ? 1 : 0) - (size(a) ? 1 : 0);                      // 3
+      if (st) return st;
+      if (isAccp) { var aa = (hasAccp(b) ? 1 : 0) - (hasAccp(a) ? 1 : 0); if (aa) return aa; }  // 4
+      return (size(a) + (taken[a] || 0)) - (size(b) + (taken[b] || 0));    // 5
+    });
+    return want[0] || null;
+  }
+
+  /* ── 6 · SUPERNUMERARIES, LAST, COUNTED NOWHERE ─ placement asks superPodFor, nothing else. */
+  function placeSupers(plan, supers, staff) {
     var out = [];
     for (var di = 0; di < 7; di++) {
       var list = supers[di] || [], byPod = plan[di], put = {};
-      var hasAccp = function (p) {
-        var l = byPod[p] || [];
-        for (var k = 0; k < l.length; k++) if (String(S(l[k]).grade || "").toUpperCase() === "ACCP") return true;
-        return false;
-      };
       for (var i = 0; i < list.length; i++) {
         var id = list[i];
-        var isAccp = String(S(id).grade || "").toUpperCase() === "ACCP";
-        var want = S(id).neuro ? ["C", "D"] : PODS.slice();
-        /* Ali, 26.09.19: a supernumerary ACCP goes on a pod WITH a counted ACCP -- that is who
-           they are learning beside -- and two supernumeraries never share a pod. Smallest pod
-           only breaks the ties that are left. Neuro registrars keep C/D. */
-        want.sort(function (a, b) {
-          var sa = (put[a] ? 1 : 0) - (put[b] ? 1 : 0);
-          if (sa) return sa;
-          if (isAccp) { var aa = (hasAccp(b) ? 1 : 0) - (hasAccp(a) ? 1 : 0); if (aa) return aa; }
-          return ((byPod[a] || []).length + (put[a] || 0)) - ((byPod[b] || []).length + (put[b] || 0));
-        });
-        var p = want[0] || "C";
+        var counted = {};
+        for (var pi = 0; pi < PODS.length; pi++) counted[PODS[pi]] = (byPod[PODS[pi]] || []).slice();
+        var p = superPodFor(counted, put, staff[id] || {}, staff) || "C";
         put[p] = (put[p] || 0) + 1;
         out.push({ di: di, id: id, pod: p });
       }
@@ -1249,6 +1282,7 @@
   root.blankHistory = blankHistory;
   root.capsFor = capsFor;
   root.homePods = homePods;
+  root.superPodFor = superPodFor;
   root.weekCost = weekCost;
   root.addDays = addDays;
 })(typeof module !== "undefined" && module.exports ? module.exports
