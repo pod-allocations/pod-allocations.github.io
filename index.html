@@ -651,6 +651,12 @@ tr.fairtot td:first-child{white-space:nowrap}
 .cc-line.ok{background:#EAF3DE;color:#3B6D11}
 .cc-sub{font-size:.72rem;color:var(--muted);margin:.6rem 0 .3rem;line-height:1.5}
 .sheetbtn.plain{border-color:transparent;background:transparent;color:var(--muted)}
+/* Phone hand-over list in the holder's sheet (26.09.26, mockup option B). 44px rows for thumbs. */
+.sheetwho{display:flex;flex-direction:column;gap:.35rem;max-height:40vh;overflow-y:auto}
+.whobtn{display:flex;align-items:center;gap:.55rem;width:100%;min-height:44px;padding:.5rem .7rem;text-align:left;font-size:.9rem;font-weight:700}
+.whosh{background:#2a3a78;color:#fff;border-radius:999px;padding:.08rem .5rem;font-size:.72rem;font-weight:800}
+.whonm{flex:1}
+.whopod{color:var(--muted);font-weight:700;font-size:.82rem}
 .sheetbtn.plain:hover{background:var(--hair);color:var(--ink)}
 /* THE POD ROW. Five squares, in the pod's own colour, sized so a thumb cannot land between two.
    44px is the smallest target Apple and Google both call reliable, and this is the control that
@@ -4725,7 +4731,58 @@ function personSheet(s, di, day){
     if (here) b.disabled = true;
     row.append(b);
   }
-  box.append(el("div", { class: "sheetlabel" }, inPod ? "Move to" : "Put in"), row,
+  /* THE PHONE, HANDED OVER FROM THE HOLDER'S SHEET. Added 26.09.26 after a consultant pointed out
+     that on a phone there was no way to give the referral phone to somebody else: on a computer you
+     drag it, but drag does not exist on touch. Ali picked this shape from three mockups
+     (docs/MOCKUPS-PHONE-HANDOVER-26.09.26.html, option B): tap whoever has the phone, and their
+     sheet lists everybody who could take it today — one more tap and it has moved. Starting from
+     the holder is where people look, and listing only the people who CAN take it means the list
+     never offers a name that is then refused.
+     Day phone: phone holders on a long day, in a pod or on the bench, whose phone tick is not still
+     waiting to start. Night phone: phone holders on tonight. Every button still runs assignPhoneTo,
+     the same function a drag runs, so the rules are enforced there too, not only here. */
+  const onNight = /night/.test(where || "");
+  const holderId = onNight ? day.night.phone : day.phone;
+  let handTo = null;
+  if (holderId === s.id) {
+    const cands = [];
+    if (onNight) {
+      const nk = [["AB", "A&B"], ["CDE", "C&D"], ["E", "Pod E"]];
+      for (const [k, lab] of nk) for (const id of (day.night[k] || [])) {
+        const c = staffById(id);
+        if (id && id !== s.id && canHoldPhone(c) && !skillHeldBack(id, "phoneHolder", dateISO) && !cands.some(x => x.id === id))
+          cands.push({ id, s: c, sh: "N", where: lab });
+      }
+    } else {
+      for (const p of PODS) for (const a of day.pods[p].assign) {
+        const c = staffById(a.id);
+        if (a.id && a.id !== s.id && a.shift === "LD" && canHoldPhone(c) && !skillHeldBack(a.id, "phoneHolder", dateISO))
+          cands.push({ id: a.id, s: c, sh: "LD", where: "Pod " + p });
+      }
+      const placed = new Set(dayAllAssigned(day));
+      for (const id of Object.keys(pool)) {
+        const c = staffById(id);
+        if (placed.has(id) || id === s.id || pool[id].kind !== "day" || poolState(pool[id]) !== "LD") continue;
+        if (canHoldPhone(c) && !skillHeldBack(id, "phoneHolder", dateISO)) cands.push({ id, s: c, sh: "LD", where: "bench" });
+      }
+    }
+    if (cands.length) {
+      const list = el("div", { class: "sheetwho" });
+      for (const c of cands)
+        list.append(el("button", { class: "btn sec whobtn", title: "Give the " + (onNight ? "night phone" : "phone") + " to " + c.s.name,
+          onclick: async () => {
+            shut();
+            await assignPhoneTo(day, onNight ? "night" : "day", c.s);
+            if ((onNight ? day.night.phone : day.phone) === c.id)
+              toast(c.s.name.split(" ")[0] + " has the " + (onNight ? "night phone" : "phone"));
+          } },
+          el("span", { class: "whosh" }, c.sh), el("span", { class: "whonm" }, c.s.name), el("span", { class: "whopod" }, c.where)));
+      handTo = [el("div", { class: "sheetlabel" }, onNight ? "Hand the night phone to" : "Hand the phone to"), list];
+    }
+  }
+  /* Filtered because the native append writes a null as the text "null" — which is what the
+     bench case below had been doing since 16 Aug, a stray word under the pod row. */
+  box.append(...[...(handTo || []), el("div", { class: "sheetlabel" }, inPod ? "Move to" : "Put in"), row,
     /* Only offered when there is something to come off. On the bench already, it would do
        nothing and say nothing, which is worse than not being there. */
     where === "bench" ? null : el("button", { class: "btn sec sheetbtn", onclick: () => {
@@ -4734,7 +4791,7 @@ function personSheet(s, di, day){
         markDirty(); renderWeek();
         afterChangeCard(di, s.name.split(" ")[0] + " is on the bench, still on today.");
       } }, "Just out of this pod"),
-    el("button", { class: "btn sec sheetbtn plain", onclick: shut }, "Cancel"));
+    el("button", { class: "btn sec sheetbtn plain", onclick: shut }, "Cancel")].filter(Boolean));
   bg.append(box);
   bg.onclick = e => { if (e.target === bg) shut(); };
   window.addEventListener("keydown", esc);

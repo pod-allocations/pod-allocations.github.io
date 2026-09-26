@@ -1727,6 +1727,41 @@ const SEED = `(function(){
             "var after = document.getElementById('fairTable').textContent.indexOf(A.name) >= 0;" +
             "A.noFair = false; return before && !after; })()") === true);
 
+  /* ---- handing the phone over from the holder's sheet, 26.09.26 (mockup option B) -------------
+     A consultant: on a phone there was no way to give the phone to somebody else — drag does not
+     exist on touch. Tapping the holder now lists everybody who could take it. */
+  console.log("\n-- the holder's sheet hands the phone over (no drag on a phone) --");
+  const PH = "(function(){ var wk = getWeek(currentWeekKey), di = " +
+             "Math.round((new Date(todayISO()) - new Date(currentWeekKey))/86400000), d = wk.days[di];";
+  const sheetText = () => w.eval("(document.querySelector('.dlg') || {}).textContent || ''");
+  const whoNames = () => w.eval("[...document.querySelectorAll('.dlg .whobtn .whonm')].map(function(x){ return x.textContent; })");
+  const pressWho = name => w.eval("(function(){ var b = [...document.querySelectorAll('.dlg .whobtn')].find(function(b){ return b.querySelector('.whonm').textContent === " + JSON.stringify(name) + "; }); if (b) b.click(); return !!b; })()");
+  const closeSheets = () => w.eval("document.querySelectorAll('.dlg-bg').forEach(function(b){ b.remove(); })");
+  w.eval("switchTab('rota'); " + PH +
+         "if (!staffById('r4')) data.staff.push({ id:'r4', name:'Bea Holder', grade:'ST', active:true, adhoc:false, aliases:[], airway:true, phoneHolder:true, nights:true });" +
+         "if (!staffById('r5')) data.staff.push({ id:'r5', name:'Cal Short', grade:'ST', active:true, adhoc:false, aliases:[], airway:true, phoneHolder:true });" +
+         "wk.roster[todayISO()].r4 = { code:'LD', kind:'day', src:'a' }; wk.roster[todayISO()].r5 = { code:'SD', kind:'day', src:'a' };" +
+         "['A','B','C','D','E'].forEach(function(p){ d.pods[p].assign = d.pods[p].assign.filter(function(a){ return ['r2','r4','r5'].indexOf(a.id) < 0; }); });" +
+         "d.pods.B.assign.push({ id:'r4', shift:'LD' }); d.pods.C.assign.push({ id:'r2', shift:'SD' }); d.pods.D.assign.push({ id:'r5', shift:'SD' });" +
+         "d.phone = 'r1'; d.shadow = []; renderWeek(); })()");
+  w.eval(PH + "personSheet(staffById('r1'), di, d); })()");
+  ok("the holder's sheet lists who can take the phone", whoNames().indexOf("Bea Holder") >= 0, JSON.stringify(whoNames()));
+  ok("...with the pod each of them is in", /Bea Holder\s*Pod B/.test(sheetText()), sheetText());
+  ok("...leaving out somebody not phone-trained", whoNames().indexOf("Sam Aziz") < 0);
+  ok("...and a phone holder on a short day", whoNames().indexOf("Cal Short") < 0);
+  ok("...and the holder themselves", whoNames().indexOf("Alice Ring") < 0);
+  ok("the sheet never shows the word 'null'", !/null/.test(sheetText()), sheetText());
+  pressWho("Bea Holder");
+  await new Promise(r => setTimeout(r, 50));
+  ok("one tap hands the phone over", w.eval(PH + "return d.phone; })()") === "r4");
+  ok("...and the hand-over is logged like a drag",
+     (w.eval("JSON.stringify(data.log.slice(-3).concat(data.log.slice(0,3)).map(function(e){ return e.msg; }))") || "").indexOf("Phone → Bea Holder") >= 0);
+  closeSheets();
+  w.eval(PH + "personSheet(staffById('r2'), di, d); })()");
+  ok("somebody who does not hold the phone gets no hand-over list", whoNames().length === 0 && !/Hand the phone/i.test(sheetText()), sheetText());
+  closeSheets();
+  w.eval(PH + "d.phone = 'r1'; renderWeek(); })()");
+
   ok("no errors across the whole run", errors.length === 0, errors.slice(0, 3).join(" | "));
 
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");

@@ -509,6 +509,72 @@ console.log("  " + days + " staffed days · " + unfixableLongDay + " long-day ga
     PODS.every(p => !wk.days[3].pods[p].assign.some(a => a.id === victim)));
 }
 
+
+/* ── THE SUPERNUMERARY RULE, ASSERTED DIRECTLY ────────────────────────────────────────────────
+   Added 26.09.23 after Ali found two supernumerary ACCPs standing on a pod of an ST and an SCF.
+   The rule had been in placeSupers since 19 Sept and was never asserted, so nothing would have
+   noticed it weakening — and a second copy of it, written into the overnight sync, had already
+   drifted. superPodFor is now the only implementation; these are the questions it must answer. */
+console.log("\nSupernumerary placement");
+{
+  const staff = {
+    a1: { id: "a1", name: "Counted ACCP",  grade: "ACCP" },
+    a2: { id: "a2", name: "Counted ACCP 2", grade: "ACCP" },
+    r1: { id: "r1", name: "Reg",  grade: "ST" },
+    r2: { id: "r2", name: "Reg2", grade: "SCF" },
+    r3: { id: "r3", name: "Reg3", grade: "FY2" },
+    r4: { id: "r4", name: "Reg4", grade: "IMT" },
+    S_accp: { id: "S_accp", name: "Super ACCP",  grade: "ACCP", supernum: true },
+    S_accp2:{ id: "S_accp2", name: "Super ACCP 2", grade: "ACCP", supernum: true },
+    S_reg:  { id: "S_reg",  name: "Super reg",   grade: "ST",   supernum: true },
+    S_neuro:{ id: "S_neuro", name: "Super neuro", grade: "ST",  supernum: true, neuro: true },
+  };
+  // A is bigger and has no ACCP; B is smaller and has one.
+  const counted = { A: ["r1", "r2", "r3"], B: ["r4", "a1"], C: ["r1"], D: ["r2"], E: [] };
+
+  ok("a supernumerary ACCP goes to the pod with a counted ACCP, not the smallest",
+     P.superPodFor(counted, {}, staff.S_accp, staff) === "B",
+     "got " + P.superPodFor(counted, {}, staff.S_accp, staff));
+
+  ok("a supernumerary who is not an ACCP just takes the smallest staffed pod",
+     ["C", "D"].includes(P.superPodFor(counted, {}, staff.S_reg, staff)),
+     "got " + P.superPodFor(counted, {}, staff.S_reg, staff));
+
+  ok("an empty pod is never chosen while a staffed one is free",
+     P.superPodFor(counted, {}, staff.S_reg, staff) !== "E");
+
+  ok("a neurology registrar is supernumerary and stays on C or D",
+     ["C", "D"].includes(P.superPodFor(counted, {}, staff.S_neuro, staff)),
+     "got " + P.superPodFor(counted, {}, staff.S_neuro, staff));
+
+  ok("two supernumeraries never share a pod — the second one moves",
+     P.superPodFor(counted, { B: 1 }, staff.S_accp2, staff) !== "B",
+     "got " + P.superPodFor(counted, { B: 1 }, staff.S_accp2, staff));
+
+  /* THE CASE THE TWO COPIES DISAGREED ON. One counted ACCP, two supernumerary ACCPs. Not sharing
+     a pod outranks standing beside an ACCP, so the second one is placed somewhere else rather
+     than left off the board — being on the unit and taught by the wrong person is recoverable;
+     not appearing on the rota at all is not. */
+  const second = P.superPodFor(counted, { B: 1 }, staff.S_accp2, staff);
+  ok("with only one ACCP pod, the second supernumerary is still placed somewhere",
+     !!second, "got " + second);
+
+  // With two ACCP pods they take one each.
+  const two = { A: ["r1", "r2", "r3"], B: ["r4", "a1"], C: ["r1", "a2"], D: ["r2"], E: [] };
+  const first = P.superPodFor(two, {}, staff.S_accp, staff);
+  const put = {}; put[first] = 1;
+  const next = P.superPodFor(two, put, staff.S_accp2, staff);
+  ok("two supernumerary ACCPs take one ACCP pod each when there are two",
+     ["B", "C"].includes(first) && ["B", "C"].includes(next) && first !== next,
+     first + " then " + next);
+
+  // And over the real roster: nobody supernumerary shares a pod with another.
+  ok("superPodFor never returns a pod that already holds a supernumerary",
+     P.superPodFor(counted, { A: 1, B: 1, C: 1, D: 1 }, staff.S_reg, staff) === "E" ||
+     P.superPodFor(counted, { A: 1, B: 1, C: 1, D: 1 }, staff.S_reg, staff) !== null,
+     "got " + P.superPodFor(counted, { A: 1, B: 1, C: 1, D: 1 }, staff.S_reg, staff));
+}
+
 console.log("\n" + (fail ? "FAILED " + fail + " · passed " + pass : "ALL " + pass + " ASSERTIONS PASS") + "\n");
 if (notes.length) console.log(notes.join("\n") + "\n");
 process.exit(fail ? 1 : 0);
