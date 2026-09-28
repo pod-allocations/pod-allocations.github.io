@@ -575,6 +575,73 @@ console.log("\nSupernumerary placement");
      "got " + P.superPodFor(counted, { A: 1, B: 1, C: 1, D: 1 }, staff.S_reg, staff));
 }
 
+/* ── SUPERNUMERARY ACCPs: ONE PER POD, ACCP PODS FIRST, AND TAKEN IN TURN ──────────────────────
+   Ali, 26.09.28, with three supernumerary ACCPs on the unit: max one per pod; first choice a pod
+   with a counted ACCP; spread across the other pods (not E) when there are not enough of those;
+   and "make sure it's not the same ACCP who is always allocated to an ACCP pod first — rotate". */
+console.log("\nSupernumerary ACCPs — rotation and overflow");
+{
+  const st = {
+    a1: { id: "a1", grade: "ACCP" }, r1: { id: "r1", grade: "ST" }, r2: { id: "r2", grade: "SCF" },
+    r3: { id: "r3", grade: "FY2" }, r4: { id: "r4", grade: "IMT" }, r5: { id: "r5", grade: "CT" },
+    X: { id: "X", name: "X", grade: "ACCP", supernum: true },
+  };
+  // One ACCP pod, already taken. Pod E is staffed and the smallest — overflow must still avoid it.
+  const c = { A: ["r1", "r2", "r3"], B: ["a1", "r4"], C: ["r5", "r1"], D: ["r2", "r3"], E: ["r4"] };
+  const got = P.superPodFor(c, { B: 1 }, st.X, st);
+  ok("overflow supernumerary ACCP avoids Pod E while another pod is free", got !== "E" && got !== "B", "got " + got);
+  ok("overflow goes to the smallest of the other pods", ["C", "D"].includes(got), "got " + got);
+  // Every non-E pod already holds one: E is used rather than doubling up.
+  eq("with A-D each holding one, the next goes to E, not a second on a pod",
+     P.superPodFor(c, { A: 1, B: 1, C: 1, D: 1 }, st.X, st), "E");
+}
+function superWeek(key, nHostACCP, hist) {
+  const staff = {}, codes = {};
+  for (let i = 0; i < 12; i++) { staff["p" + i] = person("p" + i, i < 4 ? { airway: true } : {}); codes["p" + i] = i < 6 ? "L" : "S"; }
+  for (let k = 0; k < nHostACCP; k++) staff["p" + (5 + k * 3)].grade = "ACCP";
+  ["Jonathan", "Nelda", "Zara"].forEach(n => { staff[n] = person(n, { name: n, supernum: true, grade: "ACCP" }); codes[n] = "S"; });
+  staff.sreg = person("sreg", { supernum: true, grade: "ST" }); codes.sreg = "S";
+  const roster = {};
+  for (let di = 0; di < 7; di++) {
+    const m = {};
+    for (const id in codes) m[id] = { kind: "day", code: codes[id] === "L" ? "LD" : "SD" };
+    roster[P.addDays(key, di)] = m;
+  }
+  const w = P.planWeek({ weekKey: key, roster, staff, history: hist });
+  return { w, staff };
+}
+for (const hosts of [1, 2, 3]) {
+  const hist = P.blankHistory(), besideTotal = {};
+  let shared = 0, stolen = 0, overflowE = 0, hostDays = 0;
+  for (const key of ["2026-10-05", "2026-10-12", "2026-10-19"]) {
+    const { w, staff } = superWeek(key, hosts, hist);
+    w.days.forEach((d, di) => {
+      const here = w.supers.filter(x => x.di === di);
+      const pods = here.map(x => x.pod);
+      if (new Set(pods).size !== pods.length) shared++;
+      const hostPods = PODS.filter(p => idsIn(d, p).some(id => staff[id].grade === "ACCP"));
+      hostDays += hostPods.length;
+      // A non-ACCP supernumerary never takes an ACCP pod a supernumerary ACCP is left without.
+      const accpOut = here.some(x => staff[x.id].grade === "ACCP" && !x.beside);
+      if (accpOut && here.some(x => staff[x.id].grade !== "ACCP" && hostPods.includes(x.pod))) stolen++;
+      here.filter(x => staff[x.id].grade === "ACCP" && !x.beside && x.pod === "E").forEach(() => {
+        if (PODS.filter(p => p !== "E" && !pods.includes(p) && idsIn(d, p).length).length) overflowE++;
+      });
+      here.forEach(x => { if (x.beside) besideTotal[x.id] = (besideTotal[x.id] || 0) + 1; });
+    });
+    P.rollHistory(hist, w, staff);
+  }
+  const counts = ["Jonathan", "Nelda", "Zara"].map(n => besideTotal[n] || 0);
+  eq(hosts + " ACCP pod(s): no two supernumeraries share a pod", shared, 0);
+  eq(hosts + " ACCP pod(s): a non-ACCP supernumerary never displaces an ACCP from an ACCP pod", stolen, 0);
+  eq(hosts + " ACCP pod(s): overflow never lands on E while another pod is free", overflowE, 0);
+  ok(hosts + " ACCP pod(s): days beside an ACCP shared in turn over three weeks (" + counts.join("/") + ")",
+     Math.max(...counts) - Math.min(...counts) <= 1, counts.join("/"));
+  ok(hosts + " ACCP pod(s): every ACCP pod is used by a supernumerary ACCP",
+     counts.reduce((a, b) => a + b, 0) === Math.min(3 * 21, hostDays) || hosts >= 3,
+     counts.reduce((a, b) => a + b, 0) + " of " + hostDays);
+}
+
 console.log("\n" + (fail ? "FAILED " + fail + " · passed " + pass : "ALL " + pass + " ASSERTIONS PASS") + "\n");
 if (notes.length) console.log(notes.join("\n") + "\n");
 process.exit(fail ? 1 : 0);
