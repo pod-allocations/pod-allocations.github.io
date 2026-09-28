@@ -143,7 +143,7 @@
   }
   function blankHistory() {
     return { eDays: {}, phoneHeld: {}, phoneElig: {}, podDays: {}, shifts: {}, home: {},
-      nightPhone: {}, nightElig: {}, nightSide: {}, lastNightPhone: null };
+      nightPhone: {}, nightElig: {}, nightSide: {}, lastNightPhone: null, superAccp: {} };
   }
 
   /* Pods within one of each other, Pod E the smallest, and FREE WHICH POD CARRIES THE SPARE.
@@ -837,7 +837,9 @@
        4. For an ACCP, a pod holding a COUNTED ACCP. That is who they are learning beside, and it
           is the whole reason the placement exists — a supernumerary ACCP standing with an ST and
           an FY2 is on the unit and being taught by nobody who does their job.
-       5. The smallest pod.
+       5. For an ACCP with no ACCP pod left, not Pod E. Ali, 26.09.28: overflow spreads across
+          the other pods and keeps off E, which is the short straw and the smallest team.
+       6. The smallest pod.
 
      Returns a pod letter, or null if there is no pod at all. */
   function superPodFor(counted, taken, person, staff) {
@@ -858,23 +860,57 @@
       var st = (size(b) ? 1 : 0) - (size(a) ? 1 : 0);                      // 3
       if (st) return st;
       if (isAccp) { var aa = (hasAccp(b) ? 1 : 0) - (hasAccp(a) ? 1 : 0); if (aa) return aa; }  // 4
-      return (size(a) + (taken[a] || 0)) - (size(b) + (taken[b] || 0));    // 5
+      if (isAccp) { var ee = (a === "E" ? 1 : 0) - (b === "E" ? 1 : 0); if (ee) return ee; }     // 5
+      return (size(a) + (taken[a] || 0)) - (size(b) + (taken[b] || 0));    // 6
     });
     return want[0] || null;
   }
 
-  /* ── 6 · SUPERNUMERARIES, LAST, COUNTED NOWHERE ─ placement asks superPodFor, nothing else. */
-  function placeSupers(plan, supers, staff) {
-    var out = [];
+  /* ── 6 · SUPERNUMERARIES, LAST, COUNTED NOWHERE ─ placement asks superPodFor, nothing else.
+
+     WHO CHOOSES FIRST. superPodFor answers for one person given who is already placed, so the
+     ORDER decides who gets the ACCP pods when there are fewer of them than supernumerary ACCPs.
+     It used to be the roster's key order — the same person first every day, the same person left
+     over every day. Ali, 26.09.28: "make sure it's not the same ACCP who is always allocated to an
+     ACCP pod first — rotate around."
+
+     So, each day: neurology registrars first (their rule is the hardest), then supernumerary
+     ACCPs in order of how little of their time has been spent beside a counted ACCP — days beside
+     one over days on as a supernumerary ACCP, carried in hist.superAccp across weeks and updated
+     day by day within this one — then everybody else. A ratio, not a count, so the next pair to
+     arrive does not jump the queue for months on the strength of a zero. Ties break on name, so
+     the same rota written twice comes out the same. */
+  function placeSupers(plan, supers, staff, hist) {
+    var out = [], S = function (id) { return staff[id] || {}; };
+    var isAccp = function (id) { return String(S(id).grade || "").toUpperCase() === "ACCP"; };
+    var nm = function (id) { return String(S(id).name || id); };
+    var past = (hist && hist.superAccp) || {}, tally = {};
+    var rec = function (id) {
+      if (!tally[id]) { var h = past[id] || {}; tally[id] = { days: h.days || 0, beside: h.beside || 0 }; }
+      return tally[id];
+    };
+    var share = function (id) { var t = rec(id); return t.days ? t.beside / t.days : 0; };
+    var rank = function (id) { return S(id).neuro ? 0 : isAccp(id) ? 1 : 2; };
     for (var di = 0; di < 7; di++) {
-      var list = supers[di] || [], byPod = plan[di], put = {};
+      var list = (supers[di] || []).slice(), byPod = plan[di], put = {};
+      list.sort(function (a, b) {
+        return (rank(a) - rank(b)) ||
+               (rank(a) === 1 ? share(a) - share(b) : 0) ||
+               nm(a).localeCompare(nm(b));
+      });
+      var counted = {};
+      for (var pi = 0; pi < PODS.length; pi++) counted[PODS[pi]] = (byPod[PODS[pi]] || []).slice();
       for (var i = 0; i < list.length; i++) {
         var id = list[i];
-        var counted = {};
-        for (var pi = 0; pi < PODS.length; pi++) counted[PODS[pi]] = (byPod[PODS[pi]] || []).slice();
-        var p = superPodFor(counted, put, staff[id] || {}, staff) || "C";
+        var p = superPodFor(counted, put, S(id), staff) || "C";
         put[p] = (put[p] || 0) + 1;
-        out.push({ di: di, id: id, pod: p });
+        var entry = { di: di, id: id, pod: p };
+        if (isAccp(id) && !S(id).neuro) {
+          var beside = (counted[p] || []).some(function (x) { return isAccp(x); });
+          entry.beside = beside;
+          var t = rec(id); t.days++; if (beside) t.beside++;
+        }
+        out.push(entry);
       }
     }
     return out;
@@ -933,7 +969,7 @@
        it costs nothing against the week as it stood BEFORE the phone pass spent anything. */
     plan = spareLongDayToPhone(plan, d.on, home, staff, hist, d.isNew, cfg, phone, before);
     var nights = planNights(input.weekKey, input.roster || {}, staff, hist, cfg);
-    var supers = placeSupers(plan, d.supers, staff);
+    var supers = placeSupers(plan, d.supers, staff, hist);
 
     var days = [];
     for (var di = 0; di < 7; di++) {
@@ -968,6 +1004,14 @@
           hist.shifts[who] = (hist.shifts[who] || 0) + 1;
         }
       }
+    }
+    /* Supernumerary ACCPs: days on, and days beside a counted ACCP — what placeSupers rotates on. */
+    hist.superAccp = hist.superAccp || {};
+    for (var si = 0; si < (week.supers || []).length; si++) {
+      var sp = week.supers[si];
+      if (sp.beside === undefined) continue;
+      var h = hist.superAccp[sp.id] = hist.superAccp[sp.id] || { days: 0, beside: 0 };
+      h.days++; if (sp.beside) h.beside++;
     }
     hist.home = week.home || hist.home;
     return hist;
