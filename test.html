@@ -1707,8 +1707,9 @@ const GRADES = ["CON","ACCP","SCF","JCF","RCF","ST","CT","ACCS","IMT","FY1","FY2
    therefore gets written once, under the algorithm of that night, and there is never a backlog of
    weeks carrying an older model. Both still editable in Settings — hard rule 1. */
 const RULE_DEFAULTS = { podMin: 2, podEMin: 1, nightMin: 4, transferAim: 4, neuroTarget: 70, retentionDays: 400,
-                        /* Six on nights: the phone holder is the third person on a side, nobody alone
-                           on Pod E (Ali, 26.09.29). Five, or seven and more: the holder alone on E. */
+                        /* Nights (Ali, 26.09.29): five on, the phone holder alone on Pod E. From this
+                           many on, somebody else covers E and the holder is the third person on the more
+                           junior side. "If >4 all pods should always be covered." */
                         nightPhoneInSideAt: 6,
                         spreadMax: 2, spreadE: 3, visibleWeeks: 2, firmWeeks: 1,
                         writeDay: 1, writeHour: 14, publishDay: 4, publishHour: 7,
@@ -4906,10 +4907,10 @@ function normalizePods(day){
    somebody was in E: five-plus on nights with the holder stored in C,D&E. That person moves
    into the real container here, once, and every path that shows or reasons about nights calls
    this first so the rule lives in exactly one place. */
-/* Does the night phone holder stand alone on Pod E tonight? Five, or seven and more, on — yes.
-   Exactly `nightPhoneInSideAt` (six) — no: the holder is the third person on a side (Ali, 26.09.29).
+/* Does the night phone holder stand alone on Pod E tonight? Five on — yes. From `nightPhoneInSideAt`
+   (six) on — no: somebody else covers E and the holder is the third person on a side (Ali, 26.09.29).
    One function so the board, the old day-by-day path and the sync all ask the same question. */
-function nightPhoneOnE(n){ return n >= 5 && n !== Number(rule("nightPhoneInSideAt")); }
+function nightPhoneOnE(n){ return n >= 5 && n < Number(rule("nightPhoneInSideAt")); }
 function normalizeNight(day){
   if (!day || !day.night) return;
   day.night.E = day.night.E || [];
@@ -6634,6 +6635,8 @@ function checkDay(day, dateISO, di, wk){
 
   const nCount = nightCountables(day).length;
   if (nCount < rule("nightMin")) H("Night team has " + nCount + " countable staff — minimum " + rule("nightMin") + " (one doubles up to cover Pod E).");
+  /* Ali, 26.09.29: "If >4 all pods should always be covered." */
+  if (nCount >= 5 && !(day.night.E || []).filter(Boolean).length) H("Night: " + nCount + " on and nobody covering Pod E — with five or more on, every pod is covered (five on: the phone holder; six or more: somebody else).");
 
   const transferDay = [...new Set(dayIds)].filter(id => { const s = staffById(id); return s && s.transfer && !isSupernumerary(s); }).length;
   // Depends on who's rostered — an aim rather than a block.
@@ -8656,6 +8659,9 @@ function autoFillDay(wk, di, wkKey, opts){
   if (!dayIsWritable(dateISO)) return;
   const pool = poolFor(day, dateISO);
   const assigned = assignedIds(day);
+  /* Nobody placed on nights when this began? Then the night is this function's to arrange, and it
+     is arranged by Planner.holdNight at the end — the same rule the planner writes weeks with. */
+  const nightWasEmpty = !day.night || ![...(day.night.AB || []), ...(day.night.CDE || []), ...(day.night.E || [])].filter(Boolean).length;
   // The allocator's view of skills: anything queued to start later doesn't exist yet for IT —
   // though it is already real for the checker, the display and anything placed by hand.
   const airwayOn = s => !!s && s.airway && !skillHeldBack(s.id, "airway", dateISO);
@@ -9398,6 +9404,24 @@ function autoFillDay(wk, di, wkKey, opts){
     }
   }
   nightAirwayFix();
+  /* ONE NIGHT RULE, NOT TWO — 26.09.29. This day-by-day path grew its own copy of the night rules
+     (the trade, the balance, the airway swap) and when six-on changed (the holder joins a side, Ali)
+     the copy came out 2 against 4. So when this function arranged the night from nothing, the sides
+     are handed to Planner.holdNight: the same answer the planner gives, from last night as it
+     stands. The code above still decides WHO is on and who holds the phone; it no longer decides
+     where they sit. Without planner.js it keeps its own answer, as before. */
+  if (nightWasEmpty && typeof Planner !== "undefined" && Planner && Planner.holdNight && Planner.staffMap) {
+    const team = [...new Set([...(day.night.AB || []), ...(day.night.CDE || []), ...(day.night.E || [])].filter(Boolean))];
+    if (team.length) {
+      const lastD = di > 0 ? wk.days[di - 1] : (((data.weeks || {})[addDays(key, -7)] || {}).days || [])[6];
+      const ln = lastD && lastD.night ? { phone: lastD.night.phone || null, AB: lastD.night.AB || [], CDE: lastD.night.CDE || [], E: lastD.night.E || [] } : null;
+      try {
+        const h = Planner.holdNight(team, day.night.phone && team.includes(day.night.phone) ? day.night.phone : null, ln,
+          Planner.staffMap(data.staff), { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK });
+        day.night.AB = h.AB; day.night.CDE = h.CDE; day.night.E = h.E;
+      } catch (e) { /* keep the answer above */ }
+    }
+  }
 }
 /* ── THE PLANNER WRITES THE WEEK ────────────────────────────────────────────────────────────────
    One door. Everything that writes a whole week comes through here, so the board, a skills
@@ -11451,7 +11475,7 @@ function renderSettings(){
      The stored number is untouched and still read, so a board that has one keeps it. Recorded in
      JOBS.md as a deliberate narrowing of hard rule 1 rather than left to be discovered. */
   const nums = [["podMin","staff per pod, minimum",""],["podEMin","Pod E minimum",""],
-    ["nightMin","night team minimum",""],["nightPhoneInSideAt","night phone holder joins a side at","on"],["transferAim","transfer-trained on days, aim for",""],
+    ["nightMin","night team minimum",""],["nightPhoneInSideAt","nights: someone other than the phone holder covers E from","on"],["transferAim","transfer-trained on days, aim for",""],
     ["neuroTarget","neuro shifts on Pods C/D","%"],["retentionDays","keep past weeks for","days"]];
   const grid = el("div", { style: "display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.55rem" });
   for (const [k, label, unit] of nums) {
