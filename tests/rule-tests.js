@@ -1569,6 +1569,23 @@ async function main() {
     ok("…and by hand into a pod, the day check names acting up", msgs.some(m => /acting up overnight, so take them out/.test(m)), msgs.join(" | "));
   }
 
+  /* UNKNOWN OPTIMA CODES ARE SAID ON ATTENTION — 26.09.29. run.py writes data.syncUnknown; the
+     board names the codes and counts. Kind "sync", so it cannot be acknowledged away while true. */
+  if (api.attentionItems) {
+    console.log("\nUnknown Optima codes on Attention");
+    const d = api.data;
+    d.syncUnknown = null;
+    const none = api.attentionItems().filter(x => x.id === "sync:unknown");
+    ok("nothing raised when there are no unknown codes", none.length === 0);
+    d.syncUnknown = { at: new Date().toISOString(), since: new Date().toISOString(), codes: { "Anaes": 21, "Odd": 1 }, emailedAt: "" };
+    const got = api.attentionItems().filter(x => x.id === "sync:unknown");
+    ok("unknown codes raise one live Attention row", got.length === 1 && got[0].kind === "sync");
+    ok("…that names every code with its count", !!got[0] && /Anaes/.test(got[0].body) && /21/.test(got[0].body) && /Odd/.test(got[0].body) && /22 shifts/.test(got[0].body), got[0] && got[0].body);
+    d.syncUnknown = { codes: {} };
+    ok("an empty code set raises nothing", api.attentionItems().filter(x => x.id === "sync:unknown").length === 0);
+    d.syncUnknown = null;
+  }
+
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
   if (errs.length) console.log("(page errors during load: " + errs.length + ")");
   if (fail) { console.log("\nFailures:\n - " + failures.join("\n - ")); process.exit(1); }
