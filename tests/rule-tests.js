@@ -768,32 +768,52 @@ async function main() {
     ok("four on nights: Pod E stays empty", (day.night.E || []).length === 0, JSON.stringify(day.night.E));
   }
   {
-    /* A RUN OF NIGHTS. The phone rotates each night onto someone who was in A & B, and they step
-       into Pod E. Before the trade rule, nobody took their place: the second night of every run
-       read 1 on A&B against 4 on the C/D side. Six on, two phone-trained, nobody airway-trained
-       so the airway fix can't muddy which moves came from where. */
+    /* A RUN OF NIGHTS, FIVE ON. The phone rotates each night and the new holder steps into Pod E;
+       last night's holder takes the seat they left. Before the trade rule the second night of
+       every run read 1 on A&B against 4 on the C/D side. Two phone-trained, nobody airway-trained
+       so the airway rule can't muddy which moves came from where. */
+    const five = Array.from({ length: 5 }, (_, i) => ({ shift: "N", nights: true, airway: false, phoneHolder: i < 2 }));
+    const { wk, made } = seedNightRun(api, [0, 1], five);
+    api.autoFillDay(wk, 0);
+    api.autoFillDay(wk, 1);
+    const d0 = wk.days[0], d1 = wk.days[1];
+    const cnt = d => ({ AB: (d.night.AB || []).length, CDE: (d.night.CDE || []).length, E: (d.night.E || []).length });
+    ok("run of nights, five on: first night splits 2 / 2 / 1",
+      JSON.stringify(cnt(d0)) === JSON.stringify({ AB: 2, CDE: 2, E: 1 }), JSON.stringify(cnt(d0)));
+    ok("run of nights, five on: 2 / 2 / 1 again on the second night",
+      JSON.stringify(cnt(d1)) === JSON.stringify({ AB: 2, CDE: 2, E: 1 }), JSON.stringify(cnt(d1)));
+    ok("run of nights, five on: the phone changed hands", d0.night.phone !== d1.night.phone,
+      JSON.stringify({ n1: d0.night.phone, n2: d1.night.phone }));
+    const movers = made.map(s => s.id).filter(id => nightSide(d0, id) !== nightSide(d1, id));
+    ok("run of nights, five on: ONLY the two phone holders change side — nobody else moves",
+      movers.length === 2 && movers.every(id => id === d0.night.phone || id === d1.night.phone),
+      JSON.stringify({ movers, n1: d0.night.phone, n2: d1.night.phone }));
+    ok("run of nights, five on: last night's holder takes the slot the new holder vacated",
+      nightSide(d1, d0.night.phone) === nightSide(d0, d1.night.phone),
+      JSON.stringify({ prevHolderNowIn: nightSide(d1, d0.night.phone), newHolderWasIn: nightSide(d0, d1.night.phone) }));
+  }
+  {
+    /* A RUN OF NIGHTS, SIX ON (Ali, 26.09.29): "with six on somebody need to cover E" and the phone
+       holder is "a 3rd person A-B or C-D". So 2 + 3 + 1 — somebody other than the holder alone on E,
+       the holder on a side — and when the phone changes hands nobody moves except, if the new holder
+       sits on the other side, the two holders swapping seats. */
     const six = Array.from({ length: 6 }, (_, i) => ({ shift: "N", nights: true, airway: false, phoneHolder: i < 2 }));
     const { wk, made } = seedNightRun(api, [0, 1], six);
     api.autoFillDay(wk, 0);
     api.autoFillDay(wk, 1);
     const d0 = wk.days[0], d1 = wk.days[1];
-    const cnt = d => ({ AB: (d.night.AB || []).length, CDE: (d.night.CDE || []).length, E: (d.night.E || []).length });
-    ok("run of nights: first night splits 2 / 3 / 1",
-      JSON.stringify(cnt(d0)) === JSON.stringify({ AB: 2, CDE: 3, E: 1 }), JSON.stringify(cnt(d0)));
-    ok("run of nights: A & B still holds two on the second night",
-      (d1.night.AB || []).length === 2, JSON.stringify(cnt(d1)));
-    ok("run of nights: the C/D side is never left carrying four",
-      (d1.night.CDE || []).length + (d1.night.E || []).length === 4
-      && (d1.night.CDE || []).length === 3, JSON.stringify(cnt(d1)));
-    ok("run of nights: the phone changed hands", d0.night.phone !== d1.night.phone,
+    const cnt = d => ({ sides: [(d.night.AB || []).length, (d.night.CDE || []).length].sort().join("/"), E: (d.night.E || []).length });
+    ok("run of nights, six on: 2 + 3 + 1, both nights",
+      [d0, d1].every(d => cnt(d).sides === "2/3" && cnt(d).E === 1), JSON.stringify([cnt(d0), cnt(d1)]));
+    ok("run of nights, six on: Pod E is not the phone holder, who is on a side",
+      [d0, d1].every(d => !(d.night.E || []).includes(d.night.phone) && ((d.night.AB || []).includes(d.night.phone) || (d.night.CDE || []).includes(d.night.phone))),
+      JSON.stringify([d0.night, d1.night]));
+    ok("run of nights, six on: the phone changed hands", d0.night.phone !== d1.night.phone,
       JSON.stringify({ n1: d0.night.phone, n2: d1.night.phone }));
     const movers = made.map(s => s.id).filter(id => nightSide(d0, id) !== nightSide(d1, id));
-    ok("run of nights: ONLY the two phone holders change side — nobody else moves",
-      movers.length === 2 && movers.every(id => id === d0.night.phone || id === d1.night.phone),
+    ok("run of nights, six on: nobody moves but the two holders (swapping seats, or not at all)",
+      (movers.length === 0 || movers.length === 2) && movers.every(id => id === d0.night.phone || id === d1.night.phone),
       JSON.stringify({ movers, n1: d0.night.phone, n2: d1.night.phone }));
-    ok("run of nights: last night's holder takes the slot the new holder vacated",
-      nightSide(d1, d0.night.phone) === nightSide(d0, d1.night.phone),
-      JSON.stringify({ prevHolderNowIn: nightSide(d1, d0.night.phone), newHolderWasIn: nightSide(d0, d1.night.phone) }));
   }
   {
     // Five on, one phone-trained: the holder can't hand it over, so nothing moves at all.
@@ -1605,11 +1625,69 @@ async function main() {
     if (row) {
       ok("…with a Write it now button", typeof row.act === "function" && row.actLabel === "Write it now");
       api.setEdit();
+      const T = api.todayISO();
+      const goneBefore = JSON.stringify(wk.days.filter((_, di) => api.addDays(K, di) < T));
       await row.act();
-      const placed = wk.days.reduce((n, day) => n + api.PODS.reduce((m, p) => m + (day.pods[p].assign || []).filter(a => a.id).length, 0), 0);
-      ok("…and pressing it puts the rostered people in pods", placed >= 7 * 6, placed + " placed");
+      /* Counted from today: the days already gone are history and are left exactly as they were
+         (26.09.29), so a count over all seven would pass on a Monday and fail on a Sunday. */
+      const ahead = wk.days.map((day, di) => api.addDays(K, di) >= T ? day : null).filter(Boolean);
+      const placed = ahead.reduce((n, day) => n + api.PODS.reduce((m, p) => m + (day.pods[p].assign || []).filter(a => a.id).length, 0), 0);
+      ok("…and pressing it puts the rostered people in pods", placed >= ahead.length * 6, placed + " placed over " + ahead.length + " days");
       ok("…and logs it as a manual write", (d.log || []).some(e => /written from the Attention page/.test(e.msg || "")));
+      ok("…and leaves the days already gone exactly as they were", JSON.stringify(wk.days.filter((_, di) => api.addDays(K, di) < T)) === goneBefore);
+      ok("…and stamps the week as written whole", !!wk.writtenAt);
     }
+  }
+
+  /* A PART-WRITTEN WEEK, AND NIGHTS THAT HOLD — 26.09.29. Ali: "if part filled it should delete
+     and write the week as a whole", and "only the phoneholder should swap in and out to E". */
+  if (api.attentionItems && api.weekIsWritable && api.fillWeekWithPlanner) {
+    console.log("\nPart-written weeks and the night hold");
+    const K = api.mondayOf(api.todayISO()), KP = api.addDays(K, -7);
+    const wk = api.getWeek(K), wp = api.getWeek(KP);
+    wk.roster = {}; wp.roster = {}; delete wk.writtenAt;
+    for (let di = 0; di < 7; di++) { wk.days[di] = api.blankDay(); wp.days[di] = api.blankDay(); }
+    const made = [];
+    for (let i = 0; i < 14; i++) made.push(mkStaff(api, { grade: "ST", airway: i >= 9 || i % 3 === 0, nights: true, phoneHolder: i >= 9 }));
+    const nightIds = made.slice(9).map(s => s.id);          // five on nights, all phone-trained, all airway
+    for (const [W, KK] of [[wk, K], [wp, KP]]) for (let di = 0; di < 7; di++) {
+      const iso = api.addDays(KK, di); W.roster[iso] = {};
+      made.slice(0, 9).forEach((s, i) => { W.roster[iso][s.id] = { code: i % 2 ? "SD" : "LD", kind: "day", src: "a" }; });
+      nightIds.forEach(id => { W.roster[iso][id] = { code: "N", kind: "night", src: "a" }; });
+    }
+    // last Sunday night as the board has it: the phone on E, two a side
+    wp.days[6].night = { phone: nightIds[0], E: [nightIds[0]], AB: [nightIds[1], nightIds[2]], CDE: [nightIds[3], nightIds[4]], super: [] };
+    api.setEdit();
+    // a part-written week: Sunday filled by a person, the rest a wall of bench
+    const T = api.todayISO();
+    const lastDi = 6;
+    if (api.addDays(K, lastDi) >= T) {
+      api.autoFillDay(wk, lastDi, K);
+      const hasEmptyAhead = wk.days.some((dd, di) => api.addDays(K, di) >= T && di !== lastDi);
+      const row = api.attentionItems().find(x => x.id === "unwritten:" + K);
+      if (hasEmptyAhead) ok("a part-written week raises the row, as only partly written", !!row && /only partly written/.test(row.title), row ? row.title : "no row");
+      wk.writtenAt = new Date().toISOString();
+      ok("once stamped as written whole, the row is gone", !api.attentionItems().some(x => x.id === "unwritten:" + K));
+      delete wk.writtenAt;
+    }
+    const r = api.fillWeekWithPlanner(wk, K);
+    ok("writing a week stamps it", r !== null && !!wk.writtenAt);
+    const mon = wk.days[0].night, sun = wp.days[6].night;
+    ok("Monday night: the phone passes on from Sunday's holder", !!mon.phone && mon.phone !== sun.phone, mon.phone);
+    const seat = sun.AB.includes(mon.phone) ? "AB" : "CDE";
+    ok("Monday night: Sunday's holder takes the seat the new holder left", (mon[seat] || []).includes(sun.phone), JSON.stringify(mon));
+    const others = nightIds.filter(id => id !== mon.phone && id !== sun.phone);
+    ok("Monday night: nobody else changes side", others.every(id => (sun.AB.includes(id) && mon.AB.includes(id)) || (sun.CDE.includes(id) && mon.CDE.includes(id))), JSON.stringify([sun, mon]));
+    let broken = 0;
+    for (let di = 1; di < 7; di++) {
+      const a = wk.days[di - 1].night, b = wk.days[di].night;
+      for (const id of nightIds) {
+        if (id === a.phone || id === b.phone) continue;
+        const sa = a.AB.includes(id) ? "AB" : "CDE", sb = b.AB.includes(id) ? "AB" : "CDE";
+        if (sa !== sb) broken++;
+      }
+    }
+    ok("through the week, only the phone holders ever move", broken === 0, broken + " side changes");
   }
 
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
