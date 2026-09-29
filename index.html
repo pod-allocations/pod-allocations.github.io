@@ -1706,6 +1706,9 @@ const GRADES = ["CON","ACCP","SCF","JCF","RCF","ST","CT","ACCS","IMT","FY1","FY2
    therefore gets written once, under the algorithm of that night, and there is never a backlog of
    weeks carrying an older model. Both still editable in Settings — hard rule 1. */
 const RULE_DEFAULTS = { podMin: 2, podEMin: 1, nightMin: 4, transferAim: 4, neuroTarget: 70, retentionDays: 400,
+                        /* Six on nights: the phone holder is the third person on a side, nobody alone
+                           on Pod E (Ali, 26.09.29). Five, or seven and more: the holder alone on E. */
+                        nightPhoneInSideAt: 6,
                         spreadMax: 2, spreadE: 3, visibleWeeks: 2, firmWeeks: 1,
                         writeDay: 1, writeHour: 14, publishDay: 4, publishHour: 7,
                         /* THE SCORE SCALE — 26.08.21, both read through rule() so the curve can be
@@ -4902,12 +4905,16 @@ function normalizePods(day){
    somebody was in E: five-plus on nights with the holder stored in C,D&E. That person moves
    into the real container here, once, and every path that shows or reasons about nights calls
    this first so the rule lives in exactly one place. */
+/* Does the night phone holder stand alone on Pod E tonight? Five, or seven and more, on — yes.
+   Exactly `nightPhoneInSideAt` (six) — no: the holder is the third person on a side (Ali, 26.09.29).
+   One function so the board, the old day-by-day path and the sync all ask the same question. */
+function nightPhoneOnE(n){ return n >= 5 && n !== Number(rule("nightPhoneInSideAt")); }
 function normalizeNight(day){
   if (!day || !day.night) return;
   day.night.E = day.night.E || [];
   const ph = day.night.phone;
   const nTot = (day.night.AB || []).length + (day.night.CDE || []).length + day.night.E.length;
-  if (!day.night.E.length && nTot >= 5 && ph && (day.night.CDE || []).includes(ph)) {
+  if (!day.night.E.length && nightPhoneOnE(nTot) && ph && (day.night.CDE || []).includes(ph)) {
     day.night.CDE = day.night.CDE.filter(id => id !== ph);
     day.night.E.push(ph);
   }
@@ -9308,7 +9315,7 @@ function autoFillDay(wk, di, wkKey, opts){
   // phone holder covers a pod — with five on, somebody splits off to cover Pod E alone, and
   // that somebody is the holder (E is quieter). Pod E is a real container now, so place them in it.
   const nightCountedAll = nightIds.filter(id => countsInNumbers(id)).length;
-  if (nightCountedAll >= 5) for (const id of [...new Set(nightUnplaced)]) {
+  if (nightPhoneOnE(nightCountedAll)) for (const id of [...new Set(nightUnplaced)]) {
     if (id === day.night.phone) { day.night.E.push(id); nightAssigned.add(id); }
   }
   // The phone holder covers Pod E on their own when five are on, so they have to sit in C/D/E.
@@ -9318,7 +9325,7 @@ function autoFillDay(wk, di, wkKey, opts){
   // ...but only once there are five on. With four, nobody splits off to cover Pod E on their own,
   // so C/D/E is no quieter than A & B and dragging the phone across just shuffles two people
   // between pods every time the phone rotates. Rotate the phone, leave the pods alone.
-  if (nightCountedAll >= 5 && day.night.phone && (day.night.AB || []).includes(day.night.phone)) {
+  if (nightPhoneOnE(nightCountedAll) && day.night.phone && (day.night.AB || []).includes(day.night.phone)) {
     const ph = day.night.phone;
     const swapWith = (day.night.CDE || []).find(id => id !== ph);
     day.night.AB = day.night.AB.filter(id => id !== ph);
@@ -9418,8 +9425,11 @@ function fillWeekWithPlanner(wk, key){
      what it once wrote there, which is wrong the moment a person or the sync has changed it. */
   const prevWk = (data.weeks || {})[addDays(k, -7)];
   const prevNight = prevWk && prevWk.days && prevWk.days[6] && prevWk.days[6].night ? prevWk.days[6].night : null;
+  /* ...and Saturday's holder, because within a run the phone alternates between a pair. */
+  const prevPhone2 = prevWk && prevWk.days && prevWk.days[5] && prevWk.days[5].night ? (prevWk.days[5].night.phone || null) : null;
   try {
-    const r = Planner.writeWeek(wk, data.staff, { history: data.plannerHistory, weekKey: k, prevNight });
+    const r = Planner.writeWeek(wk, data.staff, { history: data.plannerHistory, weekKey: k, prevNight, prevPhone2,
+      cfg: { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK } });
     /* WRITTEN WHOLE — the stamp the sync reads (allocate_auto.py). A future week without it has
        not been written as a week, however many of its days somebody has filled, and the sync
        writes it whole; a week with it is left to the day-by-day repairs. Ali, 26.09.29: "if part
@@ -11440,7 +11450,7 @@ function renderSettings(){
      The stored number is untouched and still read, so a board that has one keeps it. Recorded in
      JOBS.md as a deliberate narrowing of hard rule 1 rather than left to be discovered. */
   const nums = [["podMin","staff per pod, minimum",""],["podEMin","Pod E minimum",""],
-    ["nightMin","night team minimum",""],["transferAim","transfer-trained on days, aim for",""],
+    ["nightMin","night team minimum",""],["nightPhoneInSideAt","night phone holder joins a side at","on"],["transferAim","transfer-trained on days, aim for",""],
     ["neuroTarget","neuro shifts on Pods C/D","%"],["retentionDays","keep past weeks for","days"]];
   const grid = el("div", { style: "display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.55rem" });
   for (const [k, label, unit] of nums) {
