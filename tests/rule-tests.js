@@ -1586,6 +1586,32 @@ async function main() {
     d.syncUnknown = null;
   }
 
+  /* AN UNWRITTEN WEEK CAN BE WRITTEN FROM ATTENTION — 26.09.29. The row that says "nobody in a pod"
+     now carries a Write it now button that does the sync's first pass by hand. */
+  if (api.attentionItems && api.weekIsWritable) {
+    console.log("\nWrite it now");
+    const d = api.data; const K = api.mondayOf(api.todayISO());
+    const wk = api.getWeek(K); wk.roster = {};
+    for (let di = 0; di < 7; di++) { wk.days[di] = api.blankDay(); wk.roster[api.addDays(K, di)] = {}; }
+    const made = [];
+    for (let i = 0; i < 12; i++) made.push(mkStaff(api, { grade: "ST", airway: i % 3 === 0, nights: true, phoneHolder: i % 2 === 0 }));
+    for (let di = 0; di < 7; di++) {
+      made.slice(0, 8).forEach((s, i) => { wk.roster[api.addDays(K, di)][s.id] = { code: i % 2 ? "SD" : "LD", kind: "day", src: "a" }; });
+      made.slice(8).forEach(s => { wk.roster[api.addDays(K, di)][s.id] = { code: "N", kind: "night", src: "a" }; });
+    }
+    const writable = api.weekIsWritable(K);
+    const row = api.attentionItems().find(x => x.id === "unwritten:" + K);
+    ok("a writable, rostered, empty week raises the unwritten row", !writable || !!row, writable ? "no row" : "week not writable in this harness — row not expected");
+    if (row) {
+      ok("…with a Write it now button", typeof row.act === "function" && row.actLabel === "Write it now");
+      api.setEdit();
+      await row.act();
+      const placed = wk.days.reduce((n, day) => n + api.PODS.reduce((m, p) => m + (day.pods[p].assign || []).filter(a => a.id).length, 0), 0);
+      ok("…and pressing it puts the rostered people in pods", placed >= 7 * 6, placed + " placed");
+      ok("…and logs it as a manual write", (d.log || []).some(e => /written from the Attention page/.test(e.msg || "")));
+    }
+  }
+
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
   if (errs.length) console.log("(page errors during load: " + errs.length + ")");
   if (fail) { console.log("\nFailures:\n - " + failures.join("\n - ")); process.exit(1); }
