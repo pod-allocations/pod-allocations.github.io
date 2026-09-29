@@ -10798,7 +10798,24 @@ function rawAttention(){
       body: rostered.size + " people are rostered that week and none of them is allocated. "
           + "It should have been written at " + String(rule("writeHour")).padStart(2, "0") + ":00 on "
           + DAYNAMES[rule("writeDay")] + ".",
-      go: () => { currentWeekKey = wkKey; switchTab("pods"); renderAll(); } });
+      go: () => { currentWeekKey = wkKey; switchTab("pods"); renderAll(); },
+      /* WRITE IT FROM HERE — 26.09.29 (Ali: "how do we stop a Tuesday issue where it reads names
+         and piles them all up on the bench"). Until now this row could only point at the wall of
+         bench; the only thing that could write a week was the sync, and 19 September was a week
+         the sync never reached. The rota team can now do in one press exactly what the sync's
+         first pass would do: the planner writes the week, it is logged as a manual write, saved,
+         and shown. Same door (fillWeekWithPlanner), same clock, same fallback. */
+      actLabel: "Write it now",
+      act: async () => {
+        if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+        const wkObj = data.weeks[wkKey];
+        let how = "planner";
+        try { if (typeof fillWeekWithPlanner !== "function" || fillWeekWithPlanner(wkObj, wkKey) === null) how = "day by day"; }
+        catch (e) { how = "day by day"; }
+        logEntry("Week of " + fmtDate(wkKey) + " written from the Attention page (" + how + ")", "manual", wkKey);
+        markDirty(); await saveFile(true);
+        currentWeekKey = wkKey; switchTab("pods"); renderAll();
+      } });
   }
   const review = data.syncReview || [];
   const clashes = review.length;
