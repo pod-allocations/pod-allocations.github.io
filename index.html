@@ -9412,8 +9412,20 @@ function fillWeekWithPlanner(wk, key){
   }
   wk.key = k;
   data.plannerHistory = data.plannerHistory || Planner.blankHistory();
+  /* SUNDAY NIGHT INTO MONDAY NIGHT — 26.09.29. The night team holds its sides across a run and
+     only the phone holder moves (Planner.holdNight). A run does not stop at the week boundary, so
+     the planner is handed the previous Sunday exactly as the board has it — not its own memory of
+     what it once wrote there, which is wrong the moment a person or the sync has changed it. */
+  const prevWk = (data.weeks || {})[addDays(k, -7)];
+  const prevNight = prevWk && prevWk.days && prevWk.days[6] && prevWk.days[6].night ? prevWk.days[6].night : null;
   try {
-    return Planner.writeWeek(wk, data.staff, { history: data.plannerHistory, weekKey: k });
+    const r = Planner.writeWeek(wk, data.staff, { history: data.plannerHistory, weekKey: k, prevNight });
+    /* WRITTEN WHOLE — the stamp the sync reads (allocate_auto.py). A future week without it has
+       not been written as a week, however many of its days somebody has filled, and the sync
+       writes it whole; a week with it is left to the day-by-day repairs. Ali, 26.09.29: "if part
+       filled it should delete and write the week as a whole". */
+    wk.writtenAt = new Date().toISOString();
+    return r;
   } catch (e) {
     wk.days.forEach((day, di) => autoFillDay(wk, di, k));
     return null;
@@ -10781,7 +10793,11 @@ function rawAttention(){
 
   /* A WEEK THAT SHOULD HAVE BEEN WRITTEN AND HAS NOT. Writable (the Monday 14:00 clock has
      passed), a roster on it, and not one person in a pod on any day. This is the exact shape of
-     19 September, and it is visible here rather than only as a wall of bench on the board. */
+     19 September, and it is visible here rather than only as a wall of bench on the board.
+     26.09.29: AND A WEEK HALF WRITTEN. A day still to come with people rostered and nobody placed,
+     in a week that was never written whole (no `writtenAt`), is the Tuesday bench pile-up in its
+     other shape — some days filled by hand, the rest a wall of names. Days already gone are not
+     counted; nobody can allocate yesterday. */
   for (const wkKey of Object.keys(data.weeks || {}).sort()) {
     if (wkKey < visibleFrom()) continue;
     if (typeof weekIsWritable !== "function" || !weekIsWritable(wkKey)) continue;
@@ -10791,10 +10807,21 @@ function rawAttention(){
       for (const id of Object.keys((wk.roster || {})[addDays(wkKey, di)] || {})) rostered.add(id);
     if (!rostered.size) continue;
     const placed = wk.days.reduce((n, d) => n + (d ? assignedIds(d).size : 0), 0);
-    if (placed) continue;
+    const emptyDays = wk.writtenAt ? [] : wk.days.map((d, di) => {
+      const iso = addDays(wkKey, di), r = (wk.roster || {})[iso] || {};
+      const working = Object.keys(r).filter(id => r[id] && (r[id].kind === "day" || r[id].kind === "night"));
+      return iso >= todayISO() && working.length && !(d && assignedIds(d).size) ? iso : null;
+    }).filter(Boolean);
+    if (placed && !emptyDays.length) continue;
     out.push({ kind: "unwritten", id: "unwritten:" + wkKey, n: 1,
-      title: "Week of " + fmtDate(wkKey) + " has nobody in a pod",
-      body: rostered.size + " people are rostered that week and none of them is allocated. "
+      title: placed ? "Week of " + fmtDate(wkKey) + " is only partly written"
+                    : "Week of " + fmtDate(wkKey) + " has nobody in a pod",
+      body: (placed
+          ? emptyDays.length + " day" + (emptyDays.length === 1 ? "" : "s") + " still to come "
+            + (emptyDays.length === 1 ? "has" : "have") + " people rostered and nobody allocated ("
+            + emptyDays.map(d => DAYNAMES[(new Date(d + "T12:00:00").getDay() + 6) % 7].slice(0, 3)).join(", ") + "). "
+            + "Writing it writes the whole week again, as one. "
+          : rostered.size + " people are rostered that week and none of them is allocated. ")
           + "It should have been written at " + String(rule("writeHour")).padStart(2, "0") + ":00 on "
           + DAYNAMES[rule("writeDay")] + ".",
       go: () => { currentWeekKey = wkKey; switchTab("pods"); renderAll(); },
@@ -10808,9 +10835,13 @@ function rawAttention(){
       act: async () => {
         if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
         const wkObj = data.weeks[wkKey];
+        /* The whole week, as one — but a day already gone is history, not a plan, and stays
+           exactly as it was. */
+        const gone = JSON.parse(JSON.stringify(wkObj.days));
         let how = "planner";
         try { if (typeof fillWeekWithPlanner !== "function" || fillWeekWithPlanner(wkObj, wkKey) === null) how = "day by day"; }
         catch (e) { how = "day by day"; }
+        wkObj.days.forEach((d, di) => { if (addDays(wkKey, di) < todayISO()) wkObj.days[di] = gone[di]; });
         logEntry("Week of " + fmtDate(wkKey) + " written from the Attention page (" + how + ")", "manual", wkKey);
         markDirty(); await saveFile(true);
         currentWeekKey = wkKey; switchTab("pods"); renderAll();
