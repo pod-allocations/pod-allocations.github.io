@@ -542,26 +542,138 @@
   }
 
   /* ── 5 · THE NIGHT TEAM ──────────────────────────────────────────────────────────────────
-     Nights are NOT five pods. The board splits the team into two sides — A&B, and C-D-E — and
-     when five are on, one person covers Pod E alone and that person is the phone holder. So
-     there are three things to get right, and all three are standards:
+     Nights are NOT five pods. The board splits the team into two sides — A&B, and C&D — and
+     when five are on, one person covers Pod E alone and that person is the phone holder.
 
-       · AN AIRWAY-TRAINED PERSON ON EACH SIDE. Neither half of the unit should be bare at three
-         in the morning. Where only one airway person is on nights at all, this cannot be done and
-         is not held against the night.
-       · THE PHONE CHANGES HANDS between consecutive nights. Four nights running is a week nobody
-         should have.
-       · EVERYBODY ELSE KEEPS THEIR SIDE across the run. Moving to Pod E to take the phone is the
-         one allowed exception — it is the phone that moved, not the person's team.
+     REWRITTEN 26.09.29. Ali: "why are people swapping between AB/CD only the phoneholder should
+     swap in and out to E, keep consistency" — and "i thought wed sorted that". It had been sorted,
+     on the board's old day-at-a-time path (autoFillDay's "the two holders TRADE PLACES", 26.08).
+     This function, which has written every week since the planner went live on 26.08.20, never
+     learnt it. When the phone passed on, last night's holder came off Pod E to whatever side they
+     were once remembered on (C&D by default), not into the seat the new holder had just left —
+     so one side went a person short, the balance pass moved somebody across to even it up, and
+     the airway pass then swapped two more. Measured on w/c 5 Oct: Tuesday night moved two people
+     between A&B and C&D who had no reason to move at all. The test beside it asked only that four
+     people in five keep their side, and excused whoever came off Pod E wherever they landed, which
+     is how it lived for six weeks.
 
-     A run of nights is worked by the same small group night after night, so the side is decided
-     ONCE, on the first night of the run, and then held. That is why this needs no search. */
-  function planNights(weekKey, roster, staff, hist, cfg) {
+     THE RULE, in the order it is applied:
+       · The phone holder stands alone on Pod E when five or more are on.
+       · THE TRADE. When the phone passes on, last night's holder takes exactly the seat tonight's
+         holder has just left. Two people move, and they are the two whose job changed.
+       · EVERYBODY ELSE KEEPS LAST NIGHT'S SIDE. No exceptions on a night where the team is the
+         same as last night — not for balance, not for airway. (With both holders airway-trained,
+         which every phone holder on this unit is, the trade cannot change either side's airway
+         count, so a run that starts with the airway split keeps it.)
+       · Somebody new tonight — the first night of a run, or joining one — goes to the lighter side,
+         airway-aware: an airway-trained arrival goes to a side that has none if that keeps the
+         sides within one of each other.
+       · ONLY WHEN THE TEAM HAS CHANGED (somebody joined or left) may anybody else cross: first to
+         keep the sides within one (1 against 3 is not a night anybody should work), then to put an
+         airway person on each side where two are free to do it. Whoever is new tonight moves first;
+         a person already in a run moves only when nobody new can.
+
+     "Last night" is the night as it actually stands in the store. For the first night of a week
+     the board passes the previous Sunday in (`prevNight`); without it the planner uses the last
+     night it wrote itself (`hist.lastNight`). The old permanent side memory (`hist.nightSide`)
+     is no longer read: a side somebody had in August says nothing about tonight. */
+  function nightSideOf(night, id) {
+    if (!night) return null;
+    if ((night.AB || []).indexOf(id) >= 0) return "AB";
+    if ((night.CDE || []).indexOf(id) >= 0) return "CDE";
+    if ((night.E || []).indexOf(id) >= 0) return "E";
+    return null;
+  }
+  function cleanNight(n) {
+    if (!n) return null;
+    return { phone: n.phone || null, AB: (n.AB || []).slice(), CDE: (n.CDE || []).slice(), E: (n.E || []).slice() };
+  }
+  /* Tonight's sides, given tonight's team, tonight's phone holder and last night as it stood.
+     Exposed as Planner.holdNight so the board and the sync repair a night with THIS function,
+     never with a second copy of the rule. */
+  function holdNight(team, pick, last, staff, cfg) {
+    cfg = Object.assign({}, CFG, cfg || {});
     var S = function (id) { return staff[id] || {}; };
-    /* A run of nights does not respect Monday. Re-dealing the sides at every week boundary moved
-       people for nothing on thirteen nights in thirteen weeks, so the side is carried in the
-       history like everything else. */
-    var out = [], side = Object.assign({}, hist.nightSide || {}), lastPhone = hist.lastNightPhone || null;
+    var isAir = function (y) { return !!S(y).airway; };
+    var isNeuro = function (y) { return !!S(y).neuro || S(y).grade === "Neurology"; };
+    var byName = function (a, b) { return String(S(a).name || a).localeCompare(String(S(b).name || b)); };
+    team = team.slice().sort(byName);
+    var split = !!pick && team.length >= cfg.nightEFrom;
+    var E = split ? [pick] : [], AB = [], CDE = [], spare = [];
+    var lastTeam = last ? [].concat(last.AB || [], last.CDE || [], last.E || []) : [];
+    var teamChanged = !last || lastTeam.length !== team.length ||
+      team.some(function (id) { return lastTeam.indexOf(id) < 0; });
+    // the seat tonight's holder has just left — last night's holder takes it
+    var seat = split && last ? nightSideOf(last, pick) : null;
+    if (seat === "E") seat = null;
+    var isNew = {};
+    for (var i = 0; i < team.length; i++) {
+      var id = team[i];
+      if (split && id === pick) continue;
+      var s = nightSideOf(last, id);
+      if (s === "AB") AB.push(id);
+      else if (s === "CDE") CDE.push(id);
+      else if (s === "E" && seat) { (seat === "AB" ? AB : CDE).push(id); seat = null; }
+      else { spare.push(id); isNew[id] = true; }
+    }
+    // newcomers, airway first, to the lighter side
+    spare.sort(function (a, b) { return (isAir(b) ? 1 : 0) - (isAir(a) ? 1 : 0) || byName(a, b); });
+    var total = AB.length + CDE.length + spare.length, targetAB = Math.floor(total / 2);
+    for (var k = 0; k < spare.length; k++) {
+      var x = spare[k], to = null;
+      var abAir = AB.some(isAir), cdAir = CDE.some(isAir);
+      if (isNeuro(x)) to = "CDE";
+      else if (isAir(x) && !abAir && cdAir && AB.length <= CDE.length) to = "AB";
+      else if (isAir(x) && !cdAir && abAir && CDE.length <= AB.length) to = "CDE";
+      else if (AB.length < CDE.length) to = "AB";
+      else if (CDE.length < AB.length) to = "CDE";
+      else to = AB.length < targetAB ? "AB" : "CDE";
+      (to === "AB" ? AB : CDE).push(x);
+    }
+    if (teamChanged) {
+      /* who crosses, when somebody has to: new tonight first, then (moving to A&B) never a
+         neurology registrar, then by name so the answer is the same every run */
+      var mover = function (from, toAB, wantAir) {
+        var c = from.filter(function (y) { return !(toAB && isNeuro(y)); });
+        if (wantAir === true) c = c.filter(isAir);
+        c.sort(function (a, b) {
+          return (isNew[b] ? 1 : 0) - (isNew[a] ? 1 : 0) ||
+            (wantAir === false ? (isAir(a) ? 1 : 0) - (isAir(b) ? 1 : 0) : 0) || byName(a, b);
+        });
+        return c[0] || null;
+      };
+      // 1 · the two sides within one of each other
+      for (var bal = 0; bal < 4 && cfg.nightBalanceSides; bal++) {
+        var heavy = AB.length - CDE.length > 1 ? AB : CDE.length - AB.length > 1 ? CDE : null;
+        if (!heavy) break;
+        var light = heavy === AB ? CDE : AB;
+        // if the light side has no airway and the heavy side can spare one, send an airway person
+        var needAir = !light.some(isAir) && heavy.filter(isAir).length >= 2;
+        var m = mover(heavy, light === AB, needAir ? true : false) || mover(heavy, light === AB);
+        if (!m) break;
+        heavy.splice(heavy.indexOf(m), 1); light.push(m);
+      }
+      // 2 · an airway person each side, where two are free to do it — one swap, same headcount
+      for (var g = 0; g < 2; g++) {
+        var abA = AB.filter(isAir).length, cdA = CDE.filter(isAir).length;
+        var donor = abA === 0 && cdA >= 2 ? CDE : cdA === 0 && abA >= 2 ? AB : null;
+        if (!donor) break;
+        var taker = donor === AB ? CDE : AB;
+        var give = mover(donor, taker === AB, true);
+        var back = mover(taker.filter(function (y) { return !isAir(y); }), donor === AB, false);
+        if (!give) break;
+        if (back) { donor[donor.indexOf(give)] = back; taker[taker.indexOf(back)] = give; }
+        else if (donor.length - 1 >= taker.length) { donor.splice(donor.indexOf(give), 1); taker.push(give); }
+        else break;
+      }
+    }
+    return { AB: AB, CDE: CDE, E: E, teamChanged: teamChanged };
+  }
+  function planNights(weekKey, roster, staff, hist, cfg, prevNight) {
+    var S = function (id) { return staff[id] || {}; };
+    var out = [];
+    var last = prevNight !== undefined && prevNight !== null ? cleanNight(prevNight) : cleanNight(hist.lastNight);
+    var lastPhone = last ? last.phone : null;
     for (var di = 0; di < 7; di++) {
       var iso = addDays(weekKey, di), r = roster[iso] || {};
       var team = [], sup = [];
@@ -570,103 +682,39 @@
         if (S(id).supernum) { sup.push(id); continue; }
         team.push(id);
       }
-      if (!team.length) { out.push({ phone: null, AB: [], CDE: [], E: [], super: sup }); lastPhone = null; continue; }
+      if (!team.length) {
+        out.push({ phone: null, AB: [], CDE: [], E: [], super: sup });
+        last = null; lastPhone = null; continue;
+      }
       team.sort(function (a, b) { return String(S(a).name || a).localeCompare(String(S(b).name || b)); });
 
       /* The phone: qualified, and never the same person as last night if there is anybody else.
-         Then whoever has held it least per night worked, so the rate evens out. */
-      /* Nights keep their OWN fairness counters. Sharing them with the day phone was a real bug:
-         a night eligibility counted against somebody's day-phone rate, and the day spread went
-         from 0.14 to 0.25 without a single day changing. */
+         Then whoever has held it least per night worked, so the rate evens out. Nights keep their
+         OWN fairness counters — sharing them with the day phone once moved the day spread from
+         0.14 to 0.25 without a single day changing. */
       var elig = team.filter(function (x) { return S(x).phoneHolder || S(x).phone; });
       hist.nightElig = hist.nightElig || {};
+      hist.nightPhone = hist.nightPhone || {};
       for (var e = 0; e < elig.length; e++) hist.nightElig[elig[e]] = (hist.nightElig[elig[e]] || 0) + 1;
-      var pick = null;
-      /* It changes hands unless there is literally nobody else qualified on that night, which is
-         a fact about the roster rather than a choice the allocator gets to make. */
       var fresh = elig.filter(function (x) { return x !== lastPhone; });
       var pool = fresh.length ? fresh : elig;
       pool.sort(function (a, b) {
-        var ra = (hist.nightPhone && hist.nightPhone[a] || 0) / (hist.nightElig[a] || 1);
-        var rb = (hist.nightPhone && hist.nightPhone[b] || 0) / (hist.nightElig[b] || 1);
+        var ra = (hist.nightPhone[a] || 0) / (hist.nightElig[a] || 1);
+        var rb = (hist.nightPhone[b] || 0) / (hist.nightElig[b] || 1);
         return ra - rb || String(S(a).name || a).localeCompare(String(S(b).name || b));
       });
-      pick = pool[0] || null;
-      if (pick) { hist.nightPhone = hist.nightPhone || {}; hist.nightPhone[pick] = (hist.nightPhone[pick] || 0) + 1; }
+      var pick = pool[0] || null;
+      if (pick) hist.nightPhone[pick] = (hist.nightPhone[pick] || 0) + 1;
 
-      /* Pod E: one person alone, and it is the phone holder — but only when five or more are on.
-         With four the unit does not split off a fifth, so nobody stands alone on E. */
-      var E = [], rest = team.slice();
-      if (team.length >= cfg.nightEFrom && pick) {
-        E = [pick];
-        rest = rest.filter(function (x) { return x !== pick; });
-      }
-
-      /* Sides. Anybody who was on a side last night keeps it. The rest are dealt out so the two
-         sides differ by at most one — C-D-E takes the extra, because it covers three pods — and
-         so that each side gets an airway-trained person before either gets a second. */
-      var AB = [], CDE = [], spare = [];
-      for (var i = 0; i < rest.length; i++) {
-        var who = rest[i];
-        if (side[who] === "AB") AB.push(who);
-        else if (side[who] === "CDE") CDE.push(who);
-        else spare.push(who);
-      }
-      spare.sort(function (a, b) { return (S(b).airway ? 1 : 0) - (S(a).airway ? 1 : 0) ||
-        String(S(a).name || a).localeCompare(String(S(b).name || b)); });
-      var capAB = Math.floor(rest.length / 2);
-      for (var s2 = 0; s2 < spare.length; s2++) {
-        var x = spare[s2];
-        var abAir = AB.some(function (y) { return S(y).airway; });
-        var cdAir = CDE.some(function (y) { return S(y).airway; });
-        var to;
-        if (S(x).airway && !abAir && cdAir) to = "AB";
-        else if (S(x).airway && !cdAir && abAir) to = "CDE";
-        else if (AB.length < capAB) to = "AB";
-        else to = "CDE";
-        (to === "AB" ? AB : CDE).push(x);
-      }
-      /* The two sides should be within one of each other. Keeping your side is a preference and
-         it can leave A&B with one person and C-D-E with three, which is neither fair nor safe. */
-      for (var bal = 0; bal < 4 && cfg.nightBalanceSides; bal++) {
-        if (AB.length - CDE.length > 1) CDE.push(AB.pop());
-        else if (CDE.length - AB.length > 1) AB.push(CDE.pop());
-        else break;
-      }
-
-      /* AN AIRWAY PERSON ON EACH SIDE — meaning A&B and C&D. Ali, 26.08.19: "if 5 people the
-         phone holder goes on E. If only 4 and 2 airways on try and split them between A/B and
-         C/D." Pod E is not a side: whoever is there is standing alone with the phone.
-
-         AND THE PHONE HOLDER IS ALWAYS AIRWAY-TRAINED — every one of the 32 phone-trained people
-         on the unit is airway-trained, with no exceptions. So with five on, one airway person is
-         spoken for before the sides are dealt at all, and the split is only achievable when there
-         are TWO MORE besides. That is 41 of the 91 nights in this roster, not 81; measuring it
-         against the team's total airway count flattered it and hid the nights it could not be
-         done. Where it cannot be done, one side is bare and that is the rota, not the allocator.
-
-         Splitting outranks keeping your side, because it is cover at three in the morning. */
-      var isAir = function (y) { return S(y).airway; };
-      for (var g = 0; g < 4; g++) {
-        var abAir = AB.filter(isAir).length, cdAir = CDE.filter(isAir).length;
-        var donor = null, taker = null;
-        if (abAir === 0 && cdAir >= 2) { donor = CDE; taker = AB; }
-        else if (cdAir === 0 && abAir >= 2) { donor = AB; taker = CDE; }
-        else break;
-        var give = donor.filter(isAir)[donor.filter(isAir).length - 1];
-        if (!give) break;
-        var take = taker.filter(function (y) { return !isAir(y); })[0];
-        if (take) { donor[donor.indexOf(give)] = take; taker[taker.indexOf(take)] = give; }
-        else { donor.splice(donor.indexOf(give), 1); taker.push(give); }
-      }
-
-      for (var a2 = 0; a2 < AB.length; a2++) side[AB[a2]] = "AB";
-      for (var c2 = 0; c2 < CDE.length; c2++) side[CDE[c2]] = "CDE";
-      if (E.length) side[E[0]] = side[E[0]] || "CDE";     // remembered by their side, not by Pod E
-      lastPhone = pick;
-      out.push({ phone: pick, AB: AB, CDE: CDE, E: E, super: sup });
+      var sides = holdNight(team, pick, last, staff, cfg);
+      var night = { phone: pick, AB: sides.AB, CDE: sides.CDE, E: sides.E, super: sup };
+      out.push(night);
+      last = cleanNight(night); lastPhone = pick;
     }
+    hist.lastNight = last;
     hist.lastNightPhone = lastPhone;
+    var side = {};
+    if (last) { last.AB.forEach(function (x) { side[x] = "AB"; }); last.CDE.forEach(function (x) { side[x] = "CDE"; }); }
     hist.nightSide = side;
     return out;
   }
@@ -968,7 +1016,7 @@
     /* The spare long day goes beside the phone holder — after the phone is known, and only where
        it costs nothing against the week as it stood BEFORE the phone pass spent anything. */
     plan = spareLongDayToPhone(plan, d.on, home, staff, hist, d.isNew, cfg, phone, before);
-    var nights = planNights(input.weekKey, input.roster || {}, staff, hist, cfg);
+    var nights = planNights(input.weekKey, input.roster || {}, staff, hist, cfg, input.prevNight);
     var supers = placeSupers(plan, d.supers, staff, hist);
 
     var days = [];
@@ -1251,8 +1299,35 @@
     opts = opts || {};
     var map = staffMap(staff);
     var hist = opts.history || blankHistory();
-    var out = planWeek({ weekKey: wk.key || opts.weekKey, roster: wk.roster || {}, staff: map,
-      history: hist, cfg: opts.cfg });
+    var key = wk.key || opts.weekKey;
+    /* A WEEK CAN BE WRITTEN MORE THAN ONCE, AND THE MEMORY MUST NOT COUNT IT TWICE — 26.09.29.
+       Ali: "if part filled it should delete and write the week as a whole". So a week is now
+       rewritten whole whenever it has to be, and every write used to roll the history forward
+       again: Pod E days, pod-days, phone and night-phone counts all added a second time, and the
+       night continuity read "last night" as the Sunday of the copy just written rather than the
+       Sunday before the week. So the history is snapshotted before each week is rolled, and a
+       rewrite of that same week starts from the snapshot. */
+    if (hist.rolled && hist.rolled.week === key && hist.rolled.before) {
+      var back = JSON.parse(JSON.stringify(hist.rolled.before));
+      for (var hk in hist) if (Object.prototype.hasOwnProperty.call(hist, hk)) delete hist[hk];
+      for (var bk in back) hist[bk] = back[bk];
+    }
+    var snap = JSON.parse(JSON.stringify(hist)); delete snap.rolled;
+    /* WHO A HUMAN HAS TAKEN OFF A DAY STAYS OFF. `day.removed` is the board's record of somebody
+       taken off sick or otherwise not coming; Allocate still rosters them. fixDay honoured it from
+       26.08.25; writing a week did not, so a whole-week write put the sick person straight back. */
+    var roster = {}, src = wk.roster || {};
+    for (var d0 = 0; d0 < 7; d0++) {
+      var iso0 = addDays(key, d0), r0 = src[iso0];
+      if (!r0) continue;
+      var off = ((wk.days && wk.days[d0] && wk.days[d0].removed) || []);
+      if (!off.length) { roster[iso0] = r0; continue; }
+      var r1 = {};
+      for (var rid in r0) if (off.indexOf(rid) < 0) r1[rid] = r0[rid];
+      roster[iso0] = r1;
+    }
+    var out = planWeek({ weekKey: key, roster: roster, staff: map,
+      history: hist, cfg: opts.cfg, prevNight: opts.prevNight });
     for (var di = 0; di < 7; di++) {
       var day = wk.days[di] = wk.days[di] || { pods: {} };
       pourInto(day, out.days[di].pods);
@@ -1262,12 +1337,23 @@
       day.night.phone = n.phone; day.night.AB = n.AB; day.night.CDE = n.CDE;
       day.night.E = n.E; day.night.super = n.super;
     }
+    /* A supernumerary the planner is about to place is first taken out of every pod's super list
+       on that day, so a rewrite cannot leave them standing beside two pods. Anybody a person put
+       in a super box who is not on the roster (an observer) is left where they were. */
+    for (var sj = 0; sj < out.supers.length; sj++) {
+      var sx = out.supers[sj], dx = wk.days[sx.di];
+      for (var pj = 0; pj < PODS.length; pj++) {
+        var slot = dx.pods[PODS[pj]];
+        if (slot && slot.super) slot.super = slot.super.filter(function (y) { return y !== sx.id; });
+      }
+    }
     for (var si = 0; si < out.supers.length; si++) {
       var s = out.supers[si], d2 = wk.days[s.di];
       d2.pods[s.pod].super = d2.pods[s.pod].super || [];
       if (d2.pods[s.pod].super.indexOf(s.id) < 0) d2.pods[s.pod].super.push(s.id);
     }
     rollHistory(hist, out, map, opts.cfg);
+    hist.rolled = { week: key, before: snap };
     wk.plannerHome = out.home;
     return { notes: out.notes, history: hist, home: out.home };
   }
@@ -1327,6 +1413,8 @@
   root.capsFor = capsFor;
   root.homePods = homePods;
   root.superPodFor = superPodFor;
+  root.holdNight = holdNight;
+  root.planNights = planNights;
   root.weekCost = weekCost;
   root.addDays = addDays;
 })(typeof module !== "undefined" && module.exports ? module.exports
