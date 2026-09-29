@@ -250,6 +250,8 @@ td.nighttd .chip{display:flex}
 .chip .tagx.LD,.hlp .tagx.LD,#modal .tagx.LD{background:#2c3e78;color:#fff}
 .chip .tagx.SD,.hlp .tagx.SD,#modal .tagx.SD{background:#e8edf6;color:#3b558f}
 .chip .tagx.N,.hlp .tagx.N,#modal .tagx.N{background:#4a4460;color:#fff}
+.chip .tagx.AU,.hlp .tagx.AU,#modal .tagx.AU{background:var(--accent);color:#fff}
+.chip.actup{cursor:default}
 .chip .tagx.clickable{cursor:pointer;border-bottom:1px dotted currentColor}
 .chip .tagx.clickable:hover{outline:2px solid var(--accent-bg)}
 .chip.selected{outline:2px solid var(--accent);outline-offset:1px}
@@ -3234,6 +3236,22 @@ const FLAGS = [
      from the name or grade, so a regular who happens to locum occasionally is never misclassified. */
   ["noFair","Locum — leave out of fairness","info","","An ad-hoc locum who does occasional shifts. Still put in pods on the days they work, but the fairness table and the Pod E share ignore them — their scattered shifts aren't an unfairness to balance."],
 ];
+/* ACTING UP — 26.09.29. Allocate's "Overnight- Acting Up" duty reaches the roster as code "AU"
+   (transform.py maps it; merge.py files it kind "off", like the FGH codes). Off is right: the person
+   is covering overnight at registrar level, not filling a night pod, so no engine counts them and
+   nothing here places them. This only SHOWS them. Allocate owns the entry — no drag, no remove. */
+function actingUpFor(dateISO){
+  const wk = (data && data.weeks || {})[mondayOf(dateISO)];
+  const r = wk && wk.roster && wk.roster[dateISO];
+  if (!r) return [];
+  return Object.entries(r).filter(([id, v]) => v && v.code === "AU" && staffById(id)).map(([id]) => staffById(id));
+}
+function actUpChip(s){
+  const c = chip(s, { tag: "AU" });
+  c.classList.add("actup"); c.draggable = false; c.ondragstart = e => e.preventDefault();
+  c.title = s.name + " — acting up overnight (from Allocate)";
+  return c;
+}
 // Supervisor automatically counts as a holder; a shadow is a learner who can't hold on their own.
 const canHoldPhone = s => !!(s && (s.phoneHolder || s.phoneSupervisor));
 const isPhoneSupervisor = s => !!(s && s.phoneSupervisor);
@@ -6456,6 +6474,8 @@ function renderDayRow(day, di, dateISO, issues){
           consSurname(crecN.cur.oncall))));
     }
   }
+  { const au = actingUpFor(dateISO);
+    if (au.length) { night.append(el("div", { class: "subhead" }, "Acting up")); for (const s of au) night.append(actUpChip(s)); } }
   if (day.night.phone && !day.night.AB.includes(day.night.phone) && !day.night.CDE.includes(day.night.phone) && !(day.night.E || []).includes(day.night.phone)) {
     const s = staffById(day.night.phone);
     if (s) night.append(el("div", { style: "margin-bottom:.2rem" }, chip(s, { di, day })));
@@ -6670,6 +6690,7 @@ function checkDay(day, dateISO, di, wk){
       const code = rk[id].code || "";
       S(name(id) + " is on the board but Optima has them off" + (code ? " (" + code + ")" : "") +
         (/^FGH/i.test(code) ? " — they are at Fairfield, so take them out of the pod."
+         : code === "AU" ? " — they are acting up overnight, so take them out of the pod."
                             : " — they need taking off the day."));
     }
   }
@@ -11726,7 +11747,7 @@ function whoCanDialog(){
 
   /* Everyone allocated on a day, with where they are and what they are doing. Nights are kept
      apart because being on at 4am is not the same answer as being on now. */
-  const onDay = (day) => {
+  const onDay = (day, dateISO) => {
     const out = { day: [], night: [] };
     if (!day) return out;
     for (const pd of PODS)
@@ -11735,6 +11756,7 @@ function whoCanDialog(){
     const n = day.night || {};
     for (const id of [].concat(n.AB || [], n.CDE || [], n.E || []))
       if (id) out.night.push({ id, pod: "N", where: "Night", shift: "N" });
+    for (const s of (dateISO ? actingUpFor(dateISO) : [])) out.night.push({ id: s.id, pod: "N", where: "Acting up", shift: "AU" });
     return out;
   };
   const shiftWord = s => s === "LD" ? "8–8" : s === "SD" ? "8–4" : s === "N" ? "8pm–8.30am" : "";
@@ -11760,7 +11782,7 @@ function whoCanDialog(){
     const wk = (data.weeks || {})[mondayOf(date)];
     const di = wk ? Math.round((new Date(date) - new Date(mondayOf(date))) / 86400000) : -1;
     const day = wk && wk.days ? wk.days[di] : null;
-    const all = onDay(day);
+    const all = onDay(day, date);
     all.day.forEach(e => e.__day = day); all.night.forEach(e => e.__day = day);
     const has = e => { const s = staffById(e.id); return !!(s && s[pickKey]); };
     const hitD = all.day.filter(has), hitN = all.night.filter(has);
@@ -11779,7 +11801,7 @@ function whoCanDialog(){
       const t = addDays(date, 1);
       const w2 = (data.weeks || {})[mondayOf(t)];
       const d2 = w2 && w2.days ? w2.days[Math.round((new Date(t) - new Date(mondayOf(t))) / 86400000)] : null;
-      const nx = [].concat(onDay(d2).day, onDay(d2).night)
+      const nx = [].concat(onDay(d2, t).day, onDay(d2, t).night)
         .map(e => staffById(e.id)).filter(p => p && p[pickKey]).map(p => p.name);
       const box = el("div", { class: "wcempty" }, el("div", {}, "Nobody on today is signed off for this."));
       if (nx.length) box.append(el("div", { class: "wcnext" },
@@ -11805,7 +11827,7 @@ function whoCanDialog(){
     const wk = (data.weeks || {})[mondayOf(date)];
     const di = wk ? Math.round((new Date(date) - new Date(mondayOf(date))) / 86400000) : -1;
     const day = wk && wk.days ? wk.days[di] : null;
-    const all = onDay(day);
+    const all = onDay(day, date);
     for (const k of FIND_KEYS) {
       const n = [].concat(all.day, all.night)
         .filter(e => { const s = staffById(e.id); return !!(s && s[k]); }).length;
@@ -11853,6 +11875,7 @@ function keyDialog(){
     row(tag("LD", "LD"), "Long day, 8am – 8.30pm"),
     row(tag("SD", "SD"), "Standard day, 8am – 4pm"),
     row(tag("N", "N"), "Night, 8pm – 8.30am"),
+    row(tag("AU", "AU"), "Acting up overnight — covering at registrar level, from Allocate"),
     row(el("span", { class: "awdot" }, "A"), "Airway trained"),
     row(el("span", { class: "phoneicon", html: PHONE_SVG }), "Holds the referral phone — drag it to another person to move it"),
     row(el("span", { class: "phoneicon night", html: PHONE_SVG + '<span style="font-size:.5rem;font-weight:800;margin-left:1px">N</span>' }), "Holds the phone overnight"),
@@ -12146,6 +12169,7 @@ function whereIsPerson(id, dateISO){
     if ((day.night.super || []).includes(id)) return { kind: "night", super: true };
   }
   if (inFairfield(day, dateISO, id)) return { kind: "fgh" };
+  if (actingUpFor(dateISO).some(s => s.id === id)) return { kind: "actup" };
   return null;
 }
 /* Which month is being looked at lives here rather than in the page, so stepping back a month and
@@ -12214,6 +12238,7 @@ function renderMine(){
       if (dISO === today) badges.append(el("span", { class: "minetoday" }, "TODAY"));
       if (w.kind === "night") badges.append(el("span", { class: "minepod pN" }, "Night team"));
       else if (w.kind === "fgh") badges.append(el("span", { class: "minepod pF" }, "Fairfield"));
+      else if (w.kind === "actup") badges.append(el("span", { class: "minepod pN" }, "Acting up"));
       else badges.append(el("span", { class: "minepod p" + (w.pod || "") }, "Pod " + (w.pod || "?")));
       if (w.shift) badges.append(el("span", { class: "minesh" }, w.shift));
       if (w.super) badges.append(el("span", { class: "minetag" }, "super"));
