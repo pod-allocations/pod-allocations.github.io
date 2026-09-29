@@ -81,6 +81,10 @@ function loadApp() {
     aggregateOverrides: typeof aggregateOverrides !== "undefined" ? aggregateOverrides : null,
     renderOverrides: typeof renderOverrides !== "undefined" ? renderOverrides : null,
     normalizeNight: typeof normalizeNight !== "undefined" ? normalizeNight : null,
+    actingUpFor: typeof actingUpFor !== "undefined" ? actingUpFor : null,
+    actUpChip: typeof actUpChip !== "undefined" ? actUpChip : null,
+    whereIsPerson: typeof whereIsPerson !== "undefined" ? whereIsPerson : null,
+    renderWeek: typeof renderWeek !== "undefined" ? renderWeek : null,
     setWeek: k => { currentWeekKey = k; },
     getWeekKey: () => currentWeekKey,
     setEdit: () => { EDIT_MODE = true; },
@@ -1529,6 +1533,40 @@ async function main() {
        !/renderFeedback\(\); markFeedbackRead\(\);/.test(SRC));
     ok("…each message carries its own Acknowledge button", /}, "Acknowledge"\)\)\)\);/.test(SRC));
     ok("…and it records who pressed it", /f\.readBy = editorName\(\);/.test(SRC));
+  }
+
+  /* ACTING UP — 26.09.29. Allocate's "Overnight- Acting Up" arrives as roster code "AU", kind "off".
+     Shown in the Night column for everyone, never placed, never counted, never a drag handle. */
+  {
+    console.log("\nActing up overnight");
+    const { wk, day, made, dateISO } = seedDay(api, 2, [
+      { shift: "LD", airway: true }, { shift: "LD" }, { shift: "SD" }, { shift: "SD" }, { shift: "LD" },
+      { shift: "N", airway: true, nights: true }, { shift: "N", nights: true }, { shift: "N", nights: true }
+    ]);
+    const au = mkStaff(api, { grade: "ST", nights: true, airway: true });
+    wk.roster = wk.roster || {};
+    wk.roster[dateISO] = { [au.id]: { code: "AU", kind: "off", src: "a" } };
+    ok("actingUpFor finds the AU roster entry", api.actingUpFor(dateISO).map(s => s.id).join() === au.id);
+    api.setEdit();
+    api.autoFillDay(wk, 2, dateISO);
+    const inPod = api.PODS.some(p => day.pods[p].assign.some(a => a.id === au.id));
+    const inNight = [].concat(day.night.AB || [], day.night.CDE || [], day.night.E || []).includes(au.id);
+    ok("auto-fill never places somebody acting up", !inPod && !inNight, (inPod ? "in a pod" : "") + (inNight ? " on nights" : ""));
+    ok("My shifts calls it acting up", api.whereIsPerson(au.id, dateISO) && api.whereIsPerson(au.id, dateISO).kind === "actup");
+    ok("a person on the roster as AU raises no day flag", !api.checkDay(day, dateISO, 2, wk).some(x => /acting up/i.test(x.msg || x)));
+    const c = api.actUpChip(au);
+    ok("the chip carries the AU tag and is not a handle",
+       c.classList.contains("actup") && c.draggable === false && !!c.querySelector(".tagx.AU"));
+    let rendered = false;
+    try { api.renderWeek(); rendered = true; } catch (e) { console.log("    (renderWeek: " + e.message + ")"); }
+    const cell = rendered && win.document.querySelectorAll("td.nighttd")[2];
+    ok("the Night column shows them under an Acting up heading",
+       !!cell && [...cell.querySelectorAll(".subhead")].some(h => h.textContent === "Acting up") && !!cell.querySelector(".chip.actup .tagx.AU"),
+       rendered ? "" : "not rendered");
+    /* and put into a pod by hand, the day says why they should come out */
+    day.pods.A.assign.push({ id: au.id, shift: "LD" });
+    const msgs = api.checkDay(day, dateISO, 2, wk).map(x => x.msg || String(x));
+    ok("…and by hand into a pod, the day check names acting up", msgs.some(m => /acting up overnight, so take them out/.test(m)), msgs.join(" | "));
   }
 
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
