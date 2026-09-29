@@ -10761,6 +10761,24 @@ function rawAttention(){
       go: () => switchTab("rotateam") });
   }
 
+  /* OPTIMA IS USING A CODE THE SYNC DOES NOT KNOW — 26.09.29. Written by run.py as
+     data.syncUnknown = {at, since, codes:{code:n}, emailedAt}. Until today an unknown code past a
+     threshold HALTED the sync (every run from 27 Sept died on "Anaes", nothing was written, and
+     the row above was the only sign); now the known codes sync and the unknown ones are said here,
+     by name, with a count — because the person reading this is the one who has to decide whether
+     "Anaes" is a pod duty. Live kind, like the sync row: it cannot be greyed away while true. */
+  const su = data.syncUnknown;
+  if (su && su.codes && Object.keys(su.codes).length) {
+    const codes = Object.entries(su.codes).sort((a, b) => b[1] - a[1]);
+    const total = codes.reduce((n, [, v]) => n + v, 0);
+    out.push({ kind: "sync", id: "sync:unknown", n: 1,
+      title: "Optima is using " + (codes.length === 1 ? "a shift code" : codes.length + " shift codes") + " the sync doesn\u2019t know",
+      body: codes.map(([k, v]) => "\u201c" + k + "\u201d \u00d7" + v).join(", ") + " \u2014 " + total + " shift" + (total === 1 ? "" : "s")
+          + " not on the board. Everything else is syncing. Add each code to CODE_MAP or KNOWN_NONPOD in allocate-sync/transform.py."
+          + (su.since ? " Since " + new Date(su.since).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) + "." : ""),
+      go: () => switchTab("rotateam") });
+  }
+
   /* A WEEK THAT SHOULD HAVE BEEN WRITTEN AND HAS NOT. Writable (the Monday 14:00 clock has
      passed), a roster on it, and not one person in a pod on any day. This is the exact shape of
      19 September, and it is visible here rather than only as a wall of bench on the board. */
