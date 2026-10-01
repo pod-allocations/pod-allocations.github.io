@@ -125,10 +125,10 @@
     phoneMinShifts: 2,        // never the phone in your first two rostered shifts
     weekMoveCap: 1,           // moves per person per week before it costs extra
     nightEFrom: 5,            // Pod E is covered alone, by the phone holder, from this many on
-    /* ...and from six on somebody ELSE covers E while the phone holder is the third person on the
-       more junior side — Ali, 26.09.29: "When there are 6 on put the phone holder as a 3rd person
-       A-B or C-D (with the most junior of the 2 sides, make sure airway on both)" and "with six on
-       somebody need to cover E" / "If >4 all pods should always be covered". Six on: 2 + 3 + 1. */
+    /* ...and from six on somebody ELSE covers E while the phone holder floats, in no pod (night.F) —
+       Ali, 26.09.30: "when 6 on make a separate category floating phone holder (only show when 6
+       people)". Six on: A&B 2, C&D 2, E 1, floating 1. (26.09.29 had the holder as a third person
+       on the junior side; every hand-over of the phone then moved somebody across.) */
     nightPhoneInSideAt: 6,
     /* Seniority, most senior first — the board passes its own GRADE_RANK so there is one ranking;
        this copy is only for when the planner runs on its own (the tests). */
@@ -567,7 +567,8 @@
      is how it lived for six weeks.
 
      THE RULE, in the order it is applied:
-       · The phone holder stands alone on Pod E when five or more are on.
+       · The phone holder stands alone on Pod E when five are on, and floats (in no pod, night.F)
+         when six or more are on, with somebody else alone on Pod E (26.09.30).
        · THE TRADE. When the phone passes on, last night's holder takes exactly the seat tonight's
          holder has just left. Two people move, and they are the two whose job changed.
        · EVERYBODY ELSE KEEPS LAST NIGHT'S SIDE. No exceptions on a night where the team is the
@@ -591,15 +592,32 @@
     if ((night.AB || []).indexOf(id) >= 0) return "AB";
     if ((night.CDE || []).indexOf(id) >= 0) return "CDE";
     if ((night.E || []).indexOf(id) >= 0) return "E";
+    if ((night.F || []).indexOf(id) >= 0) return "F";
     return null;
   }
   function cleanNight(n) {
     if (!n) return null;
-    return { phone: n.phone || null, AB: (n.AB || []).slice(), CDE: (n.CDE || []).slice(), E: (n.E || []).slice() };
+    return { phone: n.phone || null, AB: (n.AB || []).slice(), CDE: (n.CDE || []).slice(), E: (n.E || []).slice(),
+             F: (n.F || []).slice() };
   }
-  /* Tonight's sides, given tonight's team, tonight's phone holder and last night as it stood.
+  /* Tonight's seats, given tonight's team, tonight's phone holder and last night as it stood.
      Exposed as Planner.holdNight so the board and the sync repair a night with THIS function,
-     never with a second copy of the rule. */
+     never with a second copy of the rule.
+
+     THE FLOATING PHONE HOLDER — 26.09.30. Ali, after w/c 5 Oct came out wrong: "when 6 on make a
+     separate category floating phone holder (only show when 6 people)". Six or more on, the phone
+     holder is in no pod at all: A&B 2, C&D 2, Pod E 1 (somebody other than the holder) and the
+     holder floating (`F`). This replaces "the holder is the third person on the junior side"
+     (26.09.29), which made every hand-over of the phone move somebody across the unit.
+
+     So the three shapes, by how many are on (supernumeraries not counted):
+       · four or fewer — the holder stands in a side like anybody else; nobody alone on E;
+       · five          — the holder alone on Pod E;
+       · six or more   — the holder floating; somebody else alone on Pod E.
+     THE TRADE is the same in every shape: when the phone passes on, last night's holder takes
+     exactly the seat tonight's holder has just left, and everybody else keeps last night's seat —
+     including whoever covered Pod E, unless that was the holder. Two people move, and they are the
+     two whose job changed. */
   function holdNight(team, pick, last, staff, cfg) {
     cfg = Object.assign({}, CFG, cfg || {});
     var S = function (id) { return staff[id] || {}; };
@@ -607,87 +625,54 @@
     var isNeuro = function (y) { return !!S(y).neuro || S(y).grade === "Neurology"; };
     var byName = function (a, b) { return String(S(a).name || a).localeCompare(String(S(b).name || b)); };
     var rank = function (y) { var g = S(y).grade; return g in cfg.gradeRank ? cfg.gradeRank[g] : 15; };
-    var meanRank = function (L) { return L.length ? L.reduce(function (t, y) { return t + rank(y); }, 0) / L.length : 99; };
     team = team.slice().sort(byName);
     var n = team.length;
-    /* WHO COVERS POD E. Ali, 26.09.29: "If >4 all pods should always be covered". Five on: the phone
-       holder, alone. Six or more on (cfg.nightPhoneInSideAt): somebody ELSE covers E, and the phone
-       holder is the third person on the more junior side — "with six on somebody need to cover E",
-       "put the phone holder as a 3rd person A-B or C-D (with the most junior of the 2 sides, make sure
-       airway on both)". Four or fewer: nobody alone on E. */
-    var holderOnE = !!pick && n >= cfg.nightEFrom && n < cfg.nightPhoneInSideAt;
-    var otherOnE = n >= cfg.nightEFrom && !holderOnE;
-    var E = holderOnE ? [pick] : [], AB = [], CDE = [], spare = [];
-    var lastTeam = last ? [].concat(last.AB || [], last.CDE || [], last.E || []) : [];
-    var teamChanged = !last || lastTeam.length !== n || team.some(function (id) { return lastTeam.indexOf(id) < 0; });
-    // five on: the seat tonight's holder has just left — last night's person on E takes it
-    var seat = holderOnE && last ? nightSideOf(last, pick) : null;
-    if (seat === "E") seat = null;
-    var isNew = {};
+    if (pick && team.indexOf(pick) < 0) pick = null;
+    var mode = n >= cfg.nightPhoneInSideAt ? "six" : n >= cfg.nightEFrom ? "five" : "four";
+    var AB = [], CDE = [], E = [], F = [], spare = [], isNew = {};
+    if (pick && mode === "six") F.push(pick);
+    if (pick && mode === "five") E.push(pick);
+    var lastTeam = last ? [].concat(last.AB || [], last.CDE || [], last.E || [], last.F || []) : [];
+    /* cfg.teamChanged: the caller knows the team changed even though `last` cannot show it — the
+       board re-seating a night from its own stored seats after somebody has come off it. */
+    var teamChanged = !!cfg.teamChanged || !last || lastTeam.length !== n || team.some(function (id) { return lastTeam.indexOf(id) < 0; });
+    var lastPhone = last && last.phone && last.phone !== pick && team.indexOf(last.phone) >= 0 ? last.phone : null;
+    // THE TRADE: the seat tonight's holder has just left, taken by last night's holder when they
+    // have none of their own to keep (they were on Pod E or floating)
+    var seat = pick && mode !== "four" ? nightSideOf(last, pick) : null;
+    if (seat === "F" || (seat === "E" && mode === "five")) seat = null;
+    var lastSeat = lastPhone ? nightSideOf(last, lastPhone) : null;
+    var trader = seat && (lastSeat === "E" || lastSeat === "F") ? lastPhone : null;
     for (var i = 0; i < n; i++) {
       var id = team[i];
-      if (holderOnE && id === pick) continue;
+      if (id === pick && mode !== "four") continue;
       var s = nightSideOf(last, id);
-      if (s === "AB") AB.push(id);
+      if (id === trader) (seat === "AB" ? AB : seat === "CDE" ? CDE : E).push(id);
+      else if (s === "AB") AB.push(id);
       else if (s === "CDE") CDE.push(id);
-      else if (s === "E" && otherOnE && id !== pick && !E.length) E.push(id);   // whoever covers E keeps it
-      else if (s === "E" && seat) { (seat === "AB" ? AB : CDE).push(id); seat = null; }
+      // whoever covered Pod E keeps it — six or more on, when it was not the holder
+      else if (s === "E" && mode === "six" && id !== last.phone && !E.length && seat !== "E") E.push(id);
       else { spare.push(id); isNew[id] = true; }
     }
-    /* SIX ON, THE PHONE PASSES ACROSS: the holder is the third person on the junior side, so when the
-       phone goes to somebody on the other side the two holders swap seats — as they swap in and out of
-       Pod E with five on. Nobody else moves. (planNights asks the junior side first, so the phone only
-       crosses when nobody else there can hold it.) */
-    if (otherOnE && pick && last && last.phone && last.phone !== pick && lastTeam.length >= cfg.nightPhoneInSideAt) {
-      var jr = nightSideOf(last, last.phone);
-      var ps = AB.indexOf(pick) >= 0 ? "AB" : CDE.indexOf(pick) >= 0 ? "CDE" : null;
-      var jrL = jr === "AB" ? AB : jr === "CDE" ? CDE : null, psL = ps === "AB" ? AB : ps === "CDE" ? CDE : null;
-      if (jrL && psL && jrL !== psL && jrL.indexOf(last.phone) >= 0) {
-        jrL.splice(jrL.indexOf(last.phone), 1); psL.splice(psL.indexOf(pick), 1);
-        jrL.push(pick); psL.push(last.phone);
-      }
-    }
     /* Who stands alone on Pod E when it is not the phone holder: not airway-trained if that can be
-       helped (airway is wanted on both sides), then the most senior — they are on their own. */
+       helped (airway is wanted on both sides), then not phone-trained (so they are never wanted for
+       the phone and never have to leave E), then the most senior — they are on their own. */
     var canPhone = function (y) { return !!(S(y).phone || S(y).phoneHolder); };
     var eChoice = function (cands) {
       cands = cands.filter(function (y) { return y !== pick; });
-      /* not airway-trained, then not phone-trained (so they are never wanted for the phone and never
-         have to leave E), then the most senior */
       cands.sort(function (a, b) { return (isAir(a) ? 1 : 0) - (isAir(b) ? 1 : 0) || (canPhone(a) ? 1 : 0) - (canPhone(b) ? 1 : 0) ||
         rank(a) - rank(b) || byName(a, b); });
       return cands[0] || null;
     };
-    var holderSpare = !!pick && !holderOnE && spare.indexOf(pick) >= 0;
-    /* SIX OR MORE ON, FIRST NIGHT OF A RUN: somebody covers E; the rest split into a senior side and a
-       junior side, and the phone holder joins the junior one as its third person (six on: 2 + 3 + 1).
-       Airway on both sides: the holder is airway-trained, and if the senior side has none, its most
-       junior person trades with an airway person from the junior side. */
-    if (otherOnE && !AB.length && !CDE.length && !E.length) {
-      var others = spare.filter(function (y) { return y !== pick; });
-      var eP = eChoice(others);
-      if (eP) { E.push(eP); others.splice(others.indexOf(eP), 1); }
-      if (pick) {
-        others.sort(function (a, b) { return rank(a) - rank(b) || byName(a, b); });
-        var jn = Math.floor(others.length / 2);
-        var senior = others.slice(0, others.length - jn), junior = others.slice(others.length - jn);
-        if (!senior.some(isAir) && junior.some(isAir)) {
-          var up = junior.filter(isAir)[0], down = senior[senior.length - 1];
-          senior[senior.length - 1] = up; junior[junior.indexOf(up)] = down;
-        }
-        if (!isAir(pick) && !junior.some(isAir) && senior.filter(isAir).length >= 2) {
-          var upA = senior.filter(isAir)[senior.filter(isAir).length - 1];
-          var downA = junior.filter(function (y) { return !isAir(y); })[0];
-          if (downA) { senior[senior.indexOf(upA)] = downA; junior[junior.indexOf(downA)] = upA; }
-        }
-        senior.forEach(function (y) { AB.push(y); }); junior.forEach(function (y) { CDE.push(y); }); CDE.push(pick);
-        spare = []; holderSpare = false;
-      } else { spare = others; }
+    var needE = (mode === "six" || (mode === "five" && !pick));
+    // Pod E still empty: somebody new tonight covers it before anybody already in a side is moved
+    if (needE && !E.length && spare.length) {
+      var eNew = eChoice(spare);
+      if (eNew) { spare.splice(spare.indexOf(eNew), 1); E.push(eNew); }
     }
-    if (holderSpare) spare.splice(spare.indexOf(pick), 1);
     // newcomers, airway first, to the lighter side
     spare.sort(function (a, b) { return (isAir(b) ? 1 : 0) - (isAir(a) ? 1 : 0) || byName(a, b); });
-    var total = AB.length + CDE.length + spare.length + (holderSpare ? 1 : 0), targetAB = Math.floor(total / 2);
+    var total = AB.length + CDE.length + spare.length, targetAB = Math.floor(total / 2);
     for (var k = 0; k < spare.length; k++) {
       var x = spare[k], to = null;
       var abAir = AB.some(isAir), cdAir = CDE.some(isAir);
@@ -699,45 +684,48 @@
       else to = AB.length < targetAB ? "AB" : "CDE";
       (to === "AB" ? AB : CDE).push(x);
     }
-    if (holderSpare) {
-      var toSide = AB.length < CDE.length ? AB : CDE.length < AB.length ? CDE
-                 : (meanRank(AB) > meanRank(CDE) ? AB : CDE);
-      toSide.push(pick);
-    }
-    // five or more on and nobody on E yet: somebody covers it — from the heavier side, the newest first
-    if (otherOnE && !E.length) {
+    // Pod E still empty and nobody new: from the heavier side
+    if (needE && !E.length) {
       var heavySide = AB.length > CDE.length ? AB : CDE.length > AB.length ? CDE : null;
-      var pool = heavySide ? heavySide.slice() : AB.concat(CDE);
-      var fresh = pool.filter(function (y) { return isNew[y] && y !== pick; });
-      var eP2 = eChoice(fresh.length ? fresh : pool) || eChoice(AB.concat(CDE));
+      var eP2 = eChoice(heavySide ? heavySide.slice() : AB.concat(CDE)) || eChoice(AB.concat(CDE));
       if (eP2) {
         if (AB.indexOf(eP2) >= 0) AB.splice(AB.indexOf(eP2), 1); else CDE.splice(CDE.indexOf(eP2), 1);
         E.push(eP2);
       }
     }
+    /* who crosses, when somebody has to: new tonight first, then whoever has just handed the phone
+       on, then somebody whose run ends tonight (cfg.tomorrow, tomorrow night's team, when the caller
+       knows it — moving them costs no further night; moving somebody on again tomorrow costs a
+       second move or a broken run), then (moving to A&B) never a neurology registrar, then by name
+       so the answer is the same every run */
+    var gaveUp = last && last.phone && last.phone !== pick ? last.phone : null;
+    var tmr = cfg.tomorrow || null;
+    var staysOn = function (y) { return !!tmr && tmr.indexOf(y) >= 0; };
+    var mover = function (from, toAB, wantAir) {
+      var c = from.filter(function (y) { return !(toAB && isNeuro(y)); });
+      if (wantAir === true) c = c.filter(isAir);
+      c.sort(function (a, b) {
+        return (isNew[b] ? 1 : 0) - (isNew[a] ? 1 : 0) || (b === gaveUp ? 1 : 0) - (a === gaveUp ? 1 : 0) ||
+          (staysOn(a) ? 1 : 0) - (staysOn(b) ? 1 : 0) ||
+          (wantAir === false ? (isAir(a) ? 1 : 0) - (isAir(b) ? 1 : 0) : 0) || byName(a, b);
+      });
+      return c[0] || null;
+    };
+    /* 1 · the two sides within one of each other. Always — 1 against 3 is not a night anybody
+       should work, whether or not the team changed (a night saved under an older rule can hand
+       one on). On a night where the team is the same and last night was even, the trade keeps it
+       even and nobody crosses here. */
+    for (var bal = 0; bal < 4 && cfg.nightBalanceSides; bal++) {
+      var heavy = AB.length - CDE.length > 1 ? AB : CDE.length - AB.length > 1 ? CDE : null;
+      if (!heavy) break;
+      var light = heavy === AB ? CDE : AB;
+      var needAir = !light.some(isAir) && heavy.filter(isAir).length >= 2;
+      var m = mover(heavy, light === AB, needAir ? true : false) || mover(heavy, light === AB);
+      if (!m) break;
+      heavy.splice(heavy.indexOf(m), 1); light.push(m);
+    }
+    // 2 · ONLY WHEN THE TEAM HAS CHANGED: an airway person each side, where two are free to do it
     if (teamChanged) {
-      /* who crosses, when somebody has to: new tonight first, then (moving to A&B) never a
-         neurology registrar, never the phone holder, then by name so the answer is the same every run */
-      var mover = function (from, toAB, wantAir) {
-        var c = from.filter(function (y) { return !(toAB && isNeuro(y)) && !(otherOnE && y === pick); });
-        if (wantAir === true) c = c.filter(isAir);
-        c.sort(function (a, b) {
-          return (isNew[b] ? 1 : 0) - (isNew[a] ? 1 : 0) ||
-            (wantAir === false ? (isAir(a) ? 1 : 0) - (isAir(b) ? 1 : 0) : 0) || byName(a, b);
-        });
-        return c[0] || null;
-      };
-      // 1 · the two sides within one of each other
-      for (var bal = 0; bal < 4 && cfg.nightBalanceSides; bal++) {
-        var heavy = AB.length - CDE.length > 1 ? AB : CDE.length - AB.length > 1 ? CDE : null;
-        if (!heavy) break;
-        var light = heavy === AB ? CDE : AB;
-        var needAir = !light.some(isAir) && heavy.filter(isAir).length >= 2;
-        var m = mover(heavy, light === AB, needAir ? true : false) || mover(heavy, light === AB);
-        if (!m) break;
-        heavy.splice(heavy.indexOf(m), 1); light.push(m);
-      }
-      // 2 · an airway person each side, where two are free to do it — one swap, same headcount
       for (var g = 0; g < 2; g++) {
         var abA = AB.filter(isAir).length, cdA = CDE.filter(isAir).length;
         var donor = abA === 0 && cdA >= 2 ? CDE : cdA === 0 && abA >= 2 ? AB : null;
@@ -751,7 +739,7 @@
         else break;
       }
     }
-    return { AB: AB, CDE: CDE, E: E, teamChanged: teamChanged };
+    return { AB: AB, CDE: CDE, E: E, F: F, teamChanged: teamChanged };
   }
   function planNights(weekKey, roster, staff, hist, cfg, prevNight, prevPhone2) {
     cfg = Object.assign({}, CFG, cfg || {});
@@ -775,7 +763,7 @@
         team.push(id);
       }
       if (!team.length) {
-        out.push({ phone: null, AB: [], CDE: [], E: [], super: sup });
+        out.push({ phone: null, AB: [], CDE: [], E: [], F: [], super: sup });
         last = null; lastPhone = null; lastPhone2 = null; continue;
       }
       team.sort(function (a, b) { return String(S(a).name || a).localeCompare(String(S(b).name || b)); });
@@ -800,20 +788,14 @@
       var onE = team.length >= cfg.nightPhoneInSideAt && last ? (last.E || []).filter(function (y) { return y !== lastPhone; }) : [];
       if (onE.length && pool.some(function (y) { return onE.indexOf(y) < 0; }))
         pool = pool.filter(function (y) { return onE.indexOf(y) < 0; });
-      /* Six on, the holder sits inside a side: the phone's second holder comes from the SAME side if
-         anybody there can hold it, so the phone stays with the junior side and nobody moves. */
-      if (team.length >= cfg.nightPhoneInSideAt && last && lastPhone) {
-        var hs = nightSideOf(last, lastPhone);
-        if (hs === "AB" || hs === "CDE") pool.sort(function (a, b) {
-          return (nightSideOf(last, b) === hs ? 1 : 0) - (nightSideOf(last, a) === hs ? 1 : 0);
-        });
-      }
       // the pair: back to the night-before-last holder if they are on and it is not their turn twice
       var pick = (lastPhone2 && lastPhone2 !== lastPhone && pool.indexOf(lastPhone2) >= 0) ? lastPhone2 : (pool[0] || null);
       if (pick) hist.nightPhone[pick] = (hist.nightPhone[pick] || 0) + 1;
 
-      var sides = holdNight(team, pick, last, staff, cfg);
-      var night = { phone: pick, AB: sides.AB, CDE: sides.CDE, E: sides.E, super: sup };
+      var rT = roster[addDays(weekKey, di + 1)], tomorrow = null;
+      if (rT) { tomorrow = []; for (var tid in rT) if (rT[tid].kind === "night" && !S(tid).supernum) tomorrow.push(tid); }
+      var sides = holdNight(team, pick, last, staff, Object.assign({}, cfg, { tomorrow: tomorrow }));
+      var night = { phone: pick, AB: sides.AB, CDE: sides.CDE, E: sides.E, F: sides.F, super: sup };
       out.push(night);
       last = cleanNight(night); lastPhone2 = lastPhone; lastPhone = pick;
     }
@@ -1440,9 +1422,9 @@
       pourInto(day, out.days[di].pods);
       day.phone = out.days[di].phone;
       var n = out.days[di].night;
-      day.night = day.night || { phone: null, AB: [], CDE: [], E: [], super: [] };
+      day.night = day.night || { phone: null, AB: [], CDE: [], E: [], F: [], super: [] };
       day.night.phone = n.phone; day.night.AB = n.AB; day.night.CDE = n.CDE;
-      day.night.E = n.E; day.night.super = n.super;
+      day.night.E = n.E; day.night.F = n.F || []; day.night.super = n.super;
     }
     /* A supernumerary the planner is about to place is first taken out of every pod's super list
        on that day, so a rewrite cannot leave them standing beside two pods. Anybody a person put
