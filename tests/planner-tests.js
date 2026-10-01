@@ -195,7 +195,7 @@ ok("a third pod outranks rules 4 and 5 and the preferences together", C.thirdPod
    keep consistency". These corner the rule on hand-built runs; the real-roster section below
    asserts it on every night of thirteen weeks. */
 console.log("  nights: only the phone holder moves");
-function sideMap(n) { const m = {}; n.AB.forEach(x => m[x] = "AB"); n.CDE.forEach(x => m[x] = "CDE"); n.E.forEach(x => m[x] = "E"); return m; }
+function sideMap(n) { const m = {}; n.AB.forEach(x => m[x] = "AB"); n.CDE.forEach(x => m[x] = "CDE"); n.E.forEach(x => m[x] = "E"); (n.F || []).forEach(x => m[x] = "F"); return m; }
 /* Every rule of the hold in one place, for any two consecutive nights. Returns the people who
    moved WITHOUT a reason the rule allows — so an empty list is a pass. */
 function nightBreaches(prev, n) {
@@ -203,14 +203,11 @@ function nightBreaches(prev, n) {
   const sameTeam = Object.keys(a).length === Object.keys(b).length && Object.keys(b).every(id => id in a);
   for (const id in b) {
     if (!(id in a)) continue;
-    if (id === n.phone && b[id] === "E") continue;                 // tonight's holder, gone to E
-    // six on, no E: the two holders may swap seats so the holder stays on the junior side
-    if (n.phone !== prev.phone && (id === n.phone || id === prev.phone) && a[n.phone] !== "E" && b[prev.phone] !== "E" &&
-        a[n.phone] === b[prev.phone] && a[prev.phone] === b[n.phone]) continue;
-    if (id === prev.phone && a[id] === "E") {                      // last night's holder, off E
+    if (id === n.phone && (b[id] === "E" || b[id] === "F")) continue;   // tonight's holder, gone to E (five) or floating (six)
+    if (id === prev.phone && (a[id] === "E" || a[id] === "F")) {        // last night's holder, off E / floating
       const seat = a[n.phone];
-      if ((n.E || []).includes(n.phone) && seat && seat !== "E" && n.phone !== prev.phone && b[id] !== seat)
-        bad.push(id + " came off E to " + b[id] + ", not into the seat " + n.phone + " left (" + seat + ")");
+      if (n.phone !== prev.phone && seat && seat !== "F" && b[n.phone] !== seat && b[id] !== seat)
+        bad.push(id + " came off " + a[id] + " to " + b[id] + ", not into the seat " + n.phone + " left (" + seat + ")");
       continue;
     }
     if (a[id] !== b[id] && sameTeam) bad.push(id + " " + a[id] + "→" + b[id] + " on a night with the same team");
@@ -246,10 +243,10 @@ function nightBreaches(prev, n) {
     [...holders].every(id => new Set([0, 1, 2, 3].map(di => seatOf(w.days[di].night, id)).filter(x => x !== "E")).size <= 1));
 }
 {
-  /* SIX ON — Ali, 26.09.29: "put the phone holder as a 3rd person A-B or C-D (with the most junior
-     of the 2 sides, make sure airway on both)", "with six on somebody need to cover E", "If >4 all
-     pods should always be covered". So: 2 + 3 + 1 — somebody else alone on E, the holder the third
-     person on the junior side. */
+  /* SIX ON — THE FLOATING PHONE HOLDER. Ali, 26.09.30: "when 6 on make a separate category
+     floating phone holder (only show when 6 people)". So: A&B 2, C&D 2, Pod E 1 — somebody other
+     than the holder — and the holder floating, in no pod. When the phone passes on, the two
+     holders swap places and nobody else moves. */
   const staff = {
     sr1: person("sr1", { grade: "ST", airway: true }), sr2: person("sr2", { grade: "ST" }),
     sr3: person("sr3", { grade: "SCF", phone: true, airway: true }), acp: person("acp", { grade: "ACCP" }),
@@ -257,26 +254,44 @@ function nightBreaches(prev, n) {
     ph: person("ph", { grade: "SCF", phone: true, airway: true })
   };
   const six = { sr1: "N", sr2: "N", sr3: "N", jr1: "N", jr2: "N", ph: "N" };
-  const w6 = week("2026-10-05", staff, [six, six, six, {}, {}, {}, {}]);
-  const n0 = w6.days[0].night, holder = n0.phone;
-  eq("six on: one person covers Pod E", n0.E.length, 1);
-  ok("six on: and it is not the phone holder", n0.E[0] !== holder, JSON.stringify(n0));
-  eq("six on: two on one side, three on the other", [n0.AB.length, n0.CDE.length].sort().join("/"), "2/3");
-  const hs = n0.AB.includes(holder) ? n0.AB : n0.CDE, other = hs === n0.AB ? n0.CDE : n0.AB;
-  eq("six on: the holder is the third person", hs.length, 3);
-  const R = P.CFG.gradeRank, mean = L => L.reduce((t, id) => t + R[staff[id].grade], 0) / L.length;
-  ok("six on: on the more junior side", mean(hs.filter(id => id !== holder)) >= mean(other), JSON.stringify(n0));
-  ok("six on: an airway person on both sides", n0.AB.some(id => staff[id].airway) && n0.CDE.some(id => staff[id].airway), JSON.stringify(n0));
-  for (let di = 1; di < 3; di++) {
-    const a = w6.days[di - 1].night, b = w6.days[di].night;
-    ok("six on: the phone changes hands, night " + di, b.phone !== a.phone);
-    ok("six on: the same person covers E all run, night " + di, JSON.stringify(a.E) === JSON.stringify(b.E), JSON.stringify([a.E, b.E]));
-    const juniorSide = n0.AB.includes(holder) ? "AB" : "CDE";
-    ok("six on: the holder is on the junior side every night, night " + di, b[juniorSide].includes(b.phone), JSON.stringify(b));
-    const others = Object.keys(six).filter(id => id !== a.phone && id !== b.phone);
-    ok("six on: nobody but the two holders moves, night " + di,
-      others.every(id => (a.AB.includes(id) && b.AB.includes(id)) || (a.CDE.includes(id) && b.CDE.includes(id)) || (a.E.includes(id) && b.E.includes(id))), JSON.stringify([a, b]));
+  const w6 = week("2026-10-05", staff, [six, six, six, six, {}, {}, {}]);
+  for (let di = 0; di < 4; di++) {
+    const n = w6.days[di].night;
+    eq("six on: the holder floats, night " + di, JSON.stringify(n.F), JSON.stringify([n.phone]));
+    ok("six on: somebody else alone on Pod E, night " + di, n.E.length === 1 && n.E[0] !== n.phone, JSON.stringify(n));
+    eq("six on: two a side, night " + di, [n.AB.length, n.CDE.length].join("/"), "2/2");
+    ok("six on: the holder is in no side, night " + di, !n.AB.includes(n.phone) && !n.CDE.includes(n.phone), JSON.stringify(n));
+    ok("six on: an airway person on both sides, night " + di, n.AB.some(id => staff[id].airway) && n.CDE.some(id => staff[id].airway), JSON.stringify(n));
+    if (!di) continue;
+    const a = w6.days[di - 1].night;
+    ok("six on: the phone changes hands, night " + di, n.phone !== a.phone);
+    eq("six on: the same person covers E all run, night " + di, JSON.stringify(n.E), JSON.stringify(a.E));
+    eq("six on: nobody but the two holders moves, night " + di, nightBreaches(a, n).bad.join(" | "), "");
+    const seat = a.AB.includes(n.phone) ? "AB" : "CDE";
+    ok("six on: last night's holder takes the seat tonight's holder left, night " + di, n[seat].includes(a.phone), JSON.stringify([a, n]));
   }
+  // seven on: 3 + 2 (either way) + E + floating
+  const seven = Object.assign({ acp: "N" }, six);
+  const w7 = week("2026-10-05", staff, [seven, seven, {}, {}, {}, {}, {}]);
+  const n7 = w7.days[0].night;
+  ok("seven on: holder floating, one on E, three and two", n7.F.length === 1 && n7.E.length === 1 &&
+    [n7.AB.length, n7.CDE.length].sort().join("/") === "2/3", JSON.stringify(n7));
+  eq("seven on: night 2 moves nobody but the holders", nightBreaches(n7, w7.days[1].night).bad.join(" | "), "");
+  // five on after six: the holder back on E, the sides two and two
+  const five = { sr1: "N", sr2: "N", sr3: "N", jr1: "N", ph: "N" };
+  const w65 = week("2026-10-05", staff, [six, six, five, five, {}, {}, {}]);
+  for (let di = 2; di < 4; di++) {
+    const n = w65.days[di].night;
+    ok("six then five: holder alone on E, nobody floating, night " + di, JSON.stringify(n.E) === JSON.stringify([n.phone]) && !(n.F || []).length, JSON.stringify(n));
+    eq("six then five: two a side, night " + di, [n.AB.length, n.CDE.length].join("/"), "2/2");
+  }
+  // five on, then six: the new night keeps the five-on sides, the old holder takes the new holder's seat
+  const w56 = week("2026-10-05", staff, [five, five, six, six, {}, {}, {}]);
+  const b5 = w56.days[1].night, a6 = w56.days[2].night;
+  ok("five then six: holder floating, one on E, 2 and 2", a6.F.length === 1 && a6.E.length === 1 && a6.AB.length === 2 && a6.CDE.length === 2, JSON.stringify(a6));
+  const kept = Object.keys(five).filter(id => id !== b5.phone && id !== a6.phone);
+  ok("five then six: everybody but the two holders keeps their side",
+    kept.every(id => (b5.AB.includes(id) && a6.AB.includes(id)) || (b5.CDE.includes(id) && a6.CDE.includes(id))), JSON.stringify([b5, a6]));
 }
 {
   /* THE WEEK BOUNDARY. Sunday night belongs to last week; Monday night must continue it, not
@@ -298,19 +313,26 @@ function nightBreaches(prev, n) {
   eq("Tuesday continues Monday", nightBreaches(mon, w.days[1].night).bad.join(" | "), "");
 }
 {
-  /* THE REAL CASE, w/c 5 Oct 2026, Monday into Tuesday: six on, phone from G to E. The old code
-     moved Ar and Za between the sides; the rule moves only G and E. */
+  /* THE REAL CASE, w/c 5 Oct 2026, Monday into Tuesday: six on, phone from G to El. */
   const staff = {
     G: person("G", { airway: true, phone: true }), El: person("El", { airway: true, phone: true }),
     Ar: person("Ar", { airway: true }), Am: person("Am", { airway: true }), Gr: person("Gr"), Za: person("Za")
   };
-  const last = { phone: "G", E: ["G"], AB: ["El", "Ar"], CDE: ["Am", "Gr", "Za"] };
-  /* Six on: somebody other than the phone holder covers E. G was on E and stays there; El takes
-     the phone where she sits. NOBODY moves — the old code moved Ar and Za. */
+  // Monday as the floating rule writes it: G floating, Gr on E, El and Ar on A&B, Am and Za on C&D
+  const last = { phone: "G", F: ["G"], E: ["Gr"], AB: ["El", "Ar"], CDE: ["Am", "Za"] };
   const t = P.holdNight(["G", "El", "Ar", "Am", "Gr", "Za"], "El", last, staff);
-  eq("w/c 5 Oct Tuesday: A&B exactly as Monday", JSON.stringify(t.AB.slice().sort()), JSON.stringify(["Ar", "El"]));
-  eq("w/c 5 Oct Tuesday: C&D exactly as Monday", JSON.stringify(t.CDE.slice().sort()), JSON.stringify(["Am", "Gr", "Za"]));
-  eq("w/c 5 Oct Tuesday: G stays covering E", JSON.stringify(t.E), JSON.stringify(["G"]));
+  eq("w/c 5 Oct Tuesday: El floats with the phone", JSON.stringify(t.F), JSON.stringify(["El"]));
+  eq("w/c 5 Oct Tuesday: G takes El's A&B seat", JSON.stringify(t.AB.slice().sort()), JSON.stringify(["Ar", "G"]));
+  eq("w/c 5 Oct Tuesday: C&D exactly as Monday", JSON.stringify(t.CDE.slice().sort()), JSON.stringify(["Am", "Za"]));
+  eq("w/c 5 Oct Tuesday: Gr stays covering E", JSON.stringify(t.E), JSON.stringify(["Gr"]));
+  /* A night saved under the old six-on rule (G on E, three on C&D) hands on 1 against 3 once El
+     floats: it is evened up, by one person crossing, and E is covered by somebody who is not the
+     holder. */
+  const old = { phone: "G", E: ["G"], AB: ["El", "Ar"], CDE: ["Am", "Gr", "Za"] };
+  const t0 = P.holdNight(["G", "El", "Ar", "Am", "Gr", "Za"], "El", old, staff);
+  ok("from an old-rule night: 2 and 2, one on E, El floating", t0.AB.length === 2 && t0.CDE.length === 2 && t0.E.length === 1 &&
+    t0.E[0] !== "El" && JSON.stringify(t0.F) === JSON.stringify(["El"]), JSON.stringify(t0));
+  ok("from an old-rule night: Ar and Am stay where they were", t0.AB.includes("Ar") && t0.CDE.includes("Am"), JSON.stringify(t0));
   /* w/c 28 Sep, Wednesday into Thursday: a person left A&B. One side short is allowed to be
      evened up, but by ONE person crossing, never by a reshuffle. */
   const last2 = { phone: "G", E: ["G"], AB: ["El", "Ma", "La"], CDE: ["Wa", "Ua"] };
@@ -336,6 +358,21 @@ function nightBreaches(prev, n) {
     }
     return wk;
   };
+  /* THE FLOATING HOLDER REACHES THE STORE. writeWeek copies the planner's nights into the week
+     field by field; a field it does not copy is a field the board never sees. */
+  {
+    const wk6 = { key: "2026-10-05", roster: {}, days: [] };
+    for (let di = 0; di < 7; di++) {
+      const iso = P.addDays("2026-10-05", di), m = {};
+      for (let i = 0; i < 14; i++) m["p" + i] = i < 6 ? { kind: "night", code: "N" } : { kind: "day", code: i < 10 ? "LD" : "SD" };
+      wk6.roster[iso] = m;
+      wk6.days.push({ pods: {}, night: { phone: null, AB: [], CDE: [], E: [], super: [] } });
+    }
+    P.writeWeek(wk6, staff, { history: P.blankHistory() });
+    ok("writeWeek stores the floating holder, six on",
+      wk6.days.every(d => JSON.stringify(d.night.F) === JSON.stringify([d.night.phone]) && d.night.E.length === 1 &&
+        d.night.AB.length === 2 && d.night.CDE.length === 2), JSON.stringify(wk6.days[0].night));
+  }
   const h1 = P.blankHistory(), w1 = mk(); P.writeWeek(w1, staff, { history: h1 });
   const h2 = P.blankHistory(), w2 = mk(); P.writeWeek(w2, staff, { history: h2 }); P.writeWeek(w2, staff, { history: h2 });
   eq("a week written twice is the week written once", JSON.stringify(w2.days), JSON.stringify(w1.days));
@@ -555,7 +592,7 @@ console.log("  " + days + " staffed days · " + unfixableLongDay + " long-day ga
       }
       prevN2 = prevN;
       prevN = n;
-      const placedN = [].concat(n.AB, n.CDE, n.E);
+      const placedN = [].concat(n.AB, n.CDE, n.E, n.F || []);
       eq("everybody on nights is placed once, " + iso, placedN.slice().sort().join(","), team.slice().sort().join(","));
       ok("nobody is on two night sides at once, " + iso, new Set(placedN).size === placedN.length);
 
@@ -564,15 +601,16 @@ console.log("  " + days + " staffed days · " + unfixableLongDay + " long-day ga
         ok("the night phone is allocated, " + iso, !!n.phone);
         ok("the night phone holder is qualified, " + iso, !!S(n.phone).phone, n.phone);
       }
-      /* Five, or seven and more, on: the phone holder covers Pod E alone. Exactly six (Ali, 26.09.29):
-         nobody alone on E — three a side, the holder the third person on one of them. */
+      /* Five on: the phone holder covers Pod E alone. Six or more (Ali, 26.09.30): the holder
+         floats, in no pod, and somebody else is alone on Pod E. Fewer than six: nobody floats. */
       if (team.length >= P.CFG.nightPhoneInSideAt) {
         eq("six or more on nights: one person covers Pod E, " + iso, n.E.length, 1);
-        if (n.phone) ok("six or more on: not the phone holder, who is the third person on a side, " + iso,
-          n.E[0] !== n.phone && (n.AB.includes(n.phone) || n.CDE.includes(n.phone)), JSON.stringify(n));
+        if (n.phone) ok("six or more on: the holder floats, and somebody else is on E, " + iso,
+          n.E[0] !== n.phone && JSON.stringify(n.F) === JSON.stringify([n.phone]), JSON.stringify(n));
         ok("six or more on: the sides within one of each other, " + iso, Math.abs(n.AB.length - n.CDE.length) <= 1, JSON.stringify(n));
       } else if (team.length >= P.CFG.nightEFrom && n.phone) {
         eq("five on nights: one alone on Pod E, " + iso, n.E.length, 1);
+        eq("five on nights: nobody floating, " + iso, (n.F || []).length, 0);
         eq("and Pod E is the phone holder, " + iso, n.E[0], n.phone);
       } else if (team.length >= P.CFG.nightEFrom) {
         eq("five on and nobody can hold the phone: Pod E is still covered, " + iso, n.E.length, 1);
@@ -600,18 +638,20 @@ console.log("  " + days + " staffed days · " + unfixableLongDay + " long-day ga
         n.AB.forEach(id => side[id] = "AB");
         n.CDE.forEach(id => side[id] = "CDE");
         n.E.forEach(id => side[id] = side[id] || "E");
+        (n.F || []).forEach(id => side[id] = side[id] || "F");
         for (const id in side) {
           if (!(id in prev.side)) continue;
           both++;
           if (side[id] === prev.side[id]) kept++;
-          else if (side[id] === "E" && n.phone === id) kept++;
-          else if (prev.side[id] === "E" && prev.phone === id) kept++;
+          else if ((side[id] === "E" || side[id] === "F") && n.phone === id) kept++;
+          else if ((prev.side[id] === "E" || prev.side[id] === "F") && prev.phone === id) kept++;
         }
       }
       const side2 = {};
       n.AB.forEach(id => side2[id] = "AB");
       n.CDE.forEach(id => side2[id] = "CDE");
       n.E.forEach(id => side2[id] = side2[id] || "E");
+      (n.F || []).forEach(id => side2[id] = side2[id] || "F");
       prev = { side: side2, phone: n.phone };
     }
   }
