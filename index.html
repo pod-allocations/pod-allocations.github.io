@@ -1707,8 +1707,9 @@ const GRADES = ["CON","ACCP","SCF","JCF","RCF","ST","CT","ACCS","IMT","FY1","FY2
    weeks carrying an older model. Both still editable in Settings — hard rule 1. */
 const RULE_DEFAULTS = { podMin: 2, podEMin: 1, nightMin: 4, transferAim: 4, neuroTarget: 70, retentionDays: 400,
                         /* Nights (Ali, 26.09.29): five on, the phone holder alone on Pod E. From this
-                           many on, somebody else covers E and the holder is the third person on the more
-                           junior side. "If >4 all pods should always be covered." */
+                           many on, somebody else covers E and the holder floats, in no pod (26.09.30: "when
+                           6 on make a separate category floating phone holder"). "If >4 all pods should
+                           always be covered." */
                         nightPhoneInSideAt: 6,
                         spreadMax: 2, spreadE: 3, visibleWeeks: 2, firmWeeks: 1,
                         writeDay: 1, writeHour: 14, publishDay: 4, publishHour: 7,
@@ -2068,7 +2069,7 @@ const todayISO = () => { const d = new Date(); return d.getFullYear()+"-"+String
 function blankDay(){
   const pods = {};
   for (const p of PODS) pods[p] = { assign: [], super: [], student: "" };
-  return { phone: null, phoneSup: null, nightCons: null, shadow: [], pods, night: { phone: null, AB: [], CDE: [], E: [], super: [] }, extras: [], obs: [] };
+  return { phone: null, phoneSup: null, nightCons: null, shadow: [], pods, night: { phone: null, AB: [], CDE: [], E: [], F: [], super: [] }, extras: [], obs: [] };
 }
 function blankWeek(){ return { days: Array.from({length:7}, blankDay), roster: null, accepted: [] }; }
 function blankData(){ return { version: 2, staff: [], weeks: {}, log: [], ignoredNames: [] }; }
@@ -3113,7 +3114,7 @@ function weekIsEmpty(wk){
   if (wk.roster && Object.keys(wk.roster).length) return false;
   return wk.days.every(d =>
     !d.phone && !d.night.phone && !d.nightCons && !d.shadow.filter(Boolean).length && !(d.extras || []).length &&
-    !d.night.AB.filter(Boolean).length && !d.night.CDE.filter(Boolean).length && !(d.night.E || []).filter(Boolean).length && !d.night.super.filter(Boolean).length && !(d.obs||[]).length &&
+    !d.night.AB.filter(Boolean).length && !d.night.CDE.filter(Boolean).length && !(d.night.E || []).filter(Boolean).length && !(d.night.F || []).filter(Boolean).length && !d.night.super.filter(Boolean).length && !(d.obs||[]).length &&
     PODS.every(p => !d.pods[p].assign.filter(a=>a.id).length && !d.pods[p].super.filter(Boolean).length && !d.pods[p].cons)
   );
 }
@@ -4424,6 +4425,7 @@ function placeOnDay(day, id){
   if (day.night.AB.includes(id)) return "A&B night";
   if (day.night.CDE.includes(id)) return "C&D night";
   if ((day.night.E || []).includes(id)) return "night Pod E";
+  if ((day.night.F || []).includes(id)) return "night floating phone";
   if (day.night.phone === id) return "night";
   return "bench";
 }
@@ -4769,7 +4771,7 @@ function personSheet(s, di, day){
   if (holderId === s.id) {
     const cands = [];
     if (onNight) {
-      const nk = [["AB", "A&B"], ["CDE", "C&D"], ["E", "Pod E"]];
+      const nk = [["AB", "A&B"], ["CDE", "C&D"], ["E", "Pod E"], ["F", "floating"]];
       for (const [k, lab] of nk) for (const id of (day.night[k] || [])) {
         const c = staffById(id);
         if (id && id !== s.id && canHoldPhone(c) && !skillHeldBack(id, "phoneHolder", dateISO) && !cands.some(x => x.id === id))
@@ -4907,27 +4909,203 @@ function normalizePods(day){
    into the real container here, once, and every path that shows or reasons about nights calls
    this first so the rule lives in exactly one place. */
 /* Does the night phone holder stand alone on Pod E tonight? Five on — yes. From `nightPhoneInSideAt`
-   (six) on — no: somebody else covers E and the holder is the third person on a side (Ali, 26.09.29).
-   One function so the board, the old day-by-day path and the sync all ask the same question. */
+   (six) on — no: somebody else covers E and the holder floats, in no pod (Ali, 26.09.30: "when 6
+   on make a separate category floating phone holder (only show when 6 people)"). One function so
+   the board, the old day-by-day path and the sync all ask the same question. */
 function nightPhoneOnE(n){ return n >= 5 && n < Number(rule("nightPhoneInSideAt")); }
+function nightFloats(n){ return n >= Number(rule("nightPhoneInSideAt")); }
 function normalizeNight(day){
   if (!day || !day.night) return;
-  day.night.E = day.night.E || [];
-  const ph = day.night.phone;
-  const nTot = (day.night.AB || []).length + (day.night.CDE || []).length + day.night.E.length;
-  if (!day.night.E.length && nightPhoneOnE(nTot) && ph && (day.night.CDE || []).includes(ph)) {
-    day.night.CDE = day.night.CDE.filter(id => id !== ph);
-    day.night.E.push(ph);
+  const nt = day.night;
+  nt.AB = nt.AB || []; nt.CDE = nt.CDE || [];
+  nt.E = nt.E || [];
+  nt.F = nt.F || [];
+  const ph = nt.phone;
+  const nTot = nt.AB.length + nt.CDE.length + nt.E.length + nt.F.length;
+  const lighter = id => isNeuroReg(staffById(id)) || nt.CDE.length < nt.AB.length ? "CDE" : "AB";
+  /* FLOATING IS THE PHONE HOLDER'S PLACE AND NOBODY ELSE'S. Anybody else there means the phone
+     moved on by another path (a chooser, a repair): the two TRADE, exactly as Planner.holdNight
+     does — the new holder floats and the old one takes the seat they left. */
+  const stray = nt.F.filter(id => id !== ph);
+  if (stray.length) {
+    nt.F = nt.F.filter(id => id === ph);
+    const seatK = ph ? ["AB", "CDE", "E"].find(k => nt[k].includes(ph)) : null;
+    if (seatK && nightFloats(nTot)) {
+      nt[seatK] = nt[seatK].filter(x => x !== ph);
+      nt.F.push(ph);
+      nt[seatK].push(stray.shift());
+    }
+    for (const id of stray) nt[lighter(id)].push(id);
   }
+  // fewer than six on: nobody floats — the holder goes to Pod E with five on, otherwise to a side
+  if (nt.F.length && !nightFloats(nTot)) {
+    const fl = nt.F; nt.F = [];
+    for (const id of fl) {
+      if (id === ph && nightPhoneOnE(nTot) && !nt.E.length) nt.E.push(id);
+      else nt[lighter(id)].push(id);
+    }
+  }
+  if (!nt.E.length && nightPhoneOnE(nTot) && ph && nt.CDE.includes(ph)) {
+    nt.CDE = nt.CDE.filter(id => id !== ph);
+    nt.E.push(ph);
+  }
+}
+/* ── RE-HOLD A NIGHT — 26.09.30 ─────────────────────────────────────────────────────────────
+   w/c 5 Oct came out a mess because the sync changed WHO was on a night without re-applying the
+   night rule: Optima took somebody off Monday night, the sync took them out, and nobody re-seated
+   the rest — the holder left off Pod E, one against three. Any change to who is on a night now
+   ends here, and Planner.holdNight decides the seats — the rule the planner writes weeks with,
+   not a second copy of it.
+
+   WHAT THE SEATS ARE HELD AGAINST. A night that already has seats is held against ITSELF: the
+   people still on keep the seat they were published in, and only what the change broke is put
+   right — the holder onto Pod E with five on or floating with six or more, somebody on E, the
+   sides within one, and (the team having changed) airway on both. Somebody new tonight (`opts.fresh`)
+   goes to the lighter side. A night with no seats yet is dealt from LAST night, as the planner
+   deals it (`opts.anchor = "last"`). Holding a first night against an empty Sunday re-dealt a
+   whole published night in the tests; holding against itself moved two people.
+   Somebody not counted in the numbers who is standing in a side is left exactly where they are.
+   `opts.repick` asks for a new phone holder (the old one holds it two nights running); the two
+   holders then trade seats. Returns who changed seat, for the log. */
+function nightTeamOf(night){
+  if (!night) return [];
+  return [...new Set([...(night.AB || []), ...(night.CDE || []), ...(night.E || []), ...(night.F || [])].filter(Boolean))];
+}
+function nightAt(wk, wkKey, di){
+  if (di >= 0 && di < 7) return ((wk.days || [])[di] || {}).night || null;
+  const w2 = (data.weeks || {})[addDays(wkKey, di < 0 ? -7 : 7)];
+  const d2 = w2 && w2.days ? w2.days[di < 0 ? di + 7 : di - 7] : null;
+  return d2 ? d2.night || null : null;
+}
+function reholdNight(wk, di, wkKey, opts){
+  wkKey = wkKey || currentWeekKey;
+  const day = wk && wk.days ? wk.days[di] : null;
+  if (!day || !day.night || typeof Planner === "undefined" || !Planner || !Planner.holdNight || !Planner.staffMap) return null;
+  const nt = day.night;
+  for (const k of ["AB", "CDE", "E", "F", "super"]) nt[k] = (nt[k] || []).filter(Boolean);
+  opts = opts || {};
+  const fresh = (opts.fresh || []).filter(Boolean);
+  const all = nightTeamOf(nt);
+  for (const id of fresh) if (!all.includes(id)) all.push(id);
+  if (!all.length) return { moved: [], phone: nt.phone || null, phoneWas: nt.phone || null };
+  const before = {};
+  for (const k of ["AB", "CDE", "E", "F"]) for (const id of nt[k]) if (!before[id]) before[id] = k;
+  const team = all.filter(id => countsInNumbers(id));
+  const lastN = nightAt(wk, wkKey, di - 1), last2N = nightAt(wk, wkKey, di - 2);
+  const prev = lastN && nightTeamOf(lastN).length
+    ? { phone: lastN.phone || null, AB: lastN.AB || [], CDE: lastN.CDE || [], E: lastN.E || [], F: lastN.F || [] } : null;
+  const notFresh = L => (L || []).filter(id => !fresh.includes(id));
+  const self = { phone: nt.phone || null, AB: notFresh(nt.AB), CDE: notFresh(nt.CDE), E: notFresh(nt.E), F: notFresh(nt.F) };
+  const useSelf = opts.anchor !== "last" && nightTeamOf(self).some(id => team.includes(id));
+  /* "hybrid" (a re-plan of a written week): anybody on last night is held against last night's
+     seat, anybody else against the seat they already have tonight — a run stays one run, and a
+     night that starts a run keeps the seats it was published with. */
+  let last = useSelf ? self : prev;
+  if (opts.anchor === "hybrid" && prev) {
+    const onPrev = nightTeamOf(prev);
+    const keepOwn = L => (L || []).filter(id => !onPrev.includes(id));
+    last = { phone: prev.phone, AB: prev.AB.concat(keepOwn(self.AB)), CDE: prev.CDE.concat(keepOwn(self.CDE)),
+             E: prev.E.concat(keepOwn(self.E)), F: prev.F.concat(keepOwn(self.F)) };
+  }
+  const dateISO = addDays(wkKey, di);
+  const okPh = id => !!id && team.includes(id) && phoneOK(id) && !skillHeldBack(id, "phoneHolder", dateISO);
+  const phoneWas = nt.phone || null;
+  let pick = okPh(nt.phone) && !opts.repick ? nt.phone : null;
+  if (!pick && team.length) {
+    /* the planner's own choice: never last night's holder if anybody else can, never whoever is
+       covering E on a six-on run, back to the night-before-last holder (the pair), then fairness */
+    const lastPh = prev ? prev.phone : null;
+    const onE = nightFloats(team.length) ? [...(prev ? prev.E || [] : []), ...(useSelf ? self.E : [])].filter(y => y !== lastPh) : [];
+    const nHist = historicCount(dd => dd.night && dd.night.phone);
+    let c = team.filter(okPh);
+    const c1 = c.filter(y => y !== lastPh); if (c1.length) c = c1;
+    const c2 = c.filter(y => !onE.includes(y)); if (c2.length) c = c2;
+    const pair = prev && last2N ? last2N.phone : null;
+    const nm = id => String((staffById(id) || {}).name || id);
+    pick = (pair && pair !== lastPh && c.includes(pair)) ? pair
+         : (c.sort((a, b) => ((nHist[a] || 0) - (nHist[b] || 0)) || nm(a).localeCompare(nm(b)))[0] || null);
+  }
+  let h;
+  try {
+    h = Planner.holdNight(team, pick, last, Planner.staffMap(data.staff),
+      { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK, teamChanged: !!opts.changed,
+        tomorrow: nightTeamOf(nightAt(wk, wkKey, di + 1)) });
+  } catch (e) { return null; }
+  nt.phone = pick || null;
+  nt.AB = h.AB.slice(); nt.CDE = h.CDE.slice(); nt.E = h.E.slice(); nt.F = (h.F || []).slice();
+  for (const id of all) if (!team.includes(id)) nt[before[id] || "CDE"].push(id);
+  const moved = [];
+  for (const id of team) {
+    const now = ["AB", "CDE", "E", "F"].find(k => nt[k].includes(id));
+    if (before[id] !== now) moved.push({ id, from: before[id] ? NIGHT_LABEL[before[id]] : "", to: NIGHT_LABEL[now] || "" });
+  }
+  return { moved, phone: nt.phone, phoneWas };
+}
+/* ...and the nights after it, only where they now need it. A later night that is already the
+   right shape for its own team is left exactly as it was published: re-seating the whole run
+   from one changed night moves people on nights nobody changed (the rehearsal moved two people
+   on each of three later nights for one removal on the Monday). A later night IS re-held when it
+   is the wrong shape (the holder not on Pod E with five on, not floating with six or more, nobody
+   on E, the sides two or more apart, the holder unplaced) or when its phone holder now holds it
+   two nights running while somebody else could. It stops at a night with nobody on, outside the
+   writable window, in the past, or arranged by hand (the log says so) — that one is theirs.
+   Returns [{ di, wkKey, date, moved, phone, phoneWas }] for each night changed, the first
+   included. */
+function nightHandEdited(dateISO){
+  return (data.log || []).some(e => e && e.kind === "manual" && e.on === dateISO &&
+    ((e.d && e.d.night) || /\bnight\b/i.test(e.msg || "")));
+}
+function nightShapeBad(night){
+  if (!night) return false;
+  const team = nightTeamOf(night).filter(id => countsInNumbers(id)), n = team.length;
+  if (!n) return false;
+  const ph = night.phone && team.includes(night.phone) ? night.phone : null;
+  const AB = (night.AB || []).filter(id => countsInNumbers(id)).length, CD = (night.CDE || []).filter(id => countsInNumbers(id)).length;
+  const E = (night.E || []).filter(Boolean), F = (night.F || []).filter(Boolean);
+  if (night.phone && !team.includes(night.phone)) return true;
+  if (Math.abs(AB - CD) > 1) return true;
+  if (nightFloats(n)) return ph ? (F.length !== 1 || F[0] !== ph || E.length !== 1 || E[0] === ph) : (E.length !== 1 || F.length > 0);
+  if (nightPhoneOnE(n)) return F.length > 0 || (ph ? (E.length !== 1 || E[0] !== ph) : E.length !== 1);
+  return F.length > 0;
+}
+function reholdNightsFrom(wkKey, di, opts){
+  opts = opts || {};
+  const out = [];
+  const today = opts.today || todayISO();
+  for (let step = 0; step < 14; step++) {
+    const date = addDays(wkKey, di + step);
+    const wk2Key = addDays(wkKey, 7 * Math.floor((di + step) / 7)), di2 = (di + step) % 7;
+    const wk2 = (data.weeks || {})[wk2Key];
+    if (!wk2 || !wk2.days || !wk2.days[di2] || !wk2.days[di2].night) break;
+    if (date < today || !dayIsWritable(date)) break;
+    const nt = wk2.days[di2].night;
+    if (!nightTeamOf(nt).length) break;
+    let repick = false;
+    if (step > 0) {
+      const pv = nightAt(wk2, wk2Key, di2 - 1);
+      repick = !!(nt.phone && pv && pv.phone === nt.phone &&
+        nightTeamOf(nt).some(id => id !== nt.phone && countsInNumbers(id) && phoneOK(id) && !skillHeldBack(id, "phoneHolder", date)));
+      if (!repick && !nightShapeBad(nt)) break;
+      if (nightHandEdited(date)) break;
+    }
+    const sig = () => JSON.stringify(["phone", "AB", "CDE", "E", "F"].map(k => k === "phone" ? nt.phone || null
+      : (wk2.days[di2].night[k] || []).filter(Boolean).slice().sort()));
+    const s0 = sig();
+    const r = reholdNight(wk2, di2, wk2Key, step === 0 ? { changed: opts.changed !== false, fresh: opts.fresh || [] } : { repick });
+    if (!r) break;
+    if (sig() !== s0) out.push({ di: di2, wkKey: wk2Key, date, moved: r.moved, phone: r.phone, phoneWas: r.phoneWas });
+    else if (step > 0) break;
+  }
+  return out;
 }
 /* Which night half somebody is in, as the stable label the log uses. The DISPLAYED heading for
    CDE changes with whether Pod E is occupied ("Pod C, D & E" vs "Pod C & D"); the container does
    not, so the log must not borrow the heading or two entries about the same place would fail to
    cancel each other out. */
-const NIGHT_LABEL = { AB: "A&B", CDE: "C&D", E: "E" };
+const NIGHT_LABEL = { AB: "A&B", CDE: "C&D", E: "E", F: "floating" };
 function nightSpotOf(day, id){
   if (!day || !day.night) return "";
-  for (const k of ["AB", "CDE", "E"]) if ((day.night[k] || []).includes(id)) return NIGHT_LABEL[k];
+  for (const k of ["AB", "CDE", "E", "F"]) if ((day.night[k] || []).includes(id)) return NIGHT_LABEL[k];
   return "";
 }
 /* Everybody who already HAS a place today. The Super boxes were missing from this list, which is
@@ -4940,7 +5118,7 @@ function nightSpotOf(day, id){
    Super IS a placement. It is the placement that says "here, but not in your numbers". */
 function assignedIds(day){
   return new Set([day.phone, day.night.phone, ...day.shadow, ...day.night.AB, ...day.night.CDE,
-    ...(day.night.E || []), ...(day.night.super || []),
+    ...(day.night.E || []), ...(day.night.F || []), ...(day.night.super || []),
     ...PODS.flatMap(p => day.pods[p].assign.map(a => a.id)),
     ...PODS.flatMap(p => day.pods[p].super || [])].filter(Boolean));
 }
@@ -4954,6 +5132,7 @@ function removeAssign(day, id, opts){
   day.night.AB = day.night.AB.filter(x => x !== id);
   day.night.CDE = day.night.CDE.filter(x => x !== id);
   day.night.E = (day.night.E || []).filter(x => x !== id);
+  day.night.F = (day.night.F || []).filter(x => x !== id);
   for (const p of PODS) day.pods[p].assign = day.pods[p].assign.filter(a => a.id !== id);
   /* ...and the Super boxes. These were missed, so dragging a supernumerary from Pod C's Super
      box to Pod A's left them in BOTH — the drop added them to A without anything taking them out
@@ -5451,7 +5630,7 @@ function strFirstSeen(){
 function strNightCounts(day){
   var n = day && day.night;
   if (!n) return [];
-  var ids = [n.phone].concat(n.AB || [], n.CDE || [], n.E || []).filter(Boolean);
+  var ids = [n.phone].concat(n.AB || [], n.CDE || [], n.E || [], n.F || []).filter(Boolean);
   var seen = {}, out = [], i;
   for (i = 0; i < ids.length; i++) if (!seen[ids[i]] && countsInNumbers(ids[i])) { seen[ids[i]] = 1; out.push(ids[i]); }
   return out;
@@ -6484,7 +6663,7 @@ function renderDayRow(day, di, dateISO, issues){
   }
   { const au = actingUpFor(dateISO);
     if (au.length) { night.append(el("div", { class: "subhead" }, "Acting up")); for (const s of au) night.append(actUpChip(s)); } }
-  if (day.night.phone && !day.night.AB.includes(day.night.phone) && !day.night.CDE.includes(day.night.phone) && !(day.night.E || []).includes(day.night.phone)) {
+  if (day.night.phone && !day.night.AB.includes(day.night.phone) && !day.night.CDE.includes(day.night.phone) && !(day.night.E || []).includes(day.night.phone) && !(day.night.F || []).includes(day.night.phone)) {
     const s = staffById(day.night.phone);
     if (s) night.append(el("div", { style: "margin-bottom:.2rem" }, chip(s, { di, day })));
   }
@@ -6522,6 +6701,34 @@ function renderDayRow(day, di, dateISO, issues){
   const eOccupied = (day.night.E || []).filter(Boolean).length > 0;
   nightZone(eOccupied ? "Pod C & D" : "Pod C, D & E", "CDE");
   if (eOccupied || canEdit()) nightZone("Pod E", "E");
+  /* THE FLOATING PHONE HOLDER (Ali, 26.09.30): six or more on, the holder is in no pod. Shown only
+     then — or while somebody is in it. Dropping somebody here makes them the night phone holder
+     if they can hold it; the two holders trade, so the old one takes the seat the new one left. */
+  if ((day.night.F || []).filter(Boolean).length || (canEdit() && nightFloats(nightCountables(day).length))) {
+    night.append(el("div", { class: "subhead" }, "Floating phone"));
+    const fz = el("div", { class: "nzone" });
+    makeZone(fz, di, id => {
+      const ns = staffById(id);
+      if (!ns || !phoneOK(id) || skillHeldBack(id, "phoneHolder", dateISO)) { toast((ns ? ns.name : "They") + " can't hold the night phone — the floating place is the phone holder's"); return false; }
+      const wasIn = nightSpotOf(day, id) || (PODS.find(q => day.pods[q].assign.some(a => a.id === id)) || "");
+      const seatK = ["AB", "CDE", "E"].find(k => (day.night[k] || []).includes(id)) || null;
+      const oldPh = day.night.phone && day.night.phone !== id ? day.night.phone : null;
+      removeAssign(day, id);
+      if (oldPh && (day.night.F || []).includes(oldPh)) {
+        day.night.F = day.night.F.filter(x => x !== oldPh);
+        const k = seatK || (isNeuroReg(staffById(oldPh)) || (day.night.CDE || []).length < (day.night.AB || []).length ? "CDE" : "AB");
+        day.night[k] = day.night[k] || []; day.night[k].push(oldPh);
+      }
+      day.night.F = day.night.F || []; day.night.F.push(id);
+      day.night.phone = id;
+      logEntry(ns.name + " → night floating phone (" + dayShort(di) + ")", "manual", dateOfDi(di), null,
+        { act: "move", subj: ns.name, from: wasIn, to: NIGHT_LABEL.F, night: true, bench: !wasIn });
+    });
+    const fl = (day.night.F || []).filter(id => staffById(id));
+    for (const id of fl) fz.append(chip(staffById(id), { di, day, tag: "N", onRemove: () => { day.night.F = (day.night.F || []).filter(x => x !== id); logEntry("Removed " + staffById(id).name + " from night floating phone (" + dayShort(di) + ")", "manual", dateOfDi(di)); markDirty(); renderWeek(); } }));
+    if (!fl.length) fz.append(el("div", { class: "hint" }, canEdit() ? "drop the phone holder" : "—"));
+    night.append(fz);
+  }
   if (day.night.super.length || (canEdit() && activeStaff(dateISO).some(s => isSupernumerary(s)))) {
     night.append(el("div", { class: "subhead" }, "Super"));
     const nsup = el("div"); night.append(nsup);
@@ -6564,7 +6771,7 @@ function dayCountables(day){
   return { perPod, total };
 }
 function nightCountables(day){
-  return [...new Set([day.night.phone, ...day.night.AB, ...day.night.CDE, ...(day.night.E || [])].filter(id => id && countsInNumbers(id)))];
+  return [...new Set([day.night.phone, ...day.night.AB, ...day.night.CDE, ...(day.night.E || []), ...(day.night.F || [])].filter(id => id && countsInNumbers(id)))];
 }
 /* DE-DUPLICATED. Somebody appears here under every hat they wear — the phone holder is both
    `day.phone` and a name in a pod, and a phone shadow is both `day.shadow` and a name in a pod —
@@ -6590,7 +6797,7 @@ function checkDay(day, dateISO, di, wk){
   const name = id => { const s = staffById(id); return s ? s.name : "(unknown)"; };
   const hasContent = day.phone || day.night.phone || day.shadow.filter(Boolean).length ||
     PODS.some(p => day.pods[p].assign.some(a => a.id) || day.pods[p].super.filter(Boolean).length) ||
-    day.night.AB.filter(Boolean).length || day.night.CDE.filter(Boolean).length || (day.night.E || []).filter(Boolean).length || day.night.super.filter(Boolean).length;
+    day.night.AB.filter(Boolean).length || day.night.CDE.filter(Boolean).length || (day.night.E || []).filter(Boolean).length || (day.night.F || []).filter(Boolean).length || day.night.super.filter(Boolean).length;
   if (!hasContent) return [{ hard: false, info: true, empty: true, msg: "Nothing allocated yet." }];
   const dayIds = dayAllAssigned(day);
   const { perPod } = dayCountables(day);
@@ -6612,11 +6819,12 @@ function checkDay(day, dateISO, di, wk){
     const nph = staffById(day.night.phone);
     if (nph && !canHoldPhone(nph)) H("Night phone: " + nph.name + " must be a qualified phone holder (a learner can't hold the night phone).");
     if (nph && !nph.nights) H("Night phone: " + nph.name + " is not flagged as able to work nights.");
-    if (nph && !day.night.AB.includes(day.night.phone) && !day.night.CDE.includes(day.night.phone) && !(day.night.E || []).includes(day.night.phone)) H("At night the phone holder also covers a pod — place " + nph.name + " in A & B, C, D & E, or Pod E.");
+    if (nph && !day.night.AB.includes(day.night.phone) && !day.night.CDE.includes(day.night.phone) && !(day.night.E || []).includes(day.night.phone) && !(day.night.F || []).includes(day.night.phone)) H("Night: place the phone holder, " + nph.name + " — in A & B, C & D or Pod E, or floating when six or more are on.");
   } else H("No night phone holder allocated.");
 
-  const nightIds = [day.night.phone, ...day.night.AB, ...day.night.CDE, ...(day.night.E || []), ...day.night.super].filter(Boolean);
-  const nightAirway = [...new Set(nightIds)].filter(id => staffById(id)?.airway).length;
+  const nightIds = [day.night.phone, ...day.night.AB, ...day.night.CDE, ...(day.night.E || []), ...(day.night.F || []), ...day.night.super].filter(Boolean);
+  // the floating holder is in neither side, so is not counted towards splitting airway across them
+  const nightAirway = [...new Set([...day.night.AB, ...day.night.CDE, ...(day.night.E || [])].filter(Boolean))].filter(id => staffById(id)?.airway).length;
   // How many airway are on nights is a rota matter; if there are 2, aim to split them across the pod groups.
   if (nightAirway >= 2) {
     const cdeSide = [...day.night.CDE, ...(day.night.E || [])];
@@ -6755,7 +6963,7 @@ function checkWeek(wk){
        this rota the holder is the ONLY phone-trained person on — the warning named a problem with
        no possible action, every weekend. Say nothing unless there is an alternative. */
     const altHolder = () => [...new Set([...(wk.days[i].night.AB || []), ...(wk.days[i].night.CDE || []),
-      ...(wk.days[i].night.E || [])])].some(id => id !== cur && phoneOK(id));
+      ...(wk.days[i].night.E || []), ...(wk.days[i].night.F || [])])].some(id => id !== cur && phoneOK(id));
     if (cur && cur === prev) { nrun++; if (nrun === 2 && altHolder()) S(name(cur) + " holds the night phone on consecutive nights — aim for one night at a time where able."); }
     else nrun = 1;
   }
@@ -7357,7 +7565,7 @@ function staticSnapshotHtml(){
         return '<td style="' + cell + '">' + cons + (rows || '<span style="color:#c4c8cd">—</span>') + obs + "</td>";
       }).join("");
       const phone = day.phone ? esc(nm(day.phone)) + (day.phoneSup ? '<div style="font-size:10px;color:#8a8f98">sup: ' + esc(nm(day.phoneSup)) + '</div>' : "") : '<span style="color:#c4c8cd">—</span>';
-      const nOthers = [...day.night.AB, ...day.night.CDE, ...(day.night.E || [])].filter(id => id && id !== day.night.phone);
+      const nOthers = [...day.night.AB, ...day.night.CDE, ...(day.night.E || []), ...(day.night.F || [])].filter(id => id && id !== day.night.phone);
       const night = [day.night.phone ? esc(nm(day.night.phone)) + " ☎" : null, ...nOthers.map(id => esc(nm(id)))].filter(Boolean).join("<br>") +
         (day.nightCons ? '<div style="font-size:10px;color:#8a8f98">on call: ' + esc(cl(day.nightCons)) + '</div>' : "");
       out += '<tr><td style="' + cell + ';white-space:nowrap"><b>' + DAYNAMES[di].slice(0,3) + "</b> " + fmtDate(iso) + '</td><td style="' + cell + '">' + phone + "</td>" + podCells + '<td style="' + cell + ';background:#f7f7f5">' + (night || "—") + "</td></tr>";
@@ -8295,6 +8503,7 @@ async function publishWeek(){
     const nAB = day.night.AB.filter(Boolean).map(id => esc(name(id))).join("<br>") || "—";
     const nCDE = day.night.CDE.filter(Boolean).map(id => esc(name(id))).join("<br>") || "—";
     const nE = (day.night.E || []).filter(Boolean).map(id => esc(name(id))).join("<br>");
+    const nF = (day.night.F || []).filter(Boolean);
     const nSup = day.night.super.filter(Boolean).map(id => "Super: " + esc(name(id))).join("<br>");
     const fghList = ((wk.roster && wk.roster[dateISO]) ? Object.entries(wk.roster[dateISO]) : [])
       .filter(([id, v]) => /^FGH/i.test(v.code || "") && staffById(id))
@@ -8302,7 +8511,7 @@ async function publishWeek(){
     daysHtml += `<div class="day"><div class="dh">${DAYNAMES[di]} <span>${fmtDate(dateISO)}</span></div><table><tr>
       <td class="side"><div class="ph">PHONE</div><div class="pr big">${esc(name(day.phone)) || "—"}</div>${day.phoneSup && staffById(day.phoneSup) ? `<div class="pr sup">Supervised by ${esc(name(day.phoneSup))}</div>` : ""}${fghList ? `<div class="ph" style="margin-top:6px">FAIRFIELD</div><div class="pr">${fghList}</div>` : ""}</td>
       ${podCells}
-      <td class="side night"><div class="ph">NIGHT</div>${day.nightCons ? `<div class="pr sup"><b>On call:</b> ${esc(staffById(day.nightCons) ? consLabel(staffById(day.nightCons)) : day.nightCons)}</div>` : ""}<div class="pr"><b>Phone:</b> ${esc(name(day.night.phone)) || "—"}</div><div class="pr"><b>A&amp;B:</b><br>${nAB}</div><div class="pr"><b>${nE ? "C&amp;D" : "C,D&amp;E"}:</b><br>${nCDE}</div>${nE ? `<div class="pr"><b>E:</b><br>${nE}</div>` : ""}${nSup ? `<div class="pr sup">${nSup}</div>` : ""}</td>
+      <td class="side night"><div class="ph">NIGHT</div>${day.nightCons ? `<div class="pr sup"><b>On call:</b> ${esc(staffById(day.nightCons) ? consLabel(staffById(day.nightCons)) : day.nightCons)}</div>` : ""}<div class="pr"><b>Phone:</b> ${esc(name(day.night.phone)) || "—"}${nF.length && nF.includes(day.night.phone) ? " (floating)" : ""}</div><div class="pr"><b>A&amp;B:</b><br>${nAB}</div><div class="pr"><b>${nE ? "C&amp;D" : "C,D&amp;E"}:</b><br>${nCDE}</div>${nE ? `<div class="pr"><b>E:</b><br>${nE}</div>` : ""}${nSup ? `<div class="pr sup">${nSup}</div>` : ""}</td>
     </tr></table></div>`;
   });
   const published = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8621,7 +8830,7 @@ function sweepInvalidPhones(){
       if (keepSh.length !== sh.length) { d.shadow = keepSh; n += sh.length - keepSh.length; }
       if (d.night) {
         if (d.night.phone && (!phoneOK(d.night.phone) || dead(d.night.phone))) { d.night.phone = null; n++; hit = true; }
-        for (const k of ["AB", "CDE", "super"]) {
+        for (const k of ["AB", "CDE", "E", "F", "super"]) {
           const before = (d.night[k] || []).filter(Boolean);
           const after = before.filter(id => !gone(id));
           if (after.length !== before.length) { d.night[k] = after; n += before.length - after.length; }
@@ -8660,7 +8869,8 @@ function autoFillDay(wk, di, wkKey, opts){
   const assigned = assignedIds(day);
   /* Nobody placed on nights when this began? Then the night is this function's to arrange, and it
      is arranged by Planner.holdNight at the end — the same rule the planner writes weeks with. */
-  const nightWasEmpty = !day.night || ![...(day.night.AB || []), ...(day.night.CDE || []), ...(day.night.E || [])].filter(Boolean).length;
+  const nightWasEmpty = !day.night || ![...(day.night.AB || []), ...(day.night.CDE || []), ...(day.night.E || []), ...(day.night.F || [])].filter(Boolean).length;
+  const nightTeamWas = day.night ? nightTeamOf(day.night).slice().sort().join(",") : "";
   // The allocator's view of skills: anything queued to start later doesn't exist yet for IT —
   // though it is already real for the checker, the display and anything placed by hand.
   const airwayOn = s => !!s && s.airway && !skillHeldBack(s.id, "airway", dateISO);
@@ -8699,7 +8909,7 @@ function autoFillDay(wk, di, wkKey, opts){
   // --- night phone: same rules. A qualified holder from the night team, spread by rate, avoiding
   //     two nights running where possible. Nobody suitable on? It stays empty and flagged. ---
   if (!day.night.phone || !phoneOK(day.night.phone)) {
-    const nightIds = [...new Set([...(day.night.AB || []), ...(day.night.CDE || []), ...(day.night.E || [])].filter(Boolean))];
+    const nightIds = [...new Set([...(day.night.AB || []), ...(day.night.CDE || []), ...(day.night.E || []), ...(day.night.F || [])].filter(Boolean))];
     const keptN = STICK_PHONE && STICK_PHONE[dateISO] && STICK_PHONE[dateISO].night;
     if (keptN && phoneOK(keptN) && nightIds.includes(keptN)) { day.night.phone = keptN; } else {
     const nHist = historicCountWindow(dd => dd.night && dd.night.phone);
@@ -9316,7 +9526,7 @@ function autoFillDay(wk, di, wkKey, opts){
   }
   normalizeNight(day);
   normalizePods(day);
-  const nightAssigned = new Set([...day.night.AB, ...day.night.CDE, ...(day.night.E || [])]);
+  const nightAssigned = new Set([...day.night.AB, ...day.night.CDE, ...(day.night.E || []), ...(day.night.F || [])]);
   const nightUnplaced = nightIds.filter(id => !nightAssigned.has(id) && !assignedIds(day).has(id) || (id === day.night.phone && !nightAssigned.has(id)));
   // phone holder covers a pod — with five on, somebody splits off to cover Pod E alone, and
   // that somebody is the holder (E is quieter). Pod E is a real container now, so place them in it.
@@ -9409,17 +9619,16 @@ function autoFillDay(wk, di, wkKey, opts){
      are handed to Planner.holdNight: the same answer the planner gives, from last night as it
      stands. The code above still decides WHO is on and who holds the phone; it no longer decides
      where they sit. Without planner.js it keeps its own answer, as before. */
-  if (nightWasEmpty && typeof Planner !== "undefined" && Planner && Planner.holdNight && Planner.staffMap) {
-    const team = [...new Set([...(day.night.AB || []), ...(day.night.CDE || []), ...(day.night.E || [])].filter(Boolean))];
-    if (team.length) {
-      const lastD = di > 0 ? wk.days[di - 1] : (((data.weeks || {})[addDays(key, -7)] || {}).days || [])[6];
-      const ln = lastD && lastD.night ? { phone: lastD.night.phone || null, AB: lastD.night.AB || [], CDE: lastD.night.CDE || [], E: lastD.night.E || [] } : null;
-      try {
-        const h = Planner.holdNight(team, day.night.phone && team.includes(day.night.phone) ? day.night.phone : null, ln,
-          Planner.staffMap(data.staff), { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK });
-        day.night.AB = h.AB; day.night.CDE = h.CDE; day.night.E = h.E;
-      } catch (e) { /* keep the answer above */ }
-    }
+  /* 26.09.30: not only an empty night — any night whose TEAM this function changed (somebody new
+     placed on it) is re-seated by the same rule, from last night as it stands. A night with the
+     same team as it came in with keeps the arrangement it had. */
+  const nightTeamNow = nightTeamOf(day.night);
+  if (nightTeamNow.length && (nightWasEmpty || nightTeamNow.slice().sort().join(",") !== nightTeamWas)) {
+    try {
+      const was = nightTeamWas ? nightTeamWas.split(",") : [];
+      reholdNight(wk, di, key, nightWasEmpty ? { anchor: "last" }
+        : { changed: true, fresh: nightTeamNow.filter(id => !was.includes(id)) });
+    } catch (e) { /* keep the answer above */ }
   }
 }
 /* ── THE PLANNER WRITES THE WEEK ────────────────────────────────────────────────────────────────
@@ -9557,7 +9766,7 @@ function planDayFix(di){
   /* ── the night phone, unchanged ──────────────────────────────────────────────────────────── */
   const pool = poolFor(day, dateISO);
   const nightIds = Object.keys(pool).filter(id => pool[id].kind === "night");
-  day.night = day.night || { phone: null, AB: [], CDE: [], E: [], super: [] };
+  day.night = day.night || { phone: null, AB: [], CDE: [], E: [], F: [], super: [] };
   const nOK = day.night.phone && canHoldPhone(staffById(day.night.phone));
   if (!nOK && nightIds.length) {
     const nHist = historicCount(dd => dd.night.phone);
@@ -9566,8 +9775,9 @@ function planDayFix(di){
       .sort((a,b) => ((a.id===prevN)-(b.id===prevN)) || ((nHist[a.id]||0)-(nHist[b.id]||0)) || a.name.localeCompare(b.name));
     if (cands.length) {
       day.night.phone = cands[0].id;
-      if (!day.night.AB.includes(cands[0].id) && !day.night.CDE.includes(cands[0].id) && !(day.night.E || []).includes(cands[0].id))
+      if (!day.night.AB.includes(cands[0].id) && !day.night.CDE.includes(cands[0].id) && !(day.night.E || []).includes(cands[0].id) && !(day.night.F || []).includes(cands[0].id))
         day.night.CDE.push(cands[0].id);
+      normalizeNight(day);
     }
   }
   if (!day.phone) unresolved.push("No trained long-day phone holder is rostered — the phone is left unallocated.");
@@ -9980,7 +10190,7 @@ function planDayFixLegacy(di){
     const nHist = historicCount(dd => dd.night.phone);
     const prevN = di > 0 ? wk.days[di-1].night.phone : null;
     const cands = nightIds.map(staffById).filter(s => s && canHoldPhone(s) && !skillHeldBack(s.id, "phoneHolder", dateISO)).sort((a,b) => ((a.id===prevN)-(b.id===prevN)) || ((nHist[a.id]||0)-(nHist[b.id]||0)) || a.name.localeCompare(b.name));
-    if (cands.length) { day.night.phone = cands[0].id; if (!day.night.AB.includes(cands[0].id) && !day.night.CDE.includes(cands[0].id) && !(day.night.E || []).includes(cands[0].id)) day.night.CDE.push(cands[0].id); }
+    if (cands.length) { day.night.phone = cands[0].id; if (!day.night.AB.includes(cands[0].id) && !day.night.CDE.includes(cands[0].id) && !(day.night.E || []).includes(cands[0].id) && !(day.night.F || []).includes(cands[0].id)) day.night.CDE.push(cands[0].id); normalizeNight(day); }
   }
 
   // ---- Describe the diff (what actually changed vs the original) ----
@@ -11474,7 +11684,7 @@ function renderSettings(){
      The stored number is untouched and still read, so a board that has one keeps it. Recorded in
      JOBS.md as a deliberate narrowing of hard rule 1 rather than left to be discovered. */
   const nums = [["podMin","staff per pod, minimum",""],["podEMin","Pod E minimum",""],
-    ["nightMin","night team minimum",""],["nightPhoneInSideAt","nights: someone other than the phone holder covers E from","on"],["transferAim","transfer-trained on days, aim for",""],
+    ["nightMin","night team minimum",""],["nightPhoneInSideAt","nights: the phone holder floats, and someone else covers E, from","on"],["transferAim","transfer-trained on days, aim for",""],
     ["neuroTarget","neuro shifts on Pods C/D","%"],["retentionDays","keep past weeks for","days"]];
   const grid = el("div", { style: "display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.55rem" });
   for (const [k, label, unit] of nums) {
@@ -11854,7 +12064,7 @@ function whoCanDialog(){
       for (const a of (day.pods[pd].assign || []))
         if (a && a.id) out.day.push({ id: a.id, pod: pd, where: "Pod " + pd, shift: a.shift || "" });
     const n = day.night || {};
-    for (const id of [].concat(n.AB || [], n.CDE || [], n.E || []))
+    for (const id of [].concat(n.AB || [], n.CDE || [], n.E || [], n.F || []))
       if (id) out.night.push({ id, pod: "N", where: "Night", shift: "N" });
     for (const s of (dateISO ? actingUpFor(dateISO) : [])) out.night.push({ id: s.id, pod: "N", where: "Acting up", shift: "AU" });
     return out;
@@ -12113,7 +12323,7 @@ function remapStaffId(from, to){
       swapObjArr(day.extras); swapObjArr(day.fghExtras);
       if (day.night) {
         if (day.night.phone === from) { day.night.phone = to; n++; }
-        for (const k of ["AB", "CDE", "E", "super"]) swapArr(day.night[k]);
+        for (const k of ["AB", "CDE", "E", "F", "super"]) swapArr(day.night[k]);
       }
       if (day.superShift && day.superShift[from]) { day.superShift[to] = day.superShift[from]; delete day.superShift[from]; n++; }
     }
@@ -12265,7 +12475,7 @@ function whereIsPerson(id, dateISO){
       return { kind: "day", pod: p, shift: superShiftOf(day, id) || "", super: true };
   }
   if (day.night) {
-    for (const k of ["AB", "CDE", "E"]) if ((day.night[k] || []).includes(id)) return { kind: "night" };
+    for (const k of ["AB", "CDE", "E", "F"]) if ((day.night[k] || []).includes(id)) return { kind: "night" };
     if ((day.night.super || []).includes(id)) return { kind: "night", super: true };
   }
   if (inFairfield(day, dateISO, id)) return { kind: "fgh" };
@@ -12404,8 +12614,8 @@ function srRemoveFromDay(day, sid){
   if ((day.extras || []).some(x => x && x.id === sid)){ day.extras = day.extras.filter(x => !x || x.id !== sid); hits.push("extras"); }
   if (day.night){
     if (day.night.phone === sid){ day.night.phone = null; hits.push("night phone"); }
-    for (const k of ["AB", "CDE", "E", "super"]){
-      if ((day.night[k] || []).includes(sid)){ day.night[k] = day.night[k].filter(x => x !== sid); hits.push("night " + k); }
+    for (const k of ["AB", "CDE", "E", "F", "super"]){
+      if ((day.night[k] || []).includes(sid)){ day.night[k] = day.night[k].filter(x => x !== sid); hits.push("night " + (NIGHT_LABEL[k] || k)); }
     }
   }
   return hits;
@@ -12445,7 +12655,7 @@ function srDetectGhosts(){
       (day.extras || []).forEach(x => { if (x && x.id) sids.add(x.id); });
       if (day.night){
         if (day.night.phone) sids.add(day.night.phone);
-        ["AB", "CDE", "E", "super"].forEach(k => (day.night[k] || []).forEach(x => sids.add(x)));
+        ["AB", "CDE", "E", "F", "super"].forEach(k => (day.night[k] || []).forEach(x => sids.add(x)));
       }
       for (const sid of sids){
         const s = staffById(sid);
@@ -12495,7 +12705,7 @@ async function nameLocum(s, di){
   for (const p of Object.values(day.pods || {})){ swap(p.assign); swap(p.super); if (p.student === s.id) p.student = named.id; }
   ["phone", "phoneSup", "nightCons"].forEach(k => { if (day[k] === s.id) day[k] = named.id; });
   swap(day.shadow);
-  if (day.night){ if (day.night.phone === s.id) day.night.phone = named.id; swap(day.night.AB); swap(day.night.CDE); swap(day.night.E); swap(day.night.super); }
+  if (day.night){ if (day.night.phone === s.id) day.night.phone = named.id; swap(day.night.AB); swap(day.night.CDE); swap(day.night.E); swap(day.night.F); swap(day.night.super); }
   (day.extras || []).forEach(x => { if (x && x.id === s.id) x.id = named.id; });
   (day.fghExtras || []).forEach(x => { if (x && x.id === s.id) x.id = named.id; });
   if (wk.roster && wk.roster[date] && wk.roster[date][s.id]){
