@@ -81,6 +81,8 @@ function loadApp() {
     aggregateOverrides: typeof aggregateOverrides !== "undefined" ? aggregateOverrides : null,
     renderOverrides: typeof renderOverrides !== "undefined" ? renderOverrides : null,
     normalizeNight: typeof normalizeNight !== "undefined" ? normalizeNight : null,
+    reholdNight: typeof reholdNight !== "undefined" ? reholdNight : null,
+    reholdNightsFrom: typeof reholdNightsFrom !== "undefined" ? reholdNightsFrom : null,
     actingUpFor: typeof actingUpFor !== "undefined" ? actingUpFor : null,
     actUpChip: typeof actUpChip !== "undefined" ? actUpChip : null,
     whereIsPerson: typeof whereIsPerson !== "undefined" ? whereIsPerson : null,
@@ -174,7 +176,8 @@ function seedNightRun(api, dis, people) {
 function nightSide(day, id) {
   return (day.night.AB || []).includes(id) ? "AB"
        : (day.night.CDE || []).includes(id) ? "CDE"
-       : (day.night.E || []).includes(id) ? "E" : null;
+       : (day.night.E || []).includes(id) ? "E"
+       : (day.night.F || []).includes(id) ? "F" : null;
 }
 function podCounts(api, day) {
   const c = {};
@@ -793,27 +796,86 @@ async function main() {
       JSON.stringify({ prevHolderNowIn: nightSide(d1, d0.night.phone), newHolderWasIn: nightSide(d0, d1.night.phone) }));
   }
   {
-    /* A RUN OF NIGHTS, SIX ON (Ali, 26.09.29): "with six on somebody need to cover E" and the phone
-       holder is "a 3rd person A-B or C-D". So 2 + 3 + 1 — somebody other than the holder alone on E,
-       the holder on a side — and when the phone changes hands nobody moves except, if the new holder
-       sits on the other side, the two holders swapping seats. */
+    /* A RUN OF NIGHTS, SIX ON — THE FLOATING PHONE HOLDER (Ali, 26.09.30): "when 6 on make a
+       separate category floating phone holder (only show when 6 people)". A&B 2, C&D 2, Pod E 1
+       (somebody other than the holder), the holder floating; when the phone changes hands the two
+       holders swap places and nobody else moves. */
     const six = Array.from({ length: 6 }, (_, i) => ({ shift: "N", nights: true, airway: false, phoneHolder: i < 2 }));
     const { wk, made } = seedNightRun(api, [0, 1], six);
     api.autoFillDay(wk, 0);
     api.autoFillDay(wk, 1);
     const d0 = wk.days[0], d1 = wk.days[1];
-    const cnt = d => ({ sides: [(d.night.AB || []).length, (d.night.CDE || []).length].sort().join("/"), E: (d.night.E || []).length });
-    ok("run of nights, six on: 2 + 3 + 1, both nights",
-      [d0, d1].every(d => cnt(d).sides === "2/3" && cnt(d).E === 1), JSON.stringify([cnt(d0), cnt(d1)]));
-    ok("run of nights, six on: Pod E is not the phone holder, who is on a side",
-      [d0, d1].every(d => !(d.night.E || []).includes(d.night.phone) && ((d.night.AB || []).includes(d.night.phone) || (d.night.CDE || []).includes(d.night.phone))),
+    const cnt = d => [(d.night.AB || []).length, (d.night.CDE || []).length, (d.night.E || []).length, (d.night.F || []).length].join("/");
+    ok("run of nights, six on: 2 / 2 / E 1 / floating 1, both nights",
+      [d0, d1].every(d => cnt(d) === "2/2/1/1"), JSON.stringify([cnt(d0), cnt(d1)]));
+    ok("run of nights, six on: the holder floats and somebody else is on Pod E",
+      [d0, d1].every(d => JSON.stringify(d.night.F) === JSON.stringify([d.night.phone]) && !(d.night.E || []).includes(d.night.phone)),
       JSON.stringify([d0.night, d1.night]));
     ok("run of nights, six on: the phone changed hands", d0.night.phone !== d1.night.phone,
       JSON.stringify({ n1: d0.night.phone, n2: d1.night.phone }));
     const movers = made.map(s => s.id).filter(id => nightSide(d0, id) !== nightSide(d1, id));
-    ok("run of nights, six on: nobody moves but the two holders (swapping seats, or not at all)",
-      (movers.length === 0 || movers.length === 2) && movers.every(id => id === d0.night.phone || id === d1.night.phone),
+    ok("run of nights, six on: only the two holders move, and they swap places",
+      movers.length === 2 && movers.every(id => id === d0.night.phone || id === d1.night.phone) &&
+      nightSide(d1, d0.night.phone) === nightSide(d0, d1.night.phone),
       JSON.stringify({ movers, n1: d0.night.phone, n2: d1.night.phone }));
+    const msgs = api.checkDay(d1, api.addDays(api.getWeekKey(), 1), 1, wk).filter(x => x.hard && /^Night/.test(x.msg)).map(x => x.msg).join(" | ");
+    ok("run of nights, six on: no red flag on the night", msgs === "", msgs);
+  }
+  {
+    /* THE SYNC TAKES SOMEBODY OFF A NIGHT — the w/c 5 Oct fault. Six on for three nights; Optima
+       takes one person off the first night. The night must be re-seated by the night rule (five on:
+       the holder alone on E, two a side), and the run after it must still be one run. */
+    const six = Array.from({ length: 6 }, (_, i) => ({ shift: "N", nights: true, airway: i === 2 || i === 4, phoneHolder: i < 2 }));
+    const { wk, made } = seedNightRun(api, [0, 1, 2], six);
+    [0, 1, 2].forEach(di => api.autoFillDay(wk, di));
+    ok("rehold: the board has reholdNight and reholdNightsFrom", typeof api.reholdNight === "function" && typeof api.reholdNightsFrom === "function");
+    const d0 = wk.days[0];
+    // take somebody off who is on a side and not a holder
+    const gone = made.map(s => s.id).find(id => id !== d0.night.phone && !(d0.night.E || []).includes(id) && id !== wk.days[1].night.phone);
+    wk.days[0].extras = wk.days[0].extras.filter(x => x.id !== gone);
+    api.srRemoveFromDay(d0, gone);
+    const changed = api.reholdNightsFrom(api.getWeekKey(), 0, { today: api.addDays(api.getWeekKey(), 0) });
+    const n0 = wk.days[0].night;
+    ok("rehold: five on after the removal — the holder alone on Pod E, nobody floating",
+      JSON.stringify(n0.E) === JSON.stringify([n0.phone]) && !(n0.F || []).length, JSON.stringify(n0));
+    ok("rehold: two a side", (n0.AB || []).length === 2 && (n0.CDE || []).length === 2, JSON.stringify(n0));
+    ok("rehold: the change is reported", changed.length >= 1 && changed[0].di === 0, JSON.stringify(changed));
+    const n1 = wk.days[1].night;
+    ok("rehold: the next night (six on again) floats its holder, 2 / 2 / 1",
+      JSON.stringify(n1.F) === JSON.stringify([n1.phone]) && n1.AB.length === 2 && n1.CDE.length === 2 && n1.E.length === 1, JSON.stringify(n1));
+    const others = made.map(s => s.id).filter(id => id !== gone && id !== n0.phone && id !== n1.phone && !(n1.E || []).includes(id));
+    ok("rehold: into the next night, nobody but the holders and whoever now covers E changes side",
+      others.every(id => nightSide(wk.days[0], id) === nightSide(wk.days[1], id)), JSON.stringify([n0, n1]));
+    const again = JSON.stringify(wk.days.map(d => d.night));
+    api.reholdNightsFrom(api.getWeekKey(), 0, { today: api.addDays(api.getWeekKey(), 0) });
+    ok("rehold: running it again changes nothing", JSON.stringify(wk.days.map(d => d.night)) === again);
+    // Optima ADDS somebody to the third night: they go to the lighter side, nobody else changes seat
+    const n2before = JSON.parse(JSON.stringify(wk.days[2].night));
+    const extra = mkStaff(api, { nights: true });
+    wk.days[2].extras.push({ id: extra.id, kind: "night", code: "N" });
+    api.reholdNightsFrom(api.getWeekKey(), 2, { today: api.addDays(api.getWeekKey(), 0), fresh: [extra.id] });
+    const n2 = wk.days[2].night;
+    ok("rehold: an arrival is placed on a side, seven on, holder still floating",
+      (n2.AB.includes(extra.id) || n2.CDE.includes(extra.id)) && JSON.stringify(n2.F) === JSON.stringify([n2.phone]) && n2.E.length === 1, JSON.stringify(n2));
+    ok("rehold: nobody already on the third night changes seat",
+      made.map(s => s.id).filter(id => nightSide({ night: n2before }, id)).every(id => nightSide({ night: n2before }, id) === nightSide(wk.days[2], id)),
+      JSON.stringify([n2before, n2]));
+  }
+  {
+    // normalizeNight: the phone moved on by another path while the old holder floats — they trade
+    const six = Array.from({ length: 6 }, (_, i) => ({ shift: "N", nights: true, phoneHolder: i < 2 }));
+    const { wk, made } = seedNightRun(api, [3], six);
+    const d = wk.days[3], ids = made.map(s => s.id);
+    d.night.phone = ids[1]; d.night.F = [ids[0]]; d.night.AB = [ids[1], ids[2]]; d.night.CDE = [ids[3], ids[4]]; d.night.E = [ids[5]];
+    api.normalizeNight(d);
+    ok("normalizeNight: a new holder floats and the old one takes their seat",
+      JSON.stringify(d.night.F) === JSON.stringify([ids[1]]) && d.night.AB.includes(ids[0]) && !d.night.AB.includes(ids[1]), JSON.stringify(d.night));
+    // five on with the holder floating: back onto Pod E
+    const d2 = wk.days[3];
+    d2.night.phone = ids[0]; d2.night.F = [ids[0]]; d2.night.AB = [ids[1], ids[2]]; d2.night.CDE = [ids[3], ids[4]]; d2.night.E = [];
+    api.normalizeNight(d2);
+    ok("normalizeNight: five on, nobody floats — the holder covers Pod E",
+      !(d2.night.F || []).length && JSON.stringify(d2.night.E) === JSON.stringify([ids[0]]), JSON.stringify(d2.night));
   }
   {
     // Five on, one phone-trained: the holder can't hand it over, so nothing moves at all.
