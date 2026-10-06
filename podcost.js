@@ -43,11 +43,17 @@
     return { days: days, total: 0 };
   }
 
-  function charge(led, di, pod, amount, label) {
+  /* `who` and `note` (26.10.06) name the person a charge belongs to, and which way a neuro share
+     is off, so the Look ahead move panel can say "Priya loses continuity" rather than a cost code.
+     Neither changes any number. */
+  function charge(led, di, pod, amount, label, who, note) {
     if (!amount) return;
     var slot = led.days[di].pods[pod];
     slot.cost += amount;
-    slot.why.push({ code: label, cost: amount });
+    var w = { code: label, cost: amount };
+    if (who) w.who = who;
+    if (note) w.note = note;
+    slot.why.push(w);
     led.total += amount;
   }
   function chargeDay(led, di, amount, label) {
@@ -99,8 +105,8 @@
           if (di === 6) sunPod[id] = p;
 
           if (p === "E") {
-            charge(led, di, "E", (hist.eDays[id] || 0) * cfg.eUnfair, "eUnfair");
-            if (s.airway) charge(led, di, "E", cfg.airwayOnE, "airwayOnE");
+            charge(led, di, "E", (hist.eDays[id] || 0) * cfg.eUnfair, "eUnfair", id);
+            if (s.airway) charge(led, di, "E", cfg.airwayOnE, "airwayOnE", id);
           }
           if (s.neuro) {
             neuroTot[id] = (neuroTot[id] || 0) + 1;
@@ -146,7 +152,7 @@
     /* the weekend pair — charged to the Sunday, which is the day that broke it */
     for (var wid in satPod) {
       if (sunPod[wid] === undefined || sunPod[wid] === satPod[wid]) continue;
-      if (PAIR[satPod[wid]] !== sunPod[wid]) charge(led, 6, sunPod[wid], cfg.weekendCross, "weekendCross");
+      if (PAIR[satPod[wid]] !== sunPod[wid]) charge(led, 6, sunPod[wid], cfg.weekendCross, "weekendCross", wid);
     }
 
     /* a neuro trainee's band — spread across that person's own days, since it is their week */
@@ -156,48 +162,48 @@
       var share = (neuroCD[nid] || 0) / tot, amt = 0;
       if (share < 0.60) amt = cfg.neuroOffCD * (0.60 - share) * tot * 4;
       if (share > 0.75) amt = cfg.neuroOffCD * (share - 0.75) * tot * 4;
-      spreadOver(led, neuroDays[nid], amt, "neuroOffCD");
+      spreadOver(led, neuroDays[nid], amt, "neuroOffCD", nid, share < 0.60 ? "low" : "high");
     }
 
     /* the person's week — a move is charged to the day the pod changed, so the cost shows up
        where a human is about to make it */
     for (var id2 in podsOf) {
       var seq = whereOn[id2] || [], n = podsOf[id2].length;
-      if (n > 2) chargeAtNthPod(led, seq, 3, cfg.thirdPod * (n - 2), "thirdPod");
-      if (n > 1) chargeAtNthPod(led, seq, 2, cfg.secondPod * (n - 1), "secondPod");
+      if (n > 2) chargeAtNthPod(led, seq, 3, cfg.thirdPod * (n - 2), "thirdPod", id2);
+      if (n > 1) chargeAtNthPod(led, seq, 2, cfg.secondPod * (n - 1), "secondPod", id2);
       var mv = moves[id2] || 0;
-      if (mv) spreadOverMoves(led, seq, cfg.anyMove * mv, "anyMove");
-      if (mv > cfg.weekMoveCap) spreadOverMoves(led, seq, cfg.extraMove * (mv - cfg.weekMoveCap), "extraMove");
-      if (home[id2] && podsOf[id2].indexOf(home[id2]) < 0) spreadOver(led, seq, cfg.offHome, "offHome");
+      if (mv) spreadOverMoves(led, seq, cfg.anyMove * mv, "anyMove", id2);
+      if (mv > cfg.weekMoveCap) spreadOverMoves(led, seq, cfg.extraMove * (mv - cfg.weekMoveCap), "extraMove", id2);
+      if (home[id2] && podsOf[id2].indexOf(home[id2]) < 0) spreadOver(led, seq, cfg.offHome, "offHome", id2);
     }
     return led;
   }
 
   /* Split a person's week charge evenly across the pod-days they actually worked, so no single
      day is blamed for a whole week and the pods still add up to the week. */
-  function spreadOver(led, seq, amount, label) {
+  function spreadOver(led, seq, amount, label, who, note) {
     if (!amount || !seq || !seq.length) return;
     var each = amount / seq.length;
-    for (var i = 0; i < seq.length; i++) charge(led, seq[i].di, seq[i].pod, each, label);
+    for (var i = 0; i < seq.length; i++) charge(led, seq[i].di, seq[i].pod, each, label, who, note);
   }
   /* Charge every day on which this person's pod differs from the day before. */
-  function spreadOverMoves(led, seq, amount, label) {
+  function spreadOverMoves(led, seq, amount, label, who) {
     if (!amount || !seq || seq.length < 2) return;
     var hits = [];
     for (var i = 1; i < seq.length; i++) if (seq[i].pod !== seq[i - 1].pod) hits.push(seq[i]);
     if (!hits.length) return;
     var each = amount / hits.length;
-    for (var j = 0; j < hits.length; j++) charge(led, hits[j].di, hits[j].pod, each, label);
+    for (var j = 0; j < hits.length; j++) charge(led, hits[j].di, hits[j].pod, each, label, who);
   }
   /* Charge the pod-day on which the person's Nth distinct pod of the week first appears. */
-  function chargeAtNthPod(led, seq, n, amount, label) {
+  function chargeAtNthPod(led, seq, n, amount, label, who) {
     if (!amount || !seq || !seq.length) return;
     var seen = "", i;
     for (i = 0; i < seq.length; i++) {
       if (seen.indexOf(seq[i].pod) < 0) seen += seq[i].pod;
-      if (seen.length === n) { charge(led, seq[i].di, seq[i].pod, amount, label); return; }
+      if (seen.length === n) { charge(led, seq[i].di, seq[i].pod, amount, label, who); return; }
     }
-    charge(led, seq[seq.length - 1].di, seq[seq.length - 1].pod, amount, label);
+    charge(led, seq[seq.length - 1].di, seq[seq.length - 1].pod, amount, label, who);
   }
 
   /* ── THE ROSTER CEILING ───────────────────────────────────────────────────────────────────
