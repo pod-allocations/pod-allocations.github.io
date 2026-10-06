@@ -1765,6 +1765,43 @@ const SEED = `(function(){
 
   ok("no errors across the whole run", errors.length === 0, errors.slice(0, 3).join(" | "));
 
+  /* ---- NIGHTS RE-SEAT THEMSELVES WHEN THE TEAM CHANGES BY HAND — 26.10.06 ---------------
+     Ali: "on nights does it auto collapse the floating phone and separate Pod E when moving from 6
+     to 5 to 4 — and likewise when increasing?" Six: holder floating, somebody else alone on E.
+     Five: holder alone on E. Four: nobody on E. Asserted going down and coming back up. */
+  console.log("\n-- nights: 6 → 5 → 4 → 5 → 6 by hand --");
+  {
+    const res = JSON.parse(w.eval(`(function(){
+      const keepStaff = data.staff, keepKey = currentWeekKey, keepEdit = EDIT_MODE;
+      const K = mondayOf(addDays(todayISO(), 7)); currentWeekKey = K;
+      data.staff = keepStaff.concat(["zn1","zn2","zn3","zn4","zn5","zn6"].map(id => ({ id, name: "Night " + id, grade: "ST", active: true, adhoc: false, aliases: [], verified: true, airway: true, phoneHolder: true })));
+      const wk = getWeek(K); wk.roster = wk.roster || {};
+      const di = 2, date = addDays(K, di); wk.roster[date] = {};
+      ["zn1","zn2","zn3","zn4","zn5","zn6"].forEach(i => wk.roster[date][i] = { code: "N", kind: "night" });
+      const nt = wk.days[di].night;
+      nt.phone = "zn1"; nt.F = ["zn1"]; nt.E = ["zn2"]; nt.AB = ["zn3","zn4"]; nt.CDE = ["zn5","zn6"];
+      EDIT_MODE = true;
+      const sh = () => ({ ph: nt.phone, ab: nt.AB.length, cd: nt.CDE.length, E: nt.E.slice(), F: nt.F.slice() });
+      const out = {};
+      renderWeek(); out.six = sh();
+      removeAssign(wk.days[di], "zn6"); markDirty(); renderWeek(); out.five = sh();
+      removeAssign(wk.days[di], "zn5"); markDirty(); renderWeek(); out.four = sh();
+      nt.AB.push("zn5"); markDirty(); renderWeek(); out.fiveUp = sh();
+      nt.CDE.push("zn6"); markDirty(); renderWeek(); out.sixUp = sh();
+      wk.days[di].night = { phone: null, AB: [], CDE: [], E: [], F: [], super: [] }; delete wk.roster[date];
+      data.staff = keepStaff; currentWeekKey = keepKey; EDIT_MODE = keepEdit; renderWeek();
+      return JSON.stringify(out);
+    })()`));
+    const six = x => x.F.length === 1 && x.F[0] === x.ph && x.E.length === 1 && x.E[0] !== x.ph && Math.abs(x.ab - x.cd) <= 1;
+    const five = x => x.F.length === 0 && x.E.length === 1 && x.E[0] === x.ph && Math.abs(x.ab - x.cd) <= 1;
+    const four = x => x.F.length === 0 && x.E.length === 0 && Math.abs(x.ab - x.cd) <= 1;
+    ok("six on: the holder floats, somebody else alone on Pod E", six(res.six), JSON.stringify(res.six));
+    ok("one off → five: the holder drops onto Pod E, nobody floats", five(res.five), JSON.stringify(res.five));
+    ok("another off → four: Pod E closes into the sides", four(res.four), JSON.stringify(res.four));
+    ok("one back → five: the holder goes back onto Pod E", five(res.fiveUp), JSON.stringify(res.fiveUp));
+    ok("another back → six: the holder floats again and somebody covers E", six(res.sixUp), JSON.stringify(res.sixUp));
+  }
+
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
   if (failures.length) { console.log("Failures:"); failures.forEach(f => console.log(" - " + f)); }
   process.exit(fail ? 1 : 0);

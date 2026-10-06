@@ -2822,6 +2822,35 @@ let suppressDirty = false;
 // what a user actually sees, not housekeeping fields.
 function rotaSig(d){ try { const c = JSON.parse(JSON.stringify(d)); delete c.savedAt; delete c.savedBy; delete c.editLock; delete c.log; delete c.logSeen;
   try { (c.feedback || []).forEach(f => { delete f.read; }); } catch(e){} return JSON.stringify(c); } catch(e){ return "sig" + Math.random(); } }
+/* ── A NIGHT RE-SEATS ITSELF WHEN ITS TEAM CHANGES BY HAND — 26.10.06 ───────────────────────
+   Ali: "on nights does it auto collapse the floating phone and separate Pod E when moving from 6 to
+   5 to 4 — and likewise when increasing?" The sync always did (reholdNightsFrom). A change made on
+   the board did not: dragging somebody off a six-on night left the holder floating with five, and
+   adding a fifth left nobody alone on Pod E. Now any edit that changes WHO is on a night (counted
+   people) hands that night to reholdNight — the same rule, held against itself: everybody keeps
+   their seat except what the change broke. Somebody dropped onto a side stays on that side. */
+let NIGHT_SIG = null;
+function nightSigsFor(wkKey){
+  const wk = (data && data.weeks || {})[wkKey], out = { __wk: wkKey };
+  if (!wk || !wk.days) return out;
+  wk.days.forEach((d, di) => { out[di] = nightTeamOf(d && d.night).filter(id => countsInNumbers(id)).sort().join(","); });
+  return out;
+}
+function nightBaseline(){ NIGHT_SIG = EDIT_MODE && data ? nightSigsFor(currentWeekKey) : null; }
+function nightAutoReseat(){
+  if (!EDIT_MODE || !data || !NIGHT_SIG || NIGHT_SIG.__wk !== currentWeekKey) return;
+  const now = nightSigsFor(currentWeekKey), wk = data.weeks[currentWeekKey];
+  for (let di = 0; di < 7; di++) {
+    if (now[di] === undefined || NIGHT_SIG[di] === undefined || now[di] === NIGHT_SIG[di] || !now[di]) continue;
+    const r = reholdNight(wk, di, currentWeekKey, { changed: true });
+    if (r && r.moved && r.moved.length) {
+      const nm = id => ((staffById(id) || {}).name || id);
+      logEntry("Night re-seated (" + dayShort(di) + "): " + r.moved.map(m => nm(m.id) + " " + (m.from || "—") + " → " + (m.to || "—")).join(", "),
+        "auto", dateOfDi(di));
+    }
+  }
+  NIGHT_SIG = nightSigsFor(currentWeekKey);
+}
 function markDirty(){
   /* Returning silently here is how the Staff page lost Tom McKernan's skills twice over
      (Ali, 12 Aug: "ive done it twice and they dont seem to have saved"). The row re-rendered,
@@ -2834,6 +2863,7 @@ function markDirty(){
     return;
   }
   if (suppressDirty) return;
+  try { nightAutoReseat(); } catch (e) { try { console.warn("night re-seat", e); } catch (_) {} }
   const snap = JSON.stringify(data);
   // Only add an undo point when the snapshot actually changed — stops lock heartbeats and repeat
   // calls piling up identical snapshots (which made one Undo click look like it did nothing).
@@ -4230,6 +4260,7 @@ function withScrollKept(fn){
    sync landing all end in renderAll, which redraws ten panels — and the board is one of them. */
 function renderWeek(){ withScrollKept(renderWeekInner); }
 function renderWeekInner(){
+  try { nightBaseline(); } catch (e) {}
   if (!data) return;
   if (!currentWeekKey) currentWeekKey = mondayOf(todayISO());
   const isNow = currentWeekKey === mondayOf(todayISO());
@@ -5224,6 +5255,9 @@ function normalizeNight(day){
       else nt[lighter(id)].push(id);
     }
   }
+  /* FOUR OR FEWER: Pod E closes — whoever was on it rejoins the lighter side (26.10.06, Ali: "does it
+     auto collapse … when moving from 6 to 5 to 4"). */
+  if (nt.E.length && nTot > 0 && nTot < 5) { const e = nt.E; nt.E = []; for (const id of e) nt[lighter(id)].push(id); }
   if (!nt.E.length && nightPhoneOnE(nTot) && ph && nt.CDE.includes(ph)) {
     nt.CDE = nt.CDE.filter(id => id !== ph);
     nt.E.push(ph);
@@ -5345,7 +5379,7 @@ function nightShapeBad(night){
   if (Math.abs(AB - CD) > 1) return true;
   if (nightFloats(n)) return ph ? (F.length !== 1 || F[0] !== ph || E.length !== 1 || E[0] === ph) : (E.length !== 1 || F.length > 0);
   if (nightPhoneOnE(n)) return F.length > 0 || (ph ? (E.length !== 1 || E[0] !== ph) : E.length !== 1);
-  return F.length > 0;
+  return F.length > 0 || E.length > 0;
 }
 function reholdNightsFrom(wkKey, di, opts){
   opts = opts || {};
