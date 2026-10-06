@@ -3562,10 +3562,13 @@ let staffTab = "current";
 /* FUTURE — 26.10.06. Ali: "as well as current and historic for staff needs a future tab". Somebody
    who has not worked a shift yet: a start date ahead, or a first rostered shift ahead. */
 function isFutureStarter(s, today){
+  if (!s || s.active === false || (s.end && s.end < (today || todayISO()))) return false;
   today = today || todayISO();
   if (s.start && s.start > today) return true;
   const f = firstRosteredDay(s.id);
-  return !!(f && f > today);
+  /* Beyond the four pulled weeks the historic rule calls them gone; they have not arrived yet.
+     Somebody unconfirmed with no shift at all is waiting to arrive too. */
+  return f ? f > today : isUnconfirmed(s);
 }
 function renderStaff(){
   const body = $("#staffBody");
@@ -3580,7 +3583,7 @@ function renderStaff(){
   const tabs = $("#staffTabs"); const note = $("#histNote");
   if (tabs) {
     tabs.innerHTML = ""; if (note) note.innerHTML = "";
-    const nHist = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && !isActiveOn(x, today)).length;
+    const nHist = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && !isActiveOn(x, today) && !isFutureStarter(x, today)).length;
     const mk = (key, label, n) => {
       const b = el("button", { class: "sttab" + (staffTab === key ? " on" : ""),
         onclick: () => { staffTab = key; renderStaff(); } }, label);
@@ -3588,7 +3591,7 @@ function renderStaff(){
       return b;
     };
     const nCur = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isActiveOn(x, today) && !isFutureStarter(x, today)).length;
-    const nFut = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isActiveOn(x, today) && isFutureStarter(x, today)).length;
+    const nFut = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isFutureStarter(x, today)).length;
     tabs.append(mk("current", "Current ", nCur));
     if (nFut || staffTab === "future") tabs.append(mk("future", "Future ", nFut));
     if (nHist || staffTab === "historic") tabs.append(mk("historic", "Historic ", nHist));
@@ -3608,8 +3611,8 @@ function renderStaff(){
        current either. Keying both tabs off isActiveOn puts them in Historic, where they can be
        found, instead of nowhere at all. The tick box is gone because these two tabs are what it
        was for (Ali, 5 Aug). */
-    .filter(s => staffTab === "historic" ? !isActiveOn(s, today)
-               : staffTab === "future" ? (isActiveOn(s, today) && isFutureStarter(s, today))
+    .filter(s => staffTab === "historic" ? (!isActiveOn(s, today) && !isFutureStarter(s, today))
+               : staffTab === "future" ? isFutureStarter(s, today)
                : (isActiveOn(s, today) && !isFutureStarter(s, today)));
   const list = stFiltered(everyone).sort(stCmp);
 
@@ -3706,6 +3709,31 @@ function renderStaff(){
       const td = el("td", { class: "skc" + (s[k] ? " on" : "") });
       td.innerHTML = skIcon(k);
       if (s[k]) td.style.color = SK_COL[k];
+      /* ONE CLICK TOGGLES IT — 26.10.06. Ali: "there doesnt seem to be a way to toggle on and off
+         skills, theyre not clickable?" They never were; the only way in was the Edit button. Now a
+         cell flips its skill the way the Edit dialog would: the three phone ticks keep their rules,
+         an untick releases phones and any allocator hold, and a gain asks when auto-fill should
+         start using it. Echo stays read-only: the ultrasound portal owns it and copies it nightly. */
+      if (k !== "echo") {
+        td.style.cursor = "pointer";
+        td.onclick = async () => {
+          if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+          const on = !s[k];
+          s[k] = on;
+          if (k === "phoneSupervisor" && on) { s.phoneHolder = true; s.phoneShadow = false; }
+          if (k === "phoneHolder") { if (on) s.phoneShadow = false; else s.phoneSupervisor = false; }
+          if (k === "phoneShadow" && on) { s.phoneHolder = false; s.phoneSupervisor = false; }
+          if (!on) data.pendingSkills = (data.pendingSkills || []).filter(x => {
+            if (x.id !== s.id || !x.add) return true;
+            delete x.add[k]; return Object.keys(x.add).length > 0;
+          });
+          logEntry(s.name + ": " + word + (on ? " on" : " off"), "manual");
+          const freed = sweepInvalidPhones();
+          if (freed) logEntry("Released " + freed + " phone allocation" + (freed === 1 ? "" : "s") + " after the skills change", "auto");
+          markDirty(); saveFile(true); renderStaff(); renderWeek(); updateTeamBadge();
+          if (on && SKILL_KEYS.includes(k)) queueSkillGain(s, [SKILL_SHORT[k] || word], { [k]: true });
+        };
+      }
       tr.append(td);
     }
     // New people are allocated straight away, but somebody has to confirm their skills are right.
