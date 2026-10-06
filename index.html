@@ -2432,7 +2432,11 @@ async function enterEditInner(){
      not a retype. Still fully editable, and the picker still filters as you type for anyone else. */
   const n = await chooseEditor(prev);
   if (!n || !n.trim()) return;
-  await syncP; // by now the latest copy (including anyone else's lock) has loaded
+  /* SLOW LINE, 26.10.06. Once a device remembers its name the dialog no longer hides this wait, and
+     on a slow connection the 900 KB read took over three minutes: Edit looked dead. Say so. */
+  const eb = $("#btnEdit"), ebTxt = eb ? eb.textContent : "";
+  let slowT = setTimeout(() => { if (eb) { eb.textContent = "Getting latest…"; eb.disabled = true; } toast("Getting the latest copy before editing — slow connection"); }, 600);
+  try { await syncP; } finally { clearTimeout(slowT); if (eb) { eb.textContent = ebTxt; eb.disabled = false; } }
   const lock = data.editLock;
   if (lockLive(lock) && lock.by !== n.trim()) {
     const mins = Math.max(1, Math.round((Date.now() - Date.parse(lock.at)) / 60000));
@@ -2592,7 +2596,7 @@ function relayFetch(payload){
       fetch(HOSTED ? SAVE_URL : relayUrl(), { method: "POST", mode: "no-cors", body: new Blob([payload], { type: "application/json" }) })
         .then(() => finish(true)).catch(() => finish(false));
     } catch(e){ finish(false); }
-    setTimeout(() => finish(false), 12000);
+    setTimeout(() => finish(false), 240000);   // was 12 s: on a slow line the 900 KB post never made it in time (26.10.06)
   });
 }
 async function relaySave(silent){
