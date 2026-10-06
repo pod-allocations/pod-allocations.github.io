@@ -6,6 +6,37 @@
 <title>CCU Pod Allocator — TEST</title>
 <link rel="stylesheet" href="core.css?v=20260810-04">
 <style>
+/* 26.10.06: Who's editing as buttons; the Look ahead move panel; the move marks; newcomers. */
+.whogrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.5rem;margin:.7rem 0 .3rem}
+.whobtn{padding:.8rem .6rem;border:1px solid var(--line);border-radius:10px;background:#fff;font:inherit;font-weight:600;font-size:.95rem;cursor:pointer;color:var(--ink)}
+.whobtn.on{border-color:var(--ink)}
+.axpanel{position:fixed;top:0;right:0;bottom:0;width:360px;max-width:92vw;background:#fff;border-left:1px solid var(--line);box-shadow:-12px 0 30px rgba(0,0,0,.08);padding:18px 18px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;z-index:900;animation:axin .18s ease-out;overflow:auto}
+.axpanel.sheet{top:auto;left:0;width:auto;max-width:none;max-height:75vh;border-left:0;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -12px 30px rgba(0,0,0,.1);animation:axup .18s ease-out}
+@keyframes axin{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
+@keyframes axup{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+.axpanel .axt{font-size:15px;font-weight:700}.axpanel .axd{color:var(--muted);font-size:12px;margin:2px 0 10px}
+.axpanel .axl{display:flex;gap:8px;padding:6px 0;border-top:1px solid var(--hair);font-size:13px}
+.axpanel .axl:first-of-type{border-top:0}.axpanel .axl b{width:14px;flex:none;text-align:center}
+.axpanel .axl.plus b{color:var(--green)}.axpanel .axl.minus b{color:var(--red)}
+.axpanel .axmore{color:var(--muted);font-size:12px;padding-top:4px}
+.axpanel .axalt{margin-top:12px;background:#eef0fb;border-radius:10px;padding:10px;font-size:13px}
+.axpanel .axalt .t{font-weight:700;color:#4c5dd6;margin-bottom:3px}
+.axpanel .axgrow{flex:1;min-height:14px}
+.axpanel .axbtns{display:flex;gap:8px}.axpanel .axbtns .btn{padding:12px 14px;font-size:14px}.axpanel .axbtns .axok{flex:1;font-size:15px}
+.axmark{display:block;margin:.3rem auto 0;border:0;border-radius:999px;min-width:28px;padding:2px 7px;font-size:.72rem;font-weight:700;color:#fff;cursor:pointer}
+.axmark.bad{background:var(--amber)}.axmark.good{background:var(--green)}
+.chip.unconf{border-style:dashed;border-color:var(--amber)}
+.nwcard{background:#fff;border:1px solid #e3e3de;border-left:3px solid #ef9f27;padding:.7rem .85rem;margin:0 0 .55rem}
+.nwcard .nwrow{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin-top:.5rem}
+.nwseg{display:inline-flex;background:var(--hair);border-radius:9px;padding:2px}
+.nwseg button{border:0;background:none;font:inherit;font-size:.78rem;font-weight:600;color:var(--muted);padding:.3rem .65rem;border-radius:7px;cursor:pointer}
+.nwseg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.nwsk{border:1px solid var(--line);background:#fff;border-radius:6px;padding:.2rem .5rem;font:inherit;font-size:.74rem;color:var(--muted);cursor:pointer}
+.nwsk.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.nwdue{font-size:.72rem;font-weight:700;border-radius:6px;padding:.1rem .45rem}
+.nwdue.soon{background:var(--red-bg);color:var(--red)}.nwdue.wk{background:var(--amber-bg);color:var(--amber)}.nwdue.far{background:var(--hair);color:var(--muted)}
+</style>
+<style>
 :root{
   /* Everything shared lives in core.css. Only the role accent is this page's. */
   --accent:#4c5dd6; --accent-bg:#eef0fb;
@@ -1669,7 +1700,7 @@ body.sideways .chip{padding:.2rem .4rem .2rem .3rem !important;font-size:.72rem 
 <script src="core.js?v=20260810-04"></script>
 <script src="strength.js?v=20260815-09"></script>
 <script src="planner.js?v=20260919-04"></script>
-<script src="podcost.js?v=20260821-01"></script>
+<script src="podcost.js?v=20261006-01"></script>
 <script>window.__POD_TEST = true;</script>
 <script src="k.js"></script>
 <script>/*ROTA_DATA_START*/window.ROTA_DATA = null;/*ROTA_DATA_END*/</script>
@@ -2274,6 +2305,37 @@ const uiConfirm = (body, o={}) => uiDialog({ body, ...o });
 const uiAlert = (body, o={}) => uiDialog({ body, hideCancel: true, ...o });
 const uiPrompt = (body, o={}) => uiDialog({ body, input: true, ...o });
 function editorName(){ return store.get("rotaEditorName") || "(name not set)"; }
+/* WHO'S EDITING, AS FIVE BUTTONS — 26.10.06. Ali: "in rota team there are only a few on it so the
+   edit selector is annoying — its only me, nick, cat, beth" … "and sarah". So the rota team is a
+   short list kept in the store (editable on Settings, hard rule 1), shown as one button each, and
+   the choice is remembered on the device: a computer that has said who it is goes straight into
+   editing. The name on the bar is still the way to switch. "Someone else" keeps the old search. */
+const ROTA_TEAM_DEFAULT = ["Alistair Cranfield", "Nicholas Coffin", "Cathryn Latham", "Beth Howard", "Sarah Hill"];
+function rotaTeam(){ return (data && Array.isArray(data.rotaTeam) && data.rotaTeam.length) ? data.rotaTeam : ROTA_TEAM_DEFAULT; }
+function chooseEditor(prev, force){
+  if (prev && prev !== "(name not set)" && !force) return Promise.resolve(prev);
+  return new Promise(res => {
+    const bg = el("div", { class: "dlg-bg" }), box = el("div", { class: "dlg" });
+    let settled = false;
+    const done = v => { if (settled) return; settled = true; bg.remove(); window.removeEventListener("keydown", esc); res(v); };
+    const esc = e => { if (e.key === "Escape") done(null); };
+    box.append(el("div", { class: "dlg-title" }, "Who's editing?"));
+    const grid = el("div", { class: "whogrid" });
+    for (const n of rotaTeam()) grid.append(el("button", { class: "whobtn" + (n === prev ? " on" : ""), onclick: () => done(n) }, String(n).split(" ")[0]));
+    box.append(grid);
+    const btns = el("div", { class: "dlg-btns" });
+    btns.append(el("button", { class: "btn sec", onclick: () => done(null) }, "Cancel"));
+    btns.append(el("button", { class: "btn sec", onclick: async () => {
+      settled = true; bg.remove(); window.removeEventListener("keydown", esc);
+      const n = await uiPrompt("", { title: "Who's editing?", okLabel: "Start editing", value: "", placeholder: "Start typing…", options: editorNameOptions() });
+      res(n && n.trim() ? n.trim() : null);
+    } }, "Someone else"));
+    box.append(btns); bg.append(box);
+    bg.onclick = e => { if (e.target === bg) done(null); };
+    window.addEventListener("keydown", esc);
+    document.body.append(bg);
+  });
+}
 function updateWhoBtn(){
   const b = $("#btnWho");
   /* Was "Editing as Alistair Cranfield", sitting next to a separate "Saving…" — two controls
@@ -2369,9 +2431,13 @@ async function enterEditInner(){
      doesnt." The last editor on this computer is put straight into the box (uiDialog honours
      `value`), so the common case — the same person editing again — is one tap on Start editing,
      not a retype. Still fully editable, and the picker still filters as you type for anyone else. */
-  const n = await uiPrompt("Start typing and pick your name — changes are logged under it.", { title: "Who's editing?", okLabel: "Start editing", value: prev || "", placeholder: prev ? "Last editor on this computer: " + prev : "Start typing…", options: editorNameOptions() });
+  const n = await chooseEditor(prev);
   if (!n || !n.trim()) return;
-  await syncP; // by now the latest copy (including anyone else's lock) has loaded
+  /* SLOW LINE, 26.10.06. Once a device remembers its name the dialog no longer hides this wait, and
+     on a slow connection the 900 KB read took over three minutes: Edit looked dead. Say so. */
+  const eb = $("#btnEdit"), ebTxt = eb ? eb.textContent : "";
+  let slowT = setTimeout(() => { if (eb) { eb.textContent = "Getting latest…"; eb.disabled = true; } toast("Getting the latest copy before editing — slow connection"); }, 600);
+  try { await syncP; } finally { clearTimeout(slowT); if (eb) { eb.textContent = ebTxt; eb.disabled = false; } }
   const lock = data.editLock;
   if (lockLive(lock) && lock.by !== n.trim()) {
     const mins = Math.max(1, Math.round((Date.now() - Date.parse(lock.at)) / 60000));
@@ -2531,7 +2597,7 @@ function relayFetch(payload){
       fetch(HOSTED ? SAVE_URL : relayUrl(), { method: "POST", mode: "no-cors", body: new Blob([payload], { type: "application/json" }) })
         .then(() => finish(true)).catch(() => finish(false));
     } catch(e){ finish(false); }
-    setTimeout(() => finish(false), 12000);
+    setTimeout(() => finish(false), 240000);   // was 12 s: on a slow line the 900 KB post never made it in time (26.10.06)
   });
 }
 async function relaySave(silent){
@@ -2647,6 +2713,7 @@ async function exitEdit(){
     updateSaveState("saved");
   }
   EDIT_MODE = false;
+  AX_MARKS = {}; AX_CARDS = {}; axHide();
   /* DONE MEANS DONE — fixed 26.08.21. Ali: "theres no way of getting out of edit mode. clicking
      done should do that." It did drop to view mode, but this line used to reset teamEditTried to
      FALSE, and switchTab auto-re-enters edit on any rota-team page whenever that flag is false. So
@@ -2660,7 +2727,7 @@ async function exitEdit(){
   renderAll();
 }
 async function changeEditor(){
-  const n = await uiPrompt("Changes from now on are logged under this name.", { title: "Who's editing?", okLabel: "Switch", value: store.get("rotaEditorName") || "", placeholder: "Start typing…", options: editorNameOptions() });
+  const n = await chooseEditor(store.get("rotaEditorName"), true);
   if (n && n.trim()) { store.set("rotaEditorName", n.trim()); updateWhoBtn(); toast("Now editing as " + n.trim()); }
 }
 /* Every time a human moves somebody the allocator had placed, write it down in a form that can be
@@ -2778,6 +2845,13 @@ function markDirty(){
     // wipe out redo the moment you paused after an undo.
     try { if (redoStack.length && rotaSig(JSON.parse(lastState)) !== rotaSig(data)) redoStack = []; } catch(e){ redoStack = []; }
   }
+  /* Look ahead: say what this edit did (see aheadAfterEdit). Never allowed to stop a save. */
+  try {
+    if (EDIT_MODE && AHEAD_VIEW && lastState !== null && lastState !== snap) {
+      const prevD = JSON.parse(lastState);
+      if (rotaSig(prevD) !== rotaSig(data)) aheadAfterEdit(prevD);
+    }
+  } catch (e) { try { console.warn("move panel", e); } catch (_) {} }
   lastState = snap;
   dirty = true;
   updateSaveState("unsaved");
@@ -3455,6 +3529,14 @@ function stFunnel(anchor, title, items, isOn, toggle, onAll, onNone){
 }
 
 let staffTab = "current";
+/* FUTURE — 26.10.06. Ali: "as well as current and historic for staff needs a future tab". Somebody
+   who has not worked a shift yet: a start date ahead, or a first rostered shift ahead. */
+function isFutureStarter(s, today){
+  today = today || todayISO();
+  if (s.start && s.start > today) return true;
+  const f = firstRosteredDay(s.id);
+  return !!(f && f > today);
+}
 function renderStaff(){
   const body = $("#staffBody");
   const head = $("#staffHead");
@@ -3475,8 +3557,10 @@ function renderStaff(){
       if (n != null) b.append(el("span", { class: "sttabn" }, String(n)));
       return b;
     };
-    const nCur = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isActiveOn(x, today)).length;
+    const nCur = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isActiveOn(x, today) && !isFutureStarter(x, today)).length;
+    const nFut = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isActiveOn(x, today) && isFutureStarter(x, today)).length;
     tabs.append(mk("current", "Current ", nCur));
+    if (nFut || staffTab === "future") tabs.append(mk("future", "Future ", nFut));
     if (nHist || staffTab === "historic") tabs.append(mk("historic", "Historic ", nHist));
     if (staffTab === "historic" && note)
       note.append(el("div", { style: "font-size:.78rem;color:var(--muted);margin:0 0 .7rem;line-height:1.5" },
@@ -3494,7 +3578,9 @@ function renderStaff(){
        current either. Keying both tabs off isActiveOn puts them in Historic, where they can be
        found, instead of nowhere at all. The tick box is gone because these two tabs are what it
        was for (Ali, 5 Aug). */
-    .filter(s => staffTab === "historic" ? !isActiveOn(s, today) : isActiveOn(s, today));
+    .filter(s => staffTab === "historic" ? !isActiveOn(s, today)
+               : staffTab === "future" ? (isActiveOn(s, today) && isFutureStarter(s, today))
+               : (isActiveOn(s, today) && !isFutureStarter(s, today)));
   const list = stFiltered(everyone).sort(stCmp);
 
   /* ---- the header ------------------------------------------------------------------------ */
@@ -4846,6 +4932,199 @@ function neuroPodOK(s, p){ return !isNeuroReg(s) || NEURO_PODS.includes(p); }
    this off: a neurology registrar is never in the numbers, so the question is answered here and
    not by a tick box somebody can reach. */
 function isSupernumerary(s){ return !!s && (s.supernum || isNeuroReg(s)); }
+/* ══ NEWCOMERS — 26.10.06 ═══════════════════════════════════════════════════════════════════
+   Ali: "a robust way to avoid supernumerary or non supernumerary people messing up allocations
+   if wrong when appear overnight" … "if no answer assume supernumerary but come up with a plan to
+   move minimal people if they're not".
+   UNCONFIRMED: somebody the roster brought in whom nobody has confirmed — an Optima name not yet
+   on the list, or one added and not yet checked.
+   THE SAFE DEFAULT applies to NEWCOMERS: unconfirmed and not yet worked a shift before the day
+   this shipped. The planner drafts them as supernumerary — counting for nothing, never the phone,
+   never airway cover. Everyone unconfirmed who was already working keeps exactly what they had.
+   The board itself is not re-read: a week already written keeps them where it put them until
+   somebody confirms, so nothing published moves on its own. */
+const NEWCOMER_FROM = "2026-10-06";
+/* firstRosteredDay (below, by the historic rule) answers when somebody first works. */
+function isUnconfirmed(s){
+  if (!s || s.active === false || s.placeholder || s.grade === "CON" || /zlocum/i.test(s.name || "")) return false;
+  return s.adhoc ? !s.triaged : s.verified === false;
+}
+function isNewcomerDefault(s){
+  if (!isUnconfirmed(s) || s.supernum) return false;
+  const f = firstRosteredDay(s.id);
+  return !f || f >= NEWCOMER_FROM;
+}
+function unconfirmedList(){ return data ? (data.staff || []).filter(isUnconfirmed) : []; }
+/* What the planner is handed instead of data.staff: the same list, newcomers marked supernumerary. */
+function plannerStaff(){
+  return (data.staff || []).map(s => isNewcomerDefault(s) ? Object.assign({}, s, { supernum: true }) : s);
+}
+function upcomingShifts(id){
+  const today = todayISO(), out = [];
+  for (const [k, wk] of Object.entries((data && data.weeks) || {}))
+    for (const [date, day] of Object.entries((wk && wk.roster) || {})) {
+      const v = day && day[id];
+      if (v && (v.kind === "day" || v.kind === "night") && date >= today) out.push({ date, wkKey: k, code: v.code || (v.kind === "night" ? "N" : "") });
+    }
+  return out.sort((a, b) => a.date < b.date ? -1 : 1);
+}
+/* What to suggest: what most CONFIRMED people of the same grade are. No grade → supernumerary. */
+function suggestSuper(s){
+  if (s.supernum) return true;
+  if (!s.grade) return true;
+  const same = (data.staff || []).filter(x => x !== s && x.grade === s.grade && x.active !== false && !isUnconfirmed(x));
+  if (!same.length) return true;
+  return same.filter(x => x.supernum).length * 2 > same.length;
+}
+/* CONFIRMED AS COUNTED: every coming day they stand in a Super box, they step into the same pod's
+   numbers. Nights: they join the team and the night rule re-seats it. Returns the days touched. */
+function countNewcomerIn(s){
+  const today = todayISO(), touched = [];
+  for (const [k, wk] of Object.entries(data.weeks || {})) {
+    if (!wk || !wk.days) continue;
+    for (let di = 0; di < 7; di++) {
+      const date = addDays(k, di), day = wk.days[di];
+      if (!day || date < today) continue;
+      const p = PODS.find(q => (day.pods[q].super || []).includes(s.id));
+      if (p) {
+        const sh = superShiftOf(day, s.id);
+        day.pods[p].super = day.pods[p].super.filter(x => x !== s.id);
+        const slot = day.pods[p].assign.find(a => !a.id);
+        if (slot) { slot.id = s.id; slot.shift = sh; } else day.pods[p].assign.push({ id: s.id, shift: sh });
+        pruneSuperShift(day);
+        touched.push({ wkKey: k, di, date, pod: p });
+      }
+      if (day.night && (day.night.super || []).includes(s.id)) {
+        day.night.super = day.night.super.filter(x => x !== s.id);
+        let r = null;
+        try { r = reholdNight(wk, di, k, { fresh: [s.id], changed: true }); } catch (e) {}
+        if (!r) (day.night.CDE.length < day.night.AB.length ? day.night.CDE : day.night.AB).push(s.id);
+        touched.push({ wkKey: k, di, date, night: true });
+      }
+    }
+  }
+  return touched;
+}
+/* THE FEWEST MOVES. Where their pod is now two or more heavier than the lightest pod in use, one
+   person moves from it to that pod — whoever costs the day least, scored by the planner's own
+   price list. Never the newcomer (they stay where they are), never the day phone. */
+function absorbPlan(s, touched){
+  const moves = [];
+  for (const t of touched) {
+    if (t.night) continue;
+    const wk = data.weeks[t.wkKey], day = wk.days[t.di];
+    const per = dayCountables(day).perPod;
+    const inUse = PODS.filter(q => per[q].length > 0 && q !== t.pod);
+    if (!inUse.length) continue;
+    const minN = Math.min(...inUse.map(q => per[q].length));
+    if (per[t.pod].length - minN < 2) continue;
+    const targets = inUse.filter(q => per[q].length === minN);
+    let best = null;
+    for (const x of per[t.pod]) {
+      if (x === s.id || x === day.phone) continue;
+      for (const q of targets) {
+        if (!neuroPodOK(staffById(x), q)) continue;
+        const clone = JSON.parse(JSON.stringify(wk)); clone.key = t.wkKey;
+        const cd = clone.days[t.di];
+        const a = cd.pods[t.pod].assign.find(y => y.id === x);
+        cd.pods[t.pod].assign = cd.pods[t.pod].assign.filter(y => y.id !== x);
+        cd.pods[q].assign.push({ id: x, shift: a ? a.shift : null });
+        let cost = 0;
+        try { const sc = plannerDayScore(clone, t.wkKey, t.di); cost = sc ? sc.cost : 0; } catch (e) {}
+        if (!best || cost < best.cost) best = { wkKey: t.wkKey, di: t.di, date: t.date, id: x, from: t.pod, to: q, cost };
+      }
+    }
+    if (best) moves.push(best);
+  }
+  return moves;
+}
+function applyAbsorb(moves, s){
+  for (const m of moves) {
+    const day = data.weeks[m.wkKey].days[m.di];
+    const keep = currentAssignShift(day, m.id);
+    day.pods[m.from].assign = day.pods[m.from].assign.filter(a => a.id !== m.id);
+    const slot = day.pods[m.to].assign.find(a => !a.id);
+    if (slot) { slot.id = m.id; slot.shift = keep; } else day.pods[m.to].assign.push({ id: m.id, shift: keep });
+    const nm = (staffById(m.id) || {}).name || m.id;
+    logEntry(nm + " → Pod " + m.to + " (" + niceDate(m.date) + ") — balancing after " + s.name + " was confirmed", "manual", m.date, null,
+      { act: "move", subj: nm, from: m.from, to: m.to });
+    try { recordOverride(m.date, m.id, m.from, m.to, keep); } catch (e) {}
+  }
+}
+function showAbsorbPlan(s, moves){
+  const bg = el("div", { class: "dlg-bg" }), box = el("div", { class: "dlg" });
+  const close = () => bg.remove();
+  box.append(el("div", { class: "dlg-title" }, s.name + " now counts"));
+  const ul = el("div", { style: "margin:.4rem 0 .8rem;font-size:.9rem;line-height:1.7" });
+  for (const m of moves) ul.append(el("div", {}, niceDate(m.date) + " · " + ((staffById(m.id) || {}).name || m.id) + "  Pod " + m.from + " → Pod " + m.to));
+  box.append(ul);
+  const btns = el("div", { class: "dlg-btns" });
+  btns.append(el("button", { class: "btn sec", onclick: () => { logEntry("Left as is after confirming " + s.name, "manual"); markDirty(); close(); } }, "Leave as is"));
+  btns.append(el("button", { class: "btn", onclick: () => { applyAbsorb(moves, s); markDirty(); saveFile(true); renderAll(); close(); toast(moves.length + " move" + (moves.length === 1 ? "" : "s") + " applied"); } },
+    "Apply " + moves.length + " move" + (moves.length === 1 ? "" : "s")));
+  box.append(btns); bg.append(box); document.body.append(bg);
+}
+async function confirmNewcomer(s, st){
+  if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+  const wasAdhoc = !!s.adhoc;
+  s.verified = true; s.triaged = true; s.adhoc = false;
+  if (st.grade) s.grade = st.grade;
+  s.airway = !!st.airway; s.transfer = !!st.transfer; s.phoneHolder = !!st.phone;
+  if (!s.phoneHolder) s.phoneSupervisor = false; else s.phoneShadow = false;
+  s.supernum = !!st.super;
+  const sk = ["airway", "transfer", "phone"].filter(k => st[k]);
+  logEntry("Confirmed " + s.name + (wasAdhoc ? " (added to the staff list)" : "") + " — " + (s.supernum ? "supernumerary" : "counted")
+    + (s.grade ? ", " + s.grade : "") + (sk.length ? ", " + sk.join(", ") : ""), "manual");
+  let moves = [];
+  if (!s.supernum) { const touched = countNewcomerIn(s); moves = absorbPlan(s, touched); }
+  STR_FS = null;
+  markDirty(); saveFile(true); renderAll(); updateTeamBadge();
+  if (moves.length) showAbsorbPlan(s, moves);
+  else toast(s.name + " confirmed");
+}
+function renderNewcomers(){
+  const box = $("#attnList"); if (!box || !data) return 0;
+  const today = todayISO();
+  const list = unconfirmedList().map(s => ({ s, up: upcomingShifts(s.id) }))
+    .sort((a, b) => ((a.up[0] || {}).date || "9999") < ((b.up[0] || {}).date || "9999") ? -1 : 1);
+  for (const { s, up } of list) {
+    const st = { super: suggestSuper(s), airway: !!s.airway, transfer: !!s.transfer, phone: !!s.phoneHolder, grade: s.grade || "" };
+    const first = up[0] ? up[0].date : null;
+    const days = first ? Math.round((new Date(first) - new Date(today)) / 86400000) : null;
+    const due = days === null ? null : el("span", { class: "nwdue " + (days <= 2 ? "soon" : days <= 7 ? "wk" : "far") },
+      days === 0 ? "Today" : days === 1 ? "Tomorrow" : niceDate(first));
+    const when = up.length ? up.slice(0, 4).map(u => niceDate(u.date) + (u.code ? " " + u.code : "")).join(" · ") + (up.length > 4 ? " +" + (up.length - 4) : "") : "No shifts ahead";
+    const card = el("div", { class: "nwcard" });
+    card.append(el("div", { style: "display:flex;align-items:center;gap:.5rem" },
+      el("b", { style: "font-size:.95rem" }, s.name), due,
+      el("span", { style: "margin-left:auto;font-size:.74rem;color:var(--muted)" }, isNewcomerDefault(s) ? "Supernumerary until confirmed" : "Counted until confirmed")));
+    card.append(el("div", { style: "font-size:.78rem;color:var(--muted);margin-top:.15rem" }, when));
+    const seg = el("div", { class: "nwseg" });
+    const segB = (lab, v) => { const b = el("button", { class: st.super === v ? "on" : "", onclick: () => { st.super = v; [...seg.children].forEach(x => x.classList.toggle("on", x === b)); } }, lab); return b; };
+    seg.append(segB("Counted", false), segB("Supernumerary", true));
+    const gsel = el("select", { class: "nwsk", style: "padding:.2rem .3rem", onchange: e => { st.grade = e.target.value; } });
+    gsel.append(el("option", { value: "" }, "Grade"));
+    for (const g of GRADES.filter(g => g !== "CON")) { const o = el("option", { value: g }, g); if (g === st.grade) o.selected = true; gsel.append(o); }
+    const tog = (lab, k) => { const b = el("button", { class: "nwsk" + (st[k] ? " on" : ""), onclick: () => { st[k] = !st[k]; b.classList.toggle("on", st[k]); } }, lab); return b; };
+    card.append(el("div", { class: "nwrow" }, seg, gsel, tog("Airway", "airway"), tog("Transfer", "transfer"), tog("Phone", "phone")));
+    const row = el("div", { class: "nwrow" });
+    row.append(el("button", { class: "btn", style: "font-size:.8rem;padding:.3rem .9rem", onclick: () => confirmNewcomer(s, st) }, "Confirm"));
+    if (s.adhoc) {
+      const act = (txt, fn) => el("button", { class: "btn sec", style: "font-size:.78rem;padding:.25rem .7rem",
+        onclick: async () => { if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; } fn(); markDirty(); saveFile(true); renderAll(); } }, txt);
+      const many = up.length > 1;
+      row.append(act("One-off cover", () => { s.triaged = true; s.supernum = st.super; logEntry(s.name + " kept as one-off cover", "manual"); }));
+      row.append(act("Not " + (many ? "these days" : "this day"), () => {
+        for (const w of up) { const wk = data.weeks[w.wkKey]; if (wk && wk.roster && wk.roster[w.date]) delete wk.roster[w.date][s.id]; }
+        data.staff = (data.staff || []).filter(x => x.id !== s.id);
+        logEntry(s.name + " taken off " + up.length + " day(s) — will be asked again if they reappear", "manual");
+      }));
+    }
+    card.append(row);
+    box.append(card);
+  }
+  return list.length;
+}
 /* Two rules, one pass over the day, because they are the same question asked twice: is this
    person in a place the rules allow?
 
@@ -5152,6 +5431,7 @@ const SHADOW_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" 
 function chip(s, opts){
   const day = opts.day;
   const c = el("span", { class: "chip", draggable: "true", title: personLabel(s) });
+  if (isUnconfirmed(s)) { c.classList.add("unconf"); c.title += " · not confirmed"; }
   if (opts.tag) {
     const t = el("span", { class: "tagx " + opts.tag + (opts.tagClick ? " clickable" : ""), title: opts.tagClick ? "Click to switch shift (SD → LD → N)" : "" }, opts.tag);
     if (opts.tagClick) t.onclick = e => { e.stopPropagation(); opts.tagClick(); };
@@ -5737,6 +6017,204 @@ function plannerDayScore(wk, key, di){
     ceilingWhy: fl.notes || []
   };
 }
+/* ══ WHAT A MOVE DID — Look ahead, 26.10.06 ══════════════════════════════════════════════════
+   Ali: "On the look ahead tab i want to be able to show positives and negatives every time a move or
+   swap is made (eg this persons continuity down, this person neuro needs C&D)". Every edit on Look
+   ahead is scored before and after with the allocator's own price list (plannerLedger → podcost.js),
+   the charges are compared one by one, and what got better or worse is said in words, with names.
+   A panel slides in from the side (a bottom sheet on a phone) with one big Accept; Return accepts.
+   When there is a swap that gets the same person into the same pod for less, it is offered.
+   The day keeps a green or amber mark for the rest of the edit session only (Ali: "the green or red
+   only needs to stay for the edit session"); the lines are kept on the change log entry. */
+var AX_MARKS = {}, AX_CARDS = {};
+var AX_PERSON = { eUnfair: 1, airwayOnE: 1, weekendCross: 1, neuroOffCD: 1, secondPod: 1, thirdPod: 1, anyMove: 1, extraMove: 1, offHome: 1 };
+function axWhyIndex(L){
+  var m = {};
+  function add(w, p, di){
+    var code = w.code;
+    if (code === "coverTransferOnly" || code === "coverNone") code = "cover";
+    if (code === "extraMove") code = "anyMove";
+    var person = AX_PERSON[w.code] && w.who;
+    var k = person ? code + "|" + w.who : code + "|" + (p || "") + "|" + di;
+    var e = m[k] || (m[k] = { code: code, who: person ? w.who : null, pod: person ? null : p, di: person ? null : di, cost: 0, note: null });
+    e.cost += w.cost || 0;
+    if (w.note) e.note = w.note;
+  }
+  L.led.days.forEach(function (d, di){
+    PODS.forEach(function (p){ (d.pods[p].why || []).forEach(function (w){ add(w, p, di); }); });
+    (d.dayWhy || []).forEach(function (w){ add(w, null, di); });
+  });
+  return m;
+}
+function axName(id){ var s = staffById(id); return s ? s.name : "Somebody"; }
+function axLine(e, worse){
+  var n = e.who ? axName(e.who) : "", P = e.pod || "", D = e.di != null ? " on " + DAYNAMES[e.di].slice(0, 3) : "";
+  switch (e.code) {
+    case "noLongDay": return worse ? "Pod " + P + " has no long day" + D : "Pod " + P + " gets a long day" + D;
+    case "cover": return worse ? "Pod " + P + " loses airway cover" + D : "Pod " + P + " gains airway cover" + D;
+    case "noPhoneTrained": return worse ? "Pod " + P + " has nobody phone-trained" + D : "Pod " + P + " gets somebody phone-trained" + D;
+    case "allNewPod": return worse ? "Pod " + P + " is all new starters" + D : "Pod " + P + " is no longer all new starters" + D;
+    case "accpStack": return worse ? "ACCPs doubled up in Pod " + P + D : "Fewer ACCPs doubled up in Pod " + P + D;
+    case "eBiggest": return worse ? "Pod E is the biggest pod" + D : "Pod E is no longer the biggest pod" + D;
+    case "eLongDayEarly": return worse ? "Pod E has a long day while another pod has none" + D : "Pod E no longer takes a long day another pod needs" + D;
+    case "gapNotOnE": return worse ? "Pod " + P + " is left empty" + D : "Pod " + P + " is no longer empty" + D;
+    case "spread": return worse ? "Pods more uneven in size" + D : "Pods more even in size" + D;
+    case "airwayLDPairGap": return worse ? "One side has no airway long day" + D : "Both sides have an airway long day" + D;
+    case "accpGap": return worse ? "ACCPs doubled up while another pod has none" + D : "ACCPs spread more evenly" + D;
+    case "eUnfair": return worse ? n + " gets more Pod E, after recent E days" : n + " gets less Pod E, after recent E days";
+    case "airwayOnE": return worse ? n + " (airway) is used on Pod E" : n + " (airway) is freed from Pod E";
+    case "weekendCross": return worse ? n + " crosses sides between Saturday and Sunday" : n + " stays on one side all weekend";
+    case "neuroOffCD": return e.note === "high"
+      ? (worse ? n + " has more C & D than neuro needs" : n + " has less surplus C & D")
+      : (worse ? n + " needs more C & D (neuro)" : n + " gets more of the C & D neuro needs");
+    case "secondPod": return worse ? n + " is in a second pod this week" : n + " is in fewer pods this week";
+    case "thirdPod": return worse ? n + " is in a third pod this week" : n + " is no longer in a third pod";
+    case "anyMove": return worse ? n + " loses continuity" : n + " keeps continuity";
+    case "offHome": return worse ? n + " is away from their home pod" : n + " is back in their home pod";
+  }
+  return null;
+}
+function axDiff(L0, L1){
+  var a = axWhyIndex(L0), b = axWhyIndex(L1), keys = {}, out = [];
+  Object.keys(a).forEach(function (k){ keys[k] = 1; });
+  Object.keys(b).forEach(function (k){ keys[k] = 1; });
+  Object.keys(keys).forEach(function (k){
+    var x = a[k], y = b[k], d = (y ? y.cost : 0) - (x ? x.cost : 0);
+    if (Math.abs(d) < 1) return;
+    var e = Object.assign({}, y || x); if (!e.note && x && x.note) e.note = x.note;
+    var t = axLine(e, d > 0);
+    if (t) out.push({ worse: d > 0, text: t, w: Math.abs(d) });
+  });
+  var seen = {};
+  out = out.filter(function (l){ var k = (l.worse ? "-" : "+") + l.text; if (seen[k]) return false; seen[k] = 1; return true; });
+  out.sort(function (p, q){ return q.w - p.w; });
+  return out;
+}
+function axDayPct(L, di){
+  var d = L.led.days[di]; if (!d || !d.staffed) return null;
+  var t = d.dayOnly; PODS.forEach(function (p){ t += d.pods[p].cost; });
+  var sc = plannerScoreCfg(); return Math.round(PodCost.toScore(t, sc.ref, sc.soft));
+}
+function axLedgerWith(dat, wk, key){ var keep = data; try { data = dat; return plannerLedger(wk, key); } finally { data = keep; } }
+function axPodsOf(day){
+  var m = {};
+  PODS.forEach(function (p){ ((day && day.pods && day.pods[p] && day.pods[p].assign) || []).forEach(function (a){ if (a && a.id) m[a.id] = p; }); });
+  return m;
+}
+function aheadAfterEdit(prev){
+  if (typeof PodCost === "undefined" || !PodCost || !prev || !prev.weeks) return;
+  var key = null;
+  Object.keys(data.weeks || {}).sort().forEach(function (k){
+    if (key) return;
+    var w0 = prev.weeks[k], w1 = data.weeks[k];
+    if (w0 && w1 && JSON.stringify(w0.days) !== JSON.stringify(w1.days)) key = k;
+  });
+  if (!key) return;
+  var w0 = prev.weeks[key], w1 = data.weeks[key];
+  var L0 = axLedgerWith(prev, w0, key), L1 = plannerLedger(w1, key);
+  if (!L0 || !L1) return;
+  var days = [];
+  for (var di = 0; di < 7; di++) if (JSON.stringify((w0.days || [])[di]) !== JSON.stringify((w1.days || [])[di])) days.push(di);
+  if (!days.length) return;
+  var lines = axDiff(L0, L1);
+  if (!lines.length) return;
+  var moves = [];
+  days.forEach(function (di){
+    var a = axPodsOf(w0.days[di]), b = axPodsOf(w1.days[di]);
+    Object.keys(Object.assign({}, a, b)).forEach(function (id){ if (a[id] !== b[id]) moves.push({ di: di, id: id, from: a[id] || "", to: b[id] || "" }); });
+  });
+  var pts = 0;
+  days.forEach(function (di){ var p0 = axDayPct(L0, di), p1 = axDayPct(L1, di); if (p0 != null && p1 != null) pts += (p1 - p0); });
+  var card = { key: key, days: days, moves: moves, lines: lines, pts: pts, alt: null };
+  try { card.alt = axCheaper(card, L1); } catch (e) { card.alt = null; }
+  days.forEach(function (di){
+    var iso = addDays(key, di), m = AX_MARKS[iso] || (AX_MARKS[iso] = { pts: 0 });
+    m.pts += pts / days.length; AX_CARDS[iso] = card;
+  });
+  try {
+    var e = (data.log || [])[0];
+    if (e && e.on && days.some(function (di){ return addDays(key, di) === e.on; }))
+      e.fx = lines.slice(0, 8).map(function (l){ return (l.worse ? "- " : "+ ") + l.text; });
+  } catch (err) {}
+  setTimeout(function (){ axShow(card); }, 0);
+}
+/* Same person, same pod, less lost: swap them with somebody already in the pod they went to. */
+function axCheaper(card, L1){
+  if (card.moves.length !== 1) return null;
+  var mv = card.moves[0]; if (!mv.from || !mv.to) return null;
+  var wk = data.weeks[card.key], day = wk && wk.days && wk.days[mv.di];
+  if (!day) return null;
+  var best = null;
+  (day.pods[mv.to].assign || []).forEach(function (a){
+    if (!a || !a.id || a.id === mv.id || !countsInNumbers(a.id)) return;
+    var clone = JSON.parse(JSON.stringify(wk)), d = clone.days[mv.di];
+    var rec = d.pods[mv.to].assign.find(function (x){ return x.id === a.id; });
+    d.pods[mv.to].assign = d.pods[mv.to].assign.filter(function (x){ return x.id !== a.id; });
+    d.pods[mv.from].assign.push(rec);
+    var L = plannerLedger(clone, card.key); if (!L) return;
+    if (!best || L.led.total < best.total) best = { total: L.led.total, y: a.id, L: L };
+  });
+  if (!best || best.total >= L1.led.total - 1) return null;
+  var fx = axDiff(L1, best.L).filter(function (l){ return !l.worse; });
+  return { y: best.y, x: mv.id, from: mv.to, to: mv.from, di: mv.di, fx: fx };
+}
+function axHide(){ var p = document.getElementById("axPanel"); if (p) p.remove(); }
+function axShow(card){
+  axHide();
+  var mob = window.matchMedia && window.matchMedia("(max-width: 760px)").matches;
+  var box = el("div", { class: "axpanel" + (mob ? " sheet" : ""), id: "axPanel" });
+  var mv = card.moves.length === 1 ? card.moves[0] : null;
+  var title = mv ? axName(mv.id) + " · " + (mv.from || "bench") + " → " + (mv.to || "bench")
+                 : (card.moves.length ? card.moves.length + " people moved" : "Changed");
+  box.append(el("div", { class: "axt" }, title));
+  box.append(el("div", { class: "axd" }, card.days.map(function (di){ return niceDate(addDays(card.key, di)); }).join(", ")));
+  card.lines.slice(0, 6).forEach(function (l){
+    box.append(el("div", { class: "axl " + (l.worse ? "minus" : "plus") }, el("b", {}, l.worse ? "−" : "+"), el("span", {}, l.text)));
+  });
+  if (card.lines.length > 6) box.append(el("div", { class: "axmore" }, "and " + (card.lines.length - 6) + " more"));
+  if (card.alt) {
+    var a = card.alt, alt = el("div", { class: "axalt" });
+    alt.append(el("div", { class: "t" }, "Same result, less lost"));
+    alt.append(el("div", {}, "Swap " + axName(a.y) + " (" + a.from + ") with " + axName(a.x) + " instead."));
+    a.fx.slice(0, 2).forEach(function (l){ alt.append(el("div", { style: "color:var(--green);margin-top:2px" }, "+ " + l.text)); });
+    alt.append(el("div", { style: "margin-top:8px" }, el("button", { class: "btn sec", id: "axAlt", onclick: function (){ axDoAlt(card); } }, "Do that instead")));
+    box.append(alt);
+  }
+  box.append(el("div", { class: "axgrow" }));
+  box.append(el("div", { class: "axbtns" },
+    el("button", { class: "btn sec", id: "axUndo", onclick: function (){ axUndo(card); } }, "Undo"),
+    el("button", { class: "btn axok", id: "axOk", onclick: axHide }, "Accept")));
+  document.body.append(box);
+}
+function axUndo(card){
+  axHide();
+  card.days.forEach(function (di){
+    var iso = addDays(card.key, di), m = AX_MARKS[iso];
+    if (m) { m.pts -= card.pts / card.days.length; if (Math.abs(m.pts) < 0.5) delete AX_MARKS[iso]; }
+    if (AX_CARDS[iso] === card) delete AX_CARDS[iso];
+  });
+  undo();
+}
+function axDoAlt(card){
+  var a = card.alt; if (!a) return;
+  var wk = data.weeks[card.key], day = wk && wk.days[a.di], iso = addDays(card.key, a.di);
+  if (!day) return;
+  var rec = (day.pods[a.from].assign || []).find(function (x){ return x.id === a.y; });
+  if (!rec) { toast("That has changed — nothing done"); axHide(); return; }
+  day.pods[a.from].assign = day.pods[a.from].assign.filter(function (x){ return x.id !== a.y; });
+  day.pods[a.to].assign.push(rec);
+  logEntry(axName(a.y) + " → Pod " + a.to + " (" + DAYNAMES[a.di].slice(0, 3) + ")", "manual", iso, null,
+    { act: "move", subj: axName(a.y), from: a.from, to: a.to, bench: false });
+  try { recordOverride(iso, a.y, a.from, a.to, rec.shift); } catch (e) {}
+  axHide();
+  markDirty(); saveFile(true); renderAll();
+}
+window.addEventListener("keydown", function (e){
+  if (!document.getElementById("axPanel")) return;
+  var t = (e.target && e.target.tagName) || "";
+  if (/INPUT|TEXTAREA|SELECT/.test(t)) return;
+  if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); axHide(); }
+});
 function strCounts(day){
   var o = {}, i, p;
   for (i = 0; i < PODS.length; i++) {
@@ -6375,6 +6853,13 @@ function renderDayRow(day, di, dateISO, issues){
      rather than replacing it: the dot is what people read today and nothing anybody relies on
      should move on the day a new number arrives beside it. */
   { const dRing = strengthDayDial(dateISO); if (dRing) dlInner.append(dRing); }
+  /* The Look ahead move mark, for this edit session only — see aheadAfterEdit. */
+  try {
+    const axm = AHEAD_VIEW && EDIT_MODE && AX_MARKS[dateISO];
+    if (axm) { const v = Math.round(axm.pts);
+      dlInner.append(el("button", { class: "axmark " + (v < 0 ? "bad" : "good"),
+        onclick: e => { e.stopPropagation(); if (AX_CARDS[dateISO]) axShow(AX_CARDS[dateISO]); } }, v < 0 ? String(v) : "+" + v)); }
+  } catch (e) {}
   const dl = el("td", { class: "daylabel" }, dlInner);
   /* The chip was gated on `(hard || soft)` — a red or an amber — which hid it on exactly the days
      this model was built for: the ones that break no rule and are still badly arranged. It is
@@ -9662,7 +10147,7 @@ function fillWeekWithPlanner(wk, key){
   /* ...and Saturday's holder, because within a run the phone alternates between a pair. */
   const prevPhone2 = prevWk && prevWk.days && prevWk.days[5] && prevWk.days[5].night ? (prevWk.days[5].night.phone || null) : null;
   try {
-    const r = Planner.writeWeek(wk, data.staff, { history: data.plannerHistory, weekKey: k, prevNight, prevPhone2,
+    const r = Planner.writeWeek(wk, plannerStaff(), { history: data.plannerHistory, weekKey: k, prevNight, prevPhone2,
       cfg: { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK } });
     /* WRITTEN WHOLE — the stamp the sync reads (allocate_auto.py). A future week without it has
        not been written as a week, however many of its days somebody has filled, and the sync
@@ -9748,7 +10233,7 @@ function planDayFix(di){
   try {
     clone = JSON.parse(JSON.stringify(wk));
     clone.key = clone.key || currentWeekKey;
-    const res = Planner.fixDay(clone, di, data.staff,
+    const res = Planner.fixDay(clone, di, plannerStaff(),
       { history: data.plannerHistory, weekKey: currentWeekKey, cfg: planCfg() });
     day = clone.days[di];
     (res && res.notes ? res.notes : []).forEach(n => unresolved.push(typeof n === "string" ? n : (n && n.text) || String(n)));
@@ -11113,15 +11598,7 @@ function rawAttention(){
      lot can only ever be half-done, and half-done is what the badge cannot say. The press does the
      same work the Staff page's Check button does, which is why the button says Checked. */
   /* A slot has nobody to check — see the placeholder note beside FLAGS. */
-  for (const s of data.staff.filter(x => x.verified === false && x.active !== false && !x.placeholder)) {
-    out.push({ kind: "unver", id: "unver:" + s.id, n: 1,
-      title: s.name + " has not been checked",
-      body: "Added automatically from Optima" + (s.grade ? " as " + s.grade : " with no grade set")
-          + ". Confirm their skills are right — they are being allocated in the meantime.",
-      sortLabel: "Checked",
-      onSort: () => { s.verified = true; logEntry("Checked new starter: " + s.name); },
-      go: () => switchTab("staff") });
-  }
+  /* Unconfirmed people are cards of their own now (renderNewcomers), drawn above these rows. */
 
   /* ── DATA THE SCORE IS BLIND TO ────────────────────────────────────────────────────────────
      Ali, 26.08.15: "if people missing data flag in attention and allow it to be resolved in mnimal
@@ -11330,18 +11807,18 @@ function attentionCount(){
      overnight is not something anyone has to deal with — it is activity, not a task. The Log tab
      keeps its own count of fresh entries (tabLogCount, set in updateTeamBadge), so the information
      is still there for anyone who opens the drawer; it just no longer summons them. */
-  return attentionItems().reduce((n, x) => n + (x.done ? 0 : x.n), 0) + unreadFeedback();
+  return attentionItems().reduce((n, x) => n + (x.done ? 0 : x.n), 0) + unconfirmedList().length + unreadFeedback();
 }
 function updateTeamBadge(){
   const n = data ? attentionCount() : 0;
   const txt = n > 99 ? "99+" : String(n);
   const b = $("#teamBadge");
   if (b) { b.textContent = txt; b.classList.toggle("on", n > 0); }
-  const attnOnly = data ? attentionItems().reduce((a, x) => a + (x.done ? 0 : x.n), 0) : 0;
+  const attnOnly = data ? attentionItems().reduce((a, x) => a + (x.done ? 0 : x.n), 0) + unconfirmedList().length : 0;
   const t = $("#tabAttnCount");
   if (t) { t.textContent = String(attnOnly); t.classList.toggle("on", attnOnly > 0); }
   const st = $("#tabStaffCount");
-  const unver = data ? (data.staff || []).filter(x => x.verified === false && x.active !== false).length : 0;
+  const unver = data ? unconfirmedList().filter(x => !x.adhoc).length : 0;
   if (st) { st.textContent = String(unver); st.classList.toggle("on", unver > 0); }
   const lg = $("#tabLogCount");
   const seen = logSeenAt();
@@ -11400,66 +11877,14 @@ function renderSyncStatus(){
 
    They go to the bench, not into a pod: an unverified name inside a pod would count towards that
    pod's minimum, so somebody nobody has identified could satisfy a staffing check. */
-function renderNewPeople(){
-  const box = $("#attnList"); if (!box || !data) return;
-  const fresh = (data.staff || []).filter(x => x.adhoc && !x.triaged && !/zlocum/i.test(x.name || ""));
-  if (!fresh.length) return;
-  const daysOf = id => {
-    const out = [];
-    for (const [k, wk] of Object.entries(data.weeks || {})) {
-      if (!wk || !wk.roster) continue;
-      for (let di = 0; di < 7; di++){
-        const date = addDays(k, di);
-        const r = wk.roster[date];
-        if (r && r[id]) out.push({ date: date, wkKey: k, code: (r[id].code || "") });
-      }
-    }
-    return out.sort((a, b) => a.date < b.date ? -1 : 1);
-  };
-  for (const p of fresh) {
-    const when = daysOf(p.id);
-    const many = when.length > 1;
-    const label = when.length
-      ? "On Optima for " + when.slice(0, 3).map(w => fmtDate(w.date)).join(", ")
-        + (when.length > 3 ? " and " + (when.length - 3) + " more" : "")
-        + (when[0].code ? " \u00b7 " + when[0].code : "")
-      : "On Optima, no days on the board yet";
-    const act = (txt, fn, quiet) => el("button", { class: quiet ? "btn sec" : "btn",
-      style: "font-size:.78rem;padding:.25rem .7rem",
-      onclick: async () => {
-        if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
-        fn(); markDirty(); saveFile(true); renderAll();
-      } }, txt);
-    box.append(el("div", { style: "background:#fff;border:1px solid #e3e3de;border-left:3px solid #ef9f27;padding:.6rem .85rem;margin:0 0 .55rem" },
-      el("div", { style: "font-size:.95rem" }, p.name),
-      el("div", { style: "font-size:.78rem;color:var(--muted);margin:.1rem 0 .55rem" }, label + " \u00b7 not on the staff list"),
-      el("div", { style: "display:flex;gap:.4rem;flex-wrap:wrap" },
-        act("Add to the staff list", () => {
-          p.adhoc = false; p.triaged = true; p.verified = false;
-          logEntry(p.name + " added to the staff list \u2014 grade still to set", "manual");
-          toast(p.name + " added \u2014 set their grade on the Staff page");
-        }),
-        act("Cover for " + (many ? "these days" : "this day"), () => {
-          p.triaged = true;
-          logEntry(p.name + " kept as one-off cover", "manual");
-        }, true),
-        act("Not " + (many ? "these days" : "this day"), () => {
-          for (const w of when) {
-            const wk = data.weeks[w.wkKey];
-            if (wk && wk.roster && wk.roster[w.date]) delete wk.roster[w.date][p.id];
-          }
-          data.staff = (data.staff || []).filter(x => x.id !== p.id);
-          logEntry(p.name + " taken off " + when.length + " day(s) \u2014 will be asked again if they reappear", "manual");
-        }, true))));
-  }
-}
+function renderNewPeople(){ return renderNewcomers(); }
 function renderAttention(){
   const box = $("#attnList"); if (!box) return;
   box.innerHTML = "";
   renderSyncStatus();
-  renderNewPeople();
+  const nNew = renderNewPeople();
   const items = attentionItems();
-  if (!items.length) {
+  if (!items.length && !nNew) {
     box.append(el("div", { class: "attnclear" }, el("b", {}, "Nothing needs attention"),
       "New people, clashes with Optima and anything else worth a look will appear here."));
     return;
@@ -11673,6 +12098,19 @@ function renderSettings(){
   src.append(sgrid);
   box.append(src);
 
+  box.append(h("Rota team"));
+  { const card = el("div", { class: "card" }), list = el("div", { class: "whogrid", id: "rotaTeamList" });
+    const team = rotaTeam().slice();
+    const saveTeam = (t, msg) => { data.rotaTeam = t; save(msg); renderSettings(); };
+    for (const n of team) list.append(el("span", { class: "whobtn", style: "display:flex;align-items:center;justify-content:space-between;gap:.4rem;cursor:default" }, n,
+      el("button", { class: "rowbtn", title: "Remove", disabled: !canEdit() || team.length <= 1,
+        onclick: () => saveTeam(team.filter(x => x !== n), "Rota team: " + n + " removed") }, "\u00d7")));
+    const add = el("button", { class: "btn sec", style: "margin-top:.6rem", disabled: !canEdit() }, "Add");
+    add.onclick = async () => {
+      const n = await uiPrompt("", { title: "Add to the rota team", okLabel: "Add", placeholder: "Start typing…", options: editorNameOptions() });
+      if (n && n.trim() && !team.includes(n.trim())) saveTeam(team.concat([n.trim()]), "Rota team: " + n.trim() + " added");
+    };
+    card.append(list, add); box.append(card); }
   box.append(h("Pod rules"));
   /* ── "weeks trainees can see" IS NO LONGER HERE — 26.08.20 ────────────────────────────────
      Ali, looking at this list: "can all be removed from settings not sure it serves any purpose."

@@ -3528,6 +3528,14 @@ function stFunnel(anchor, title, items, isOn, toggle, onAll, onNone){
 }
 
 let staffTab = "current";
+/* FUTURE — 26.10.06. Ali: "as well as current and historic for staff needs a future tab". Somebody
+   who has not worked a shift yet: a start date ahead, or a first rostered shift ahead. */
+function isFutureStarter(s, today){
+  today = today || todayISO();
+  if (s.start && s.start > today) return true;
+  const f = firstRosteredDay(s.id);
+  return !!(f && f > today);
+}
 function renderStaff(){
   const body = $("#staffBody");
   const head = $("#staffHead");
@@ -3548,8 +3556,10 @@ function renderStaff(){
       if (n != null) b.append(el("span", { class: "sttabn" }, String(n)));
       return b;
     };
-    const nCur = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isActiveOn(x, today)).length;
+    const nCur = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isActiveOn(x, today) && !isFutureStarter(x, today)).length;
+    const nFut = (data.staff || []).filter(x => x.grade !== "CON" && !x.adhoc && isActiveOn(x, today) && isFutureStarter(x, today)).length;
     tabs.append(mk("current", "Current ", nCur));
+    if (nFut || staffTab === "future") tabs.append(mk("future", "Future ", nFut));
     if (nHist || staffTab === "historic") tabs.append(mk("historic", "Historic ", nHist));
     if (staffTab === "historic" && note)
       note.append(el("div", { style: "font-size:.78rem;color:var(--muted);margin:0 0 .7rem;line-height:1.5" },
@@ -3567,7 +3577,9 @@ function renderStaff(){
        current either. Keying both tabs off isActiveOn puts them in Historic, where they can be
        found, instead of nowhere at all. The tick box is gone because these two tabs are what it
        was for (Ali, 5 Aug). */
-    .filter(s => staffTab === "historic" ? !isActiveOn(s, today) : isActiveOn(s, today));
+    .filter(s => staffTab === "historic" ? !isActiveOn(s, today)
+               : staffTab === "future" ? (isActiveOn(s, today) && isFutureStarter(s, today))
+               : (isActiveOn(s, today) && !isFutureStarter(s, today)));
   const list = stFiltered(everyone).sort(stCmp);
 
   /* ---- the header ------------------------------------------------------------------------ */
@@ -4919,6 +4931,199 @@ function neuroPodOK(s, p){ return !isNeuroReg(s) || NEURO_PODS.includes(p); }
    this off: a neurology registrar is never in the numbers, so the question is answered here and
    not by a tick box somebody can reach. */
 function isSupernumerary(s){ return !!s && (s.supernum || isNeuroReg(s)); }
+/* ══ NEWCOMERS — 26.10.06 ═══════════════════════════════════════════════════════════════════
+   Ali: "a robust way to avoid supernumerary or non supernumerary people messing up allocations
+   if wrong when appear overnight" … "if no answer assume supernumerary but come up with a plan to
+   move minimal people if they're not".
+   UNCONFIRMED: somebody the roster brought in whom nobody has confirmed — an Optima name not yet
+   on the list, or one added and not yet checked.
+   THE SAFE DEFAULT applies to NEWCOMERS: unconfirmed and not yet worked a shift before the day
+   this shipped. The planner drafts them as supernumerary — counting for nothing, never the phone,
+   never airway cover. Everyone unconfirmed who was already working keeps exactly what they had.
+   The board itself is not re-read: a week already written keeps them where it put them until
+   somebody confirms, so nothing published moves on its own. */
+const NEWCOMER_FROM = "2026-10-06";
+/* firstRosteredDay (below, by the historic rule) answers when somebody first works. */
+function isUnconfirmed(s){
+  if (!s || s.active === false || s.placeholder || s.grade === "CON" || /zlocum/i.test(s.name || "")) return false;
+  return s.adhoc ? !s.triaged : s.verified === false;
+}
+function isNewcomerDefault(s){
+  if (!isUnconfirmed(s) || s.supernum) return false;
+  const f = firstRosteredDay(s.id);
+  return !f || f >= NEWCOMER_FROM;
+}
+function unconfirmedList(){ return data ? (data.staff || []).filter(isUnconfirmed) : []; }
+/* What the planner is handed instead of data.staff: the same list, newcomers marked supernumerary. */
+function plannerStaff(){
+  return (data.staff || []).map(s => isNewcomerDefault(s) ? Object.assign({}, s, { supernum: true }) : s);
+}
+function upcomingShifts(id){
+  const today = todayISO(), out = [];
+  for (const [k, wk] of Object.entries((data && data.weeks) || {}))
+    for (const [date, day] of Object.entries((wk && wk.roster) || {})) {
+      const v = day && day[id];
+      if (v && (v.kind === "day" || v.kind === "night") && date >= today) out.push({ date, wkKey: k, code: v.code || (v.kind === "night" ? "N" : "") });
+    }
+  return out.sort((a, b) => a.date < b.date ? -1 : 1);
+}
+/* What to suggest: what most CONFIRMED people of the same grade are. No grade → supernumerary. */
+function suggestSuper(s){
+  if (s.supernum) return true;
+  if (!s.grade) return true;
+  const same = (data.staff || []).filter(x => x !== s && x.grade === s.grade && x.active !== false && !isUnconfirmed(x));
+  if (!same.length) return true;
+  return same.filter(x => x.supernum).length * 2 > same.length;
+}
+/* CONFIRMED AS COUNTED: every coming day they stand in a Super box, they step into the same pod's
+   numbers. Nights: they join the team and the night rule re-seats it. Returns the days touched. */
+function countNewcomerIn(s){
+  const today = todayISO(), touched = [];
+  for (const [k, wk] of Object.entries(data.weeks || {})) {
+    if (!wk || !wk.days) continue;
+    for (let di = 0; di < 7; di++) {
+      const date = addDays(k, di), day = wk.days[di];
+      if (!day || date < today) continue;
+      const p = PODS.find(q => (day.pods[q].super || []).includes(s.id));
+      if (p) {
+        const sh = superShiftOf(day, s.id);
+        day.pods[p].super = day.pods[p].super.filter(x => x !== s.id);
+        const slot = day.pods[p].assign.find(a => !a.id);
+        if (slot) { slot.id = s.id; slot.shift = sh; } else day.pods[p].assign.push({ id: s.id, shift: sh });
+        pruneSuperShift(day);
+        touched.push({ wkKey: k, di, date, pod: p });
+      }
+      if (day.night && (day.night.super || []).includes(s.id)) {
+        day.night.super = day.night.super.filter(x => x !== s.id);
+        let r = null;
+        try { r = reholdNight(wk, di, k, { fresh: [s.id], changed: true }); } catch (e) {}
+        if (!r) (day.night.CDE.length < day.night.AB.length ? day.night.CDE : day.night.AB).push(s.id);
+        touched.push({ wkKey: k, di, date, night: true });
+      }
+    }
+  }
+  return touched;
+}
+/* THE FEWEST MOVES. Where their pod is now two or more heavier than the lightest pod in use, one
+   person moves from it to that pod — whoever costs the day least, scored by the planner's own
+   price list. Never the newcomer (they stay where they are), never the day phone. */
+function absorbPlan(s, touched){
+  const moves = [];
+  for (const t of touched) {
+    if (t.night) continue;
+    const wk = data.weeks[t.wkKey], day = wk.days[t.di];
+    const per = dayCountables(day).perPod;
+    const inUse = PODS.filter(q => per[q].length > 0 && q !== t.pod);
+    if (!inUse.length) continue;
+    const minN = Math.min(...inUse.map(q => per[q].length));
+    if (per[t.pod].length - minN < 2) continue;
+    const targets = inUse.filter(q => per[q].length === minN);
+    let best = null;
+    for (const x of per[t.pod]) {
+      if (x === s.id || x === day.phone) continue;
+      for (const q of targets) {
+        if (!neuroPodOK(staffById(x), q)) continue;
+        const clone = JSON.parse(JSON.stringify(wk)); clone.key = t.wkKey;
+        const cd = clone.days[t.di];
+        const a = cd.pods[t.pod].assign.find(y => y.id === x);
+        cd.pods[t.pod].assign = cd.pods[t.pod].assign.filter(y => y.id !== x);
+        cd.pods[q].assign.push({ id: x, shift: a ? a.shift : null });
+        let cost = 0;
+        try { const sc = plannerDayScore(clone, t.wkKey, t.di); cost = sc ? sc.cost : 0; } catch (e) {}
+        if (!best || cost < best.cost) best = { wkKey: t.wkKey, di: t.di, date: t.date, id: x, from: t.pod, to: q, cost };
+      }
+    }
+    if (best) moves.push(best);
+  }
+  return moves;
+}
+function applyAbsorb(moves, s){
+  for (const m of moves) {
+    const day = data.weeks[m.wkKey].days[m.di];
+    const keep = currentAssignShift(day, m.id);
+    day.pods[m.from].assign = day.pods[m.from].assign.filter(a => a.id !== m.id);
+    const slot = day.pods[m.to].assign.find(a => !a.id);
+    if (slot) { slot.id = m.id; slot.shift = keep; } else day.pods[m.to].assign.push({ id: m.id, shift: keep });
+    const nm = (staffById(m.id) || {}).name || m.id;
+    logEntry(nm + " → Pod " + m.to + " (" + niceDate(m.date) + ") — balancing after " + s.name + " was confirmed", "manual", m.date, null,
+      { act: "move", subj: nm, from: m.from, to: m.to });
+    try { recordOverride(m.date, m.id, m.from, m.to, keep); } catch (e) {}
+  }
+}
+function showAbsorbPlan(s, moves){
+  const bg = el("div", { class: "dlg-bg" }), box = el("div", { class: "dlg" });
+  const close = () => bg.remove();
+  box.append(el("div", { class: "dlg-title" }, s.name + " now counts"));
+  const ul = el("div", { style: "margin:.4rem 0 .8rem;font-size:.9rem;line-height:1.7" });
+  for (const m of moves) ul.append(el("div", {}, niceDate(m.date) + " · " + ((staffById(m.id) || {}).name || m.id) + "  Pod " + m.from + " → Pod " + m.to));
+  box.append(ul);
+  const btns = el("div", { class: "dlg-btns" });
+  btns.append(el("button", { class: "btn sec", onclick: () => { logEntry("Left as is after confirming " + s.name, "manual"); markDirty(); close(); } }, "Leave as is"));
+  btns.append(el("button", { class: "btn", onclick: () => { applyAbsorb(moves, s); markDirty(); saveFile(true); renderAll(); close(); toast(moves.length + " move" + (moves.length === 1 ? "" : "s") + " applied"); } },
+    "Apply " + moves.length + " move" + (moves.length === 1 ? "" : "s")));
+  box.append(btns); bg.append(box); document.body.append(bg);
+}
+async function confirmNewcomer(s, st){
+  if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
+  const wasAdhoc = !!s.adhoc;
+  s.verified = true; s.triaged = true; s.adhoc = false;
+  if (st.grade) s.grade = st.grade;
+  s.airway = !!st.airway; s.transfer = !!st.transfer; s.phoneHolder = !!st.phone;
+  if (!s.phoneHolder) s.phoneSupervisor = false; else s.phoneShadow = false;
+  s.supernum = !!st.super;
+  const sk = ["airway", "transfer", "phone"].filter(k => st[k]);
+  logEntry("Confirmed " + s.name + (wasAdhoc ? " (added to the staff list)" : "") + " — " + (s.supernum ? "supernumerary" : "counted")
+    + (s.grade ? ", " + s.grade : "") + (sk.length ? ", " + sk.join(", ") : ""), "manual");
+  let moves = [];
+  if (!s.supernum) { const touched = countNewcomerIn(s); moves = absorbPlan(s, touched); }
+  STR_FS = null;
+  markDirty(); saveFile(true); renderAll(); updateTeamBadge();
+  if (moves.length) showAbsorbPlan(s, moves);
+  else toast(s.name + " confirmed");
+}
+function renderNewcomers(){
+  const box = $("#attnList"); if (!box || !data) return 0;
+  const today = todayISO();
+  const list = unconfirmedList().map(s => ({ s, up: upcomingShifts(s.id) }))
+    .sort((a, b) => ((a.up[0] || {}).date || "9999") < ((b.up[0] || {}).date || "9999") ? -1 : 1);
+  for (const { s, up } of list) {
+    const st = { super: suggestSuper(s), airway: !!s.airway, transfer: !!s.transfer, phone: !!s.phoneHolder, grade: s.grade || "" };
+    const first = up[0] ? up[0].date : null;
+    const days = first ? Math.round((new Date(first) - new Date(today)) / 86400000) : null;
+    const due = days === null ? null : el("span", { class: "nwdue " + (days <= 2 ? "soon" : days <= 7 ? "wk" : "far") },
+      days === 0 ? "Today" : days === 1 ? "Tomorrow" : niceDate(first));
+    const when = up.length ? up.slice(0, 4).map(u => niceDate(u.date) + (u.code ? " " + u.code : "")).join(" · ") + (up.length > 4 ? " +" + (up.length - 4) : "") : "No shifts ahead";
+    const card = el("div", { class: "nwcard" });
+    card.append(el("div", { style: "display:flex;align-items:center;gap:.5rem" },
+      el("b", { style: "font-size:.95rem" }, s.name), due,
+      el("span", { style: "margin-left:auto;font-size:.74rem;color:var(--muted)" }, isNewcomerDefault(s) ? "Supernumerary until confirmed" : "Counted until confirmed")));
+    card.append(el("div", { style: "font-size:.78rem;color:var(--muted);margin-top:.15rem" }, when));
+    const seg = el("div", { class: "nwseg" });
+    const segB = (lab, v) => { const b = el("button", { class: st.super === v ? "on" : "", onclick: () => { st.super = v; [...seg.children].forEach(x => x.classList.toggle("on", x === b)); } }, lab); return b; };
+    seg.append(segB("Counted", false), segB("Supernumerary", true));
+    const gsel = el("select", { class: "nwsk", style: "padding:.2rem .3rem", onchange: e => { st.grade = e.target.value; } });
+    gsel.append(el("option", { value: "" }, "Grade"));
+    for (const g of GRADES.filter(g => g !== "CON")) { const o = el("option", { value: g }, g); if (g === st.grade) o.selected = true; gsel.append(o); }
+    const tog = (lab, k) => { const b = el("button", { class: "nwsk" + (st[k] ? " on" : ""), onclick: () => { st[k] = !st[k]; b.classList.toggle("on", st[k]); } }, lab); return b; };
+    card.append(el("div", { class: "nwrow" }, seg, gsel, tog("Airway", "airway"), tog("Transfer", "transfer"), tog("Phone", "phone")));
+    const row = el("div", { class: "nwrow" });
+    row.append(el("button", { class: "btn", style: "font-size:.8rem;padding:.3rem .9rem", onclick: () => confirmNewcomer(s, st) }, "Confirm"));
+    if (s.adhoc) {
+      const act = (txt, fn) => el("button", { class: "btn sec", style: "font-size:.78rem;padding:.25rem .7rem",
+        onclick: async () => { if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; } fn(); markDirty(); saveFile(true); renderAll(); } }, txt);
+      const many = up.length > 1;
+      row.append(act("One-off cover", () => { s.triaged = true; s.supernum = st.super; logEntry(s.name + " kept as one-off cover", "manual"); }));
+      row.append(act("Not " + (many ? "these days" : "this day"), () => {
+        for (const w of up) { const wk = data.weeks[w.wkKey]; if (wk && wk.roster && wk.roster[w.date]) delete wk.roster[w.date][s.id]; }
+        data.staff = (data.staff || []).filter(x => x.id !== s.id);
+        logEntry(s.name + " taken off " + up.length + " day(s) — will be asked again if they reappear", "manual");
+      }));
+    }
+    card.append(row);
+    box.append(card);
+  }
+  return list.length;
+}
 /* Two rules, one pass over the day, because they are the same question asked twice: is this
    person in a place the rules allow?
 
@@ -5225,6 +5430,7 @@ const SHADOW_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" 
 function chip(s, opts){
   const day = opts.day;
   const c = el("span", { class: "chip", draggable: "true", title: personLabel(s) });
+  if (isUnconfirmed(s)) { c.classList.add("unconf"); c.title += " · not confirmed"; }
   if (opts.tag) {
     const t = el("span", { class: "tagx " + opts.tag + (opts.tagClick ? " clickable" : ""), title: opts.tagClick ? "Click to switch shift (SD → LD → N)" : "" }, opts.tag);
     if (opts.tagClick) t.onclick = e => { e.stopPropagation(); opts.tagClick(); };
@@ -9940,7 +10146,7 @@ function fillWeekWithPlanner(wk, key){
   /* ...and Saturday's holder, because within a run the phone alternates between a pair. */
   const prevPhone2 = prevWk && prevWk.days && prevWk.days[5] && prevWk.days[5].night ? (prevWk.days[5].night.phone || null) : null;
   try {
-    const r = Planner.writeWeek(wk, data.staff, { history: data.plannerHistory, weekKey: k, prevNight, prevPhone2,
+    const r = Planner.writeWeek(wk, plannerStaff(), { history: data.plannerHistory, weekKey: k, prevNight, prevPhone2,
       cfg: { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK } });
     /* WRITTEN WHOLE — the stamp the sync reads (allocate_auto.py). A future week without it has
        not been written as a week, however many of its days somebody has filled, and the sync
@@ -10026,7 +10232,7 @@ function planDayFix(di){
   try {
     clone = JSON.parse(JSON.stringify(wk));
     clone.key = clone.key || currentWeekKey;
-    const res = Planner.fixDay(clone, di, data.staff,
+    const res = Planner.fixDay(clone, di, plannerStaff(),
       { history: data.plannerHistory, weekKey: currentWeekKey, cfg: planCfg() });
     day = clone.days[di];
     (res && res.notes ? res.notes : []).forEach(n => unresolved.push(typeof n === "string" ? n : (n && n.text) || String(n)));
@@ -11391,15 +11597,7 @@ function rawAttention(){
      lot can only ever be half-done, and half-done is what the badge cannot say. The press does the
      same work the Staff page's Check button does, which is why the button says Checked. */
   /* A slot has nobody to check — see the placeholder note beside FLAGS. */
-  for (const s of data.staff.filter(x => x.verified === false && x.active !== false && !x.placeholder)) {
-    out.push({ kind: "unver", id: "unver:" + s.id, n: 1,
-      title: s.name + " has not been checked",
-      body: "Added automatically from Optima" + (s.grade ? " as " + s.grade : " with no grade set")
-          + ". Confirm their skills are right — they are being allocated in the meantime.",
-      sortLabel: "Checked",
-      onSort: () => { s.verified = true; logEntry("Checked new starter: " + s.name); },
-      go: () => switchTab("staff") });
-  }
+  /* Unconfirmed people are cards of their own now (renderNewcomers), drawn above these rows. */
 
   /* ── DATA THE SCORE IS BLIND TO ────────────────────────────────────────────────────────────
      Ali, 26.08.15: "if people missing data flag in attention and allow it to be resolved in mnimal
@@ -11608,18 +11806,18 @@ function attentionCount(){
      overnight is not something anyone has to deal with — it is activity, not a task. The Log tab
      keeps its own count of fresh entries (tabLogCount, set in updateTeamBadge), so the information
      is still there for anyone who opens the drawer; it just no longer summons them. */
-  return attentionItems().reduce((n, x) => n + (x.done ? 0 : x.n), 0) + unreadFeedback();
+  return attentionItems().reduce((n, x) => n + (x.done ? 0 : x.n), 0) + unconfirmedList().length + unreadFeedback();
 }
 function updateTeamBadge(){
   const n = data ? attentionCount() : 0;
   const txt = n > 99 ? "99+" : String(n);
   const b = $("#teamBadge");
   if (b) { b.textContent = txt; b.classList.toggle("on", n > 0); }
-  const attnOnly = data ? attentionItems().reduce((a, x) => a + (x.done ? 0 : x.n), 0) : 0;
+  const attnOnly = data ? attentionItems().reduce((a, x) => a + (x.done ? 0 : x.n), 0) + unconfirmedList().length : 0;
   const t = $("#tabAttnCount");
   if (t) { t.textContent = String(attnOnly); t.classList.toggle("on", attnOnly > 0); }
   const st = $("#tabStaffCount");
-  const unver = data ? (data.staff || []).filter(x => x.verified === false && x.active !== false).length : 0;
+  const unver = data ? unconfirmedList().filter(x => !x.adhoc).length : 0;
   if (st) { st.textContent = String(unver); st.classList.toggle("on", unver > 0); }
   const lg = $("#tabLogCount");
   const seen = logSeenAt();
@@ -11678,66 +11876,14 @@ function renderSyncStatus(){
 
    They go to the bench, not into a pod: an unverified name inside a pod would count towards that
    pod's minimum, so somebody nobody has identified could satisfy a staffing check. */
-function renderNewPeople(){
-  const box = $("#attnList"); if (!box || !data) return;
-  const fresh = (data.staff || []).filter(x => x.adhoc && !x.triaged && !/zlocum/i.test(x.name || ""));
-  if (!fresh.length) return;
-  const daysOf = id => {
-    const out = [];
-    for (const [k, wk] of Object.entries(data.weeks || {})) {
-      if (!wk || !wk.roster) continue;
-      for (let di = 0; di < 7; di++){
-        const date = addDays(k, di);
-        const r = wk.roster[date];
-        if (r && r[id]) out.push({ date: date, wkKey: k, code: (r[id].code || "") });
-      }
-    }
-    return out.sort((a, b) => a.date < b.date ? -1 : 1);
-  };
-  for (const p of fresh) {
-    const when = daysOf(p.id);
-    const many = when.length > 1;
-    const label = when.length
-      ? "On Optima for " + when.slice(0, 3).map(w => fmtDate(w.date)).join(", ")
-        + (when.length > 3 ? " and " + (when.length - 3) + " more" : "")
-        + (when[0].code ? " \u00b7 " + when[0].code : "")
-      : "On Optima, no days on the board yet";
-    const act = (txt, fn, quiet) => el("button", { class: quiet ? "btn sec" : "btn",
-      style: "font-size:.78rem;padding:.25rem .7rem",
-      onclick: async () => {
-        if (!EDIT_MODE) { await enterEdit(); if (!EDIT_MODE) return; }
-        fn(); markDirty(); saveFile(true); renderAll();
-      } }, txt);
-    box.append(el("div", { style: "background:#fff;border:1px solid #e3e3de;border-left:3px solid #ef9f27;padding:.6rem .85rem;margin:0 0 .55rem" },
-      el("div", { style: "font-size:.95rem" }, p.name),
-      el("div", { style: "font-size:.78rem;color:var(--muted);margin:.1rem 0 .55rem" }, label + " \u00b7 not on the staff list"),
-      el("div", { style: "display:flex;gap:.4rem;flex-wrap:wrap" },
-        act("Add to the staff list", () => {
-          p.adhoc = false; p.triaged = true; p.verified = false;
-          logEntry(p.name + " added to the staff list \u2014 grade still to set", "manual");
-          toast(p.name + " added \u2014 set their grade on the Staff page");
-        }),
-        act("Cover for " + (many ? "these days" : "this day"), () => {
-          p.triaged = true;
-          logEntry(p.name + " kept as one-off cover", "manual");
-        }, true),
-        act("Not " + (many ? "these days" : "this day"), () => {
-          for (const w of when) {
-            const wk = data.weeks[w.wkKey];
-            if (wk && wk.roster && wk.roster[w.date]) delete wk.roster[w.date][p.id];
-          }
-          data.staff = (data.staff || []).filter(x => x.id !== p.id);
-          logEntry(p.name + " taken off " + when.length + " day(s) \u2014 will be asked again if they reappear", "manual");
-        }, true))));
-  }
-}
+function renderNewPeople(){ return renderNewcomers(); }
 function renderAttention(){
   const box = $("#attnList"); if (!box) return;
   box.innerHTML = "";
   renderSyncStatus();
-  renderNewPeople();
+  const nNew = renderNewPeople();
   const items = attentionItems();
-  if (!items.length) {
+  if (!items.length && !nNew) {
     box.append(el("div", { class: "attnclear" }, el("b", {}, "Nothing needs attention"),
       "New people, clashes with Optima and anything else worth a look will appear here."));
     return;

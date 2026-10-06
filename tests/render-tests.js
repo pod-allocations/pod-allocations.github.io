@@ -1263,34 +1263,35 @@ const SEED = `(function(){
            "enterEdit = function(){ EDIT_MODE = true; return Promise.resolve(); };" +
            "data.sorted = {}; data.pendingSkills = []; data.staff[0].verified = false;" +
            "data.staff[0].active = true; renderAll();");
-    const sid = w.eval("data.staff[0].id");
-    const row = "unver:" + sid;
+    /* NEWCOMERS — 26.10.06. Unconfirmed people are cards, not rows: a choice (counted or
+       supernumerary), skills, and Confirm. The lifecycle below is asserted on the card. */
     const rows = () => w.eval("JSON.stringify(attentionItems().map(function(x){ return [x.id, !!x.done]; }))");
-    const live = () => w.eval("attentionItems().reduce(function(a,x){ return a + (x.done ? 0 : x.n); }, 0)");
     const find = id => JSON.parse(rows()).find(r => r[0] === id);
-    ok("an unchecked person gets a row of their own, not a lump of six names", !!find(row), rows());
-    ok("...and it offers Checked rather than a generic Sorted",
-       w.eval("(attentionItems().find(function(x){ return x.id === '" + row + "'; })||{}).sortLabel") === "Checked");
-    const before = live();
-    await w.eval("markSorted('" + row + "')");
+    const badge = () => w.eval("attentionCount()");
+    ok("an unconfirmed person gets a card of their own",
+       w.eval("(function(){ renderTeamGate(); return [...document.querySelectorAll('#attnList .nwcard')].some(function(c){ return c.textContent.indexOf(data.staff[0].name) >= 0; }); })()") === true);
+    ok("...and no generic row as well", !JSON.parse(rows()).some(r => /^unver:/.test(r[0])), rows());
+    ok("...their chip is marked unconfirmed", w.eval("chip(data.staff[0], {}).classList.contains('unconf')") === true);
+    const before = badge();
+    await w.eval("confirmNewcomer(data.staff[0], { super: false, airway: true, transfer: false, phone: false, grade: data.staff[0].grade })");
     await settle2();
-    ok("pressing it does the work — they are actually checked", w.eval("data.staff[0].verified") === true);
+    ok("Confirm does the work — they are confirmed", w.eval("data.staff[0].verified") === true && w.eval("isUnconfirmed(data.staff[0])") === false);
+    ok("...with the skills chosen on the card", w.eval("data.staff[0].airway") === true);
     ok("...and it is saved, not just held in memory", w.eval("window.__saved2") >= 1);
-    ok("the badge drops at once", live() === before - 1, before + " -> " + live());
-    const after = find(row);
-    ok("but the row is STILL THERE, greyed — not vanished", !!after && after[1] === true, rows());
-    w.eval("renderTeamGate();");
-    ok("...and the page draws it greyed, with no buttons left to press",
-       w.eval("(function(){ var r = document.querySelector('#attnList .attnrow.done');" +
-              "return !!r && !r.querySelector('.attnsort') && /Checked by|Checked/.test(r.textContent); })()") === true);
-    /* Three days up. */
-    w.eval("data.sorted['" + row + "'].t = new Date(Date.now() - 4 * 86400000).toISOString();" +
-           "data.staff[0].verified = true;");
-    ok("after three days a dealt-with row drops off", !find(row), rows());
+    ok("the badge drops at once", badge() === before - 1, before + " -> " + badge());
+    ok("...and the card is gone", w.eval("(function(){ renderTeamGate(); return [...document.querySelectorAll('#attnList .nwcard')].some(function(c){ return c.textContent.indexOf(data.staff[0].name) >= 0; }); })()") === false);
+    /* The safe default: a newcomer nobody has confirmed is handed to the planner as supernumerary;
+       somebody already working before the cut-over keeps what they had. */
     w.eval("data.staff[0].verified = false;");
-    const back = find(row);
-    ok("...but a LIVE condition that is still true comes back, counting again",
-       !!back && back[1] === false, rows());
+    ok("a newcomer who has worked nothing yet is drafted supernumerary",
+       w.eval("(function(){ var sv = Object.assign({}, data.staff[0]); var r = {}; var wk = data.weeks[Object.keys(data.weeks)[0]];" +
+              "var old = wk.roster; wk.roster = {}; var a = plannerStaff().find(function(x){ return x.id === data.staff[0].id; }).supernum;" +
+              "wk.roster = old; return a; })()") === true);
+    ok("...and the real record is not touched", w.eval("!!data.staff[0].supernum") === false);
+    ok("somebody unconfirmed who already worked before the cut-over keeps counting",
+       w.eval("(function(){ var wk = data.weeks[Object.keys(data.weeks)[0]]; wk.roster['2026-09-01'] = {}; wk.roster['2026-09-01'][data.staff[0].id] = { code: 'LD', kind: 'day' };" +
+              "var a = isNewcomerDefault(data.staff[0]); delete wk.roster['2026-09-01']; return a; })()") === false);
+    w.eval("data.staff[0].verified = true;");
     /* A historical fact — a skill that starts on a date — stays dealt with. */
     w.eval("data.staff[0].verified = true; data.sorted = {};" +
            "data.pendingSkills = [{ id: data.staff[1].id, name: data.staff[1].name, add: { airway: true }, from: todayISO(), applied: true }];");
@@ -1317,7 +1318,7 @@ const SEED = `(function(){
      day column must gain `left:0` or you scroll to Fairfield and lose which day you are reading. */
   {
     const cssAll = require("fs").readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
-    const css = cssAll.split("<style>")[1].split("</style>")[0];
+    const css = cssAll.split("<style>").slice(1).map(x => x.split("</style>")[0]).join("\n");
     ok("the table scrolls inside its own pane, so the page cannot slide past the topbar",
       /\.rota-wrap\{overflow:auto/.test(css));
     ok("the header row sticks to the PANE, not the viewport", /table\.rota th\{top:0/.test(css));
