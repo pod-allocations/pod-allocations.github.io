@@ -1814,16 +1814,19 @@ const SEED = `(function(){
       wk.days[1].pods.A.assign = [{id:"ra",shift:"LD"},{id:"rb",shift:"LD"}]; wk.days[1].pods.B.assign = [{id:"rc",shift:"LD"}];
       wk.writtenAt = new Date().toISOString();
       const t = rotaReport(K);
-      data.log = [{ t: new Date().toISOString(), who: "Someone", kind: "manual", msg: "Rep rc → Pod B", on: d1 },
+      data.log = [{ t: new Date().toISOString(), who: "Rep ra", kind: "manual", msg: "Rep rc → Pod B", on: d1 },
                   { t: new Date().toISOString(), who: "sync", kind: "manual", msg: "not a person" }];
-      data.overrides = [{ t: new Date().toISOString(), d: d1, id: "rc", from: "A", to: "B", by: "Someone" }];
+      data.overrides = [{ t: new Date().toISOString(), d: d1, id: "rc", from: "A", to: "B", by: "Rep ra" }];
       const f = manualReport(7);
       delete data.weeks[K]; data.staff = keepStaff; data.log = keepLog; data.overrides = keepOv;
       return JSON.stringify({ t, f });
     })()`));
     ok("Tuesday goes to Ali and Cat", r.t.to.length === 2 && r.t.to.some(x => /Cathryn/i.test(x)), JSON.stringify(r.t.to));
     ok("...says the week is allocated", /allocated/.test(r.t.subject) && !/NOT allocated/.test(r.t.subject), r.t.subject);
-    ok("...and names whoever is rostered but not placed", /NOT PLACED: Rep rd/.test(r.t.text), r.t.text.slice(0, 300));
+    ok("...and flags whoever is rostered but not placed, without their name by default", /NOT PLACED: someone/.test(r.t.text) && !/Rep r[a-d]/.test(r.t.text), r.t.text.slice(0, 300));
+    ok("...names go in only when Settings › Emails allows them",
+       w.eval("(function(){ data.staff.push({ id: 'zz9', name: 'Rep Zed', grade: 'ST', active: true }); data.mailNames = true; const n = /Rep Zed/.test(mailScrub('NOT PLACED: Rep Zed')); data.mailNames = false; const off = mailScrub('Rep Zed and REP ZED'); data.staff = data.staff.filter(x => x.id !== 'zz9'); return n && off === 'someone and someone'; })()") === true);
+    ok("Friday carries no names by default", !/Rep r[a-d]/.test(r.f.text), r.f.text.slice(0, 300));
     ok("Friday goes to Ali only", r.f.to.length === 1 && /Alistair/i.test(r.f.to[0]), JSON.stringify(r.f.to));
     ok("...counts hand changes and not the sync's", /^1 change made by hand/.test(r.f.text), r.f.text.slice(0, 120));
     ok("...and prices the pod move against leaving it", /scored better|worse, net/.test(r.f.text), r.f.text.slice(0, 300));

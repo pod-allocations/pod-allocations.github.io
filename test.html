@@ -5011,6 +5011,19 @@ const NEWCOMER_FROM = "2026-10-06";
    (allocate_auto.py) calls these two and sends what they return; who gets each is a list in the
    store, edited on Settings › Emails (hard rule 1). */
 const MAIL_TO_DEFAULT = { tue: ["Alistair.Cranfield@nca.nhs.uk", "Cathryn.Latham@nca.nhs.uk"], fri: ["Alistair.Cranfield@nca.nhs.uk"] };
+/* NAMES STAY OUT UNTIL THE DPIA SAYS OTHERWISE — 26.10.08. The emails now go through an email
+   service outside the Trust's Microsoft tenancy, which the DPIA has not yet approved. So, unless
+   Settings › Emails says names may go, every staff name in an email is replaced before it leaves:
+   the email still says what is wrong and where, and the board says who. */
+function mailNamesOn(){ return !!(data && data.mailNames); }
+function mailScrub(text){
+  if (mailNamesOn() || !text) return text;
+  const names = (data.staff || []).map(s => String(s.name || "").trim()).filter(n => n.length > 2)
+    .sort((a, b) => b.length - a.length);
+  let out = String(text);
+  for (const n of names) out = out.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "someone");
+  return out;
+}
 function mailTo(k){ const m = (data && data.mailTo) || {}; return (Array.isArray(m[k]) && m[k].length) ? m[k] : MAIL_TO_DEFAULT[k]; }
 function repDay(iso){ return DAYNAMES[(new Date(iso + "T12:00:00").getDay() + 6) % 7].slice(0, 3) + " " + niceDate(iso); }
 /* TUESDAY: the week just written, day by day — allocated or not, who is not placed, the hard
@@ -5052,7 +5065,7 @@ function rotaReport(W){
   return {
     to: mailTo("tue"),
     subject: "Pod Board: week of " + niceDate(W) + " — " + (!written ? "NOT allocated" : toLook ? "allocated, " + toLook + " to look at" : "allocated, no problems"),
-    text: head.join("\n") + "\n\n" + out.join("\n") + "\n\nrota.salford.icu"
+    text: mailScrub(head.join("\n") + "\n\n" + out.join("\n") + "\n\nrota.salford.icu")
   };
 }
 /* FRIDAY: the week's changes made by hand, and what they did. The impact is measured the only
@@ -5119,7 +5132,7 @@ function manualReport(days){
     to: mailTo("fri"),
     subject: "Pod Board: " + man.length + " hand change" + (man.length === 1 ? "" : "s") + " this week"
       + (ov.length ? " — net " + (net >= 0 ? "+" : "") + Math.round(net) + " points" : ""),
-    text: out.join("\n") + "\n\nrota.salford.icu"
+    text: mailScrub(out.join("\n") + "\n\nrota.salford.icu")
   };
 }
 function isUnconfirmed(s){
@@ -12303,6 +12316,11 @@ function renderSettings(){
       return el("div", { style: "margin:.2rem 0 .7rem" }, el("div", { style: "font-size:.8rem;color:var(--muted);margin-bottom:.25rem" }, label), inp);
     };
     card.append(row("tue", "Tuesday — the week as written"), row("fri", "Friday — changes made by hand"));
+    const nm = el("label", { style: "display:flex;align-items:center;gap:.5rem;font-size:.86rem;margin-top:.2rem" });
+    const cb = el("input", { type: "checkbox", disabled: !canEdit() }); cb.checked = mailNamesOn();
+    cb.onchange = () => { data.mailNames = cb.checked; save("Emails: names " + (cb.checked ? "included" : "left out")); };
+    nm.append(cb, "Names in emails");
+    card.append(nm);
     box.append(card); }
   box.append(h("Pod rules"));
   /* ── "weeks trainees can see" IS NO LONGER HERE — 26.08.20 ────────────────────────────────
