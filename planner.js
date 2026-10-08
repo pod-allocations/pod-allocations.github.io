@@ -121,6 +121,8 @@
                               // the cheapest rule (eLongDayEarly), so it may spend any preference
                               // -- a weekend pair broken both ways, 1200, was what w/c 21 Sept
                               // needed on the Sunday -- and can never buy a broken rule.
+    ldSpreadBudget: 300,      // 26.10.08 · what spreading piled-up long days may cost the week: a swap
+                              // moves two people (two moves, maybe two off-home days), never a rule.
     phoneMaxPerWeek: 2,
     phoneMinShifts: 2,        // never the phone in your first two rostered shifts
     weekMoveCap: 1,           // moves per person per week before it costs extra
@@ -1108,6 +1110,51 @@
     return notes;
   }
 
+
+  /* ── SPARE LONG DAYS SPREAD, NOT PILED — 26.10.08 ───────────────────────────────────────────
+     After the phone has its second long day, any further spares go one to a pod rather than
+     three or four in one: the board had B on 4 long days of 4 with A, C and D on one each, and
+     Pod E on 2 or 3 while A-D sat on one — which is what the rota team then undid by hand. A
+     preference: a long day leaves a pod holding more than it needs (the phone pod keeps two,
+     every other pod one) for an A-D pod on one, trading with a short day, only within
+     ldSpreadBudget and only if cover still holds. Sizes never change. */
+  function spreadLongDays(plan, on, home, staff, hist, isNew, cfg, phone) {
+    var base = weekCost(plan, on, home, staff, hist, isNew, cfg);
+    var budget = cfg.ldSpreadBudget || 0;
+    var S2 = function (id) { return staff[id] || {}; };
+    for (var di = 0; di < 7; di++) {
+      var byPod = plan[di], who = phone[di] || null;
+      var ldIn = function (p) { var n = 0, l = byPod[p] || []; for (var i = 0; i < l.length; i++) if (on[di][l[i]] === "LD") n++; return n; };
+      var covered = function (p) { var l = byPod[p] || []; for (var k = 0; k < l.length; k++) if (S2(l[k]).airway || S2(l[k]).transfer) return true; return false; };
+      var hPod = null;
+      for (var pi = 0; pi < PODS.length; pi++) if (who && (byPod[PODS[pi]] || []).indexOf(who) >= 0) hPod = PODS[pi];
+      var keep = function (p) { return p === hPod ? 2 : 1; };
+      for (var guard = 0; guard < 6; guard++) {
+        var donors = PODS.filter(function (p) { return ldIn(p) > keep(p); }).sort(function (a, b) { return ldIn(b) - ldIn(a); });
+        var takersP = AD.filter(function (q) { return (byPod[q] || []).length && ldIn(q) === 1 && q !== hPod; });
+        var moved = false;
+        for (var x = 0; x < donors.length && !moved; x++) {
+          var from = donors[x];
+          for (var y = 0; y < takersP.length && !moved; y++) {
+            var to = takersP[y];
+            if (to === from || ldIn(from) - 1 < ldIn(to) + 1 && from !== "E") continue;
+            var gives = (byPod[from] || []).filter(function (id) { return on[di][id] === "LD" && id !== who; });
+            var takes = (byPod[to] || []).filter(function (id) { return on[di][id] !== "LD" && id !== who; });
+            var hadF = from === "E" ? false : covered(from), hadT = covered(to);
+            for (var g = 0; g < gives.length && !moved; g++) for (var t = 0; t < takes.length && !moved; t++) {
+              swapIn(byPod, from, gives[g], to, takes[t]);
+              var c = weekCost(plan, on, home, staff, hist, isNew, cfg);
+              if ((!hadF || covered(from)) && (!hadT || covered(to)) && c <= base + budget) { budget -= Math.max(0, c - base); base = c; moved = true; }
+              else swapIn(byPod, from, takes[t], to, gives[g]);
+            }
+          }
+        }
+        if (!moved) break;
+      }
+    }
+    return plan;
+  }
+
   // ── the entry point: plan one week ──────────────────────────────────────────────────────
   function planWeek(input) {
     var cfg = Object.assign({}, CFG, input.cfg || {});
@@ -1134,6 +1181,7 @@
     /* The spare long day goes beside the phone holder — after the phone is known, and only where
        it costs nothing against the week as it stood BEFORE the phone pass spent anything. */
     plan = spareLongDayToPhone(plan, d.on, home, staff, hist, d.isNew, cfg, phone, before);
+    plan = spreadLongDays(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
     var nights = planNights(input.weekKey, input.roster || {}, staff, hist, cfg, input.prevNight, input.prevPhone2);
     var supers = placeSupers(plan, d.supers, staff, hist);
 

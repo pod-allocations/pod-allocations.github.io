@@ -747,6 +747,24 @@ console.log("  " + days + " staffed days · " + unfixableLongDay + " long-day ga
   console.log("  spare long day (Pod E included) beside the phone on " + did + " of " + could + (forced ? " · " + forced + " where every swap broke a rule" : ""));
 }
 
+/* SPARE LONG DAYS SPREAD, NOT PILED — 26.10.08, a preference: report the days where a pod holds
+   more long days than it needs (two beside the phone, one elsewhere) while an A-D pod has one. */
+{
+  let days = 0, piled = 0, ex = [];
+  for (const { key, w } of planned) {
+    w.days.forEach((d, di) => {
+      days++;
+      const ldIn = p => (d.pods[p] || []).filter(a => a.shift === "LD").length;
+      const ph = PODS.find(p => idsIn(d, p).includes(d.phone));
+      const need = p => p === ph ? 2 : 1;
+      const one = ["A", "B", "C", "D"].some(q => q !== ph && (d.pods[q] || []).length && ldIn(q) === 1 && (d.pods[q] || []).some(a => a.shift !== "LD"));
+      if (one && PODS.some(p => ldIn(p) > need(p) + 1)) { piled++; ex.push(key + "+" + di + " " + PODS.map(p => p + ldIn(p)).join("")); }
+    });
+  }
+  ok("long days are not piled three deep while another pod has one, on most days", piled * 10 <= days, piled + " of " + days + " " + ex.slice(0, 5).join(" "));
+  console.log("  long days piled up (2+ more than needed while another pod has one) on " + piled + " of " + days + " days");
+}
+
 /* THE SPARE LONG DAY BESIDE THE PHONE HOLDER — a preference, so this reports rather than fails
    unless it has gone backwards. It may never break a rule to get itself satisfied. */
 {
