@@ -1802,6 +1802,33 @@ const SEED = `(function(){
     ok("another back → six: the holder floats again and somebody covers E", six(res.sixUp), JSON.stringify(res.sixUp));
   }
 
+  /* ---- THE TWO WEEKLY EMAILS — 26.10.08 ------------------------------------------------------ */
+  console.log("\n-- weekly emails --");
+  {
+    const r = JSON.parse(w.eval(`(function(){
+      const keepStaff = data.staff, keepLog = data.log, keepOv = data.overrides;
+      const K = mondayOf(addDays(todayISO(), 14));
+      data.staff = keepStaff.concat(["ra","rb","rc","rd"].map(id => ({ id, name: "Rep " + id, grade: "ST", active: true, adhoc: false, aliases: [], verified: true, airway: true })));
+      const wk = getWeek(K); wk.roster = {};
+      const d1 = addDays(K, 1); wk.roster[d1] = {}; ["ra","rb","rc","rd"].forEach(i => wk.roster[d1][i] = { code: "LD", kind: "day" });
+      wk.days[1].pods.A.assign = [{id:"ra",shift:"LD"},{id:"rb",shift:"LD"}]; wk.days[1].pods.B.assign = [{id:"rc",shift:"LD"}];
+      wk.writtenAt = new Date().toISOString();
+      const t = rotaReport(K);
+      data.log = [{ t: new Date().toISOString(), who: "Someone", kind: "manual", msg: "Rep rc → Pod B", on: d1 },
+                  { t: new Date().toISOString(), who: "sync", kind: "manual", msg: "not a person" }];
+      data.overrides = [{ t: new Date().toISOString(), d: d1, id: "rc", from: "A", to: "B", by: "Someone" }];
+      const f = manualReport(7);
+      delete data.weeks[K]; data.staff = keepStaff; data.log = keepLog; data.overrides = keepOv;
+      return JSON.stringify({ t, f });
+    })()`));
+    ok("Tuesday goes to Ali and Cat", r.t.to.length === 2 && r.t.to.some(x => /Cathryn/i.test(x)), JSON.stringify(r.t.to));
+    ok("...says the week is allocated", /allocated/.test(r.t.subject) && !/NOT allocated/.test(r.t.subject), r.t.subject);
+    ok("...and names whoever is rostered but not placed", /NOT PLACED: Rep rd/.test(r.t.text), r.t.text.slice(0, 300));
+    ok("Friday goes to Ali only", r.f.to.length === 1 && /Alistair/i.test(r.f.to[0]), JSON.stringify(r.f.to));
+    ok("...counts hand changes and not the sync's", /^1 change made by hand/.test(r.f.text), r.f.text.slice(0, 120));
+    ok("...and prices the pod move against leaving it", /scored better|worse, net/.test(r.f.text), r.f.text.slice(0, 300));
+  }
+
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
   if (failures.length) { console.log("Failures:"); failures.forEach(f => console.log(" - " + f)); }
   process.exit(fail ? 1 : 0);

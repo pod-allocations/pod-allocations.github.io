@@ -5003,6 +5003,124 @@ function isSupernumerary(s){ return !!s && (s.supernum || isNeuroReg(s)); }
    somebody confirms, so nothing published moves on its own. */
 const NEWCOMER_FROM = "2026-10-06";
 /* firstRosteredDay (below, by the historic rule) answers when somebody first works. */
+/* ══ THE TWO WEEKLY EMAILS — 26.10.08 ══════════════════════════════════════════════════════════
+   Ali: "send an email on Tuesday to me and Cat only, saying if it's been completed and people
+   allocated, and if any issues or problems with the rota as written" and "an email on Friday just
+   to me with a list of manual changes … and overall positive and negative impacts". The sync
+   (allocate_auto.py) calls these two and sends what they return; who gets each is a list in the
+   store, edited on Settings › Emails (hard rule 1). */
+const MAIL_TO_DEFAULT = { tue: ["Alistair.Cranfield@nca.nhs.uk", "Cathryn.Latham@nca.nhs.uk"], fri: ["Alistair.Cranfield@nca.nhs.uk"] };
+function mailTo(k){ const m = (data && data.mailTo) || {}; return (Array.isArray(m[k]) && m[k].length) ? m[k] : MAIL_TO_DEFAULT[k]; }
+function repDay(iso){ return DAYNAMES[(new Date(iso + "T12:00:00").getDay() + 6) % 7].slice(0, 3) + " " + niceDate(iso); }
+/* TUESDAY: the week just written, day by day — allocated or not, who is not placed, the hard
+   problems the board's own checks raise, the score, and anyone not yet confirmed. */
+function rotaReport(W){
+  W = W || mondayOf(writableTo());
+  const wk = (data.weeks || {})[W];
+  const out = [], nm = id => ((staffById(id) || {}).name || id);
+  let toLook = 0, daysDone = 0;
+  const keepKey = currentWeekKey; currentWeekKey = W;
+  try {
+    for (let di = 0; di < 7; di++) {
+      const date = addDays(W, di), day = wk && wk.days ? wk.days[di] : null;
+      if (!day) { out.push(repDay(date) + ": not on the board"); toLook++; continue; }
+      let pool = {}; try { pool = poolFor(day, date) || {}; } catch (e) {}
+      const placed = new Set([...dayAllAssigned(day), ...nightTeamOf(day.night), day.night && day.night.phone].filter(Boolean));
+      const ids = Object.keys(pool);
+      const nDay = ids.filter(id => pool[id].kind === "day").length, nNight = ids.filter(id => pool[id].kind === "night").length;
+      const unplaced = ids.filter(id => !placed.has(id) && !(typeof inFairfield === "function" && inFairfield(day, date, id)));
+      if (nDay && PODS.some(p => (day.pods[p].assign || []).some(a => a && a.id))) daysDone++;
+      const any = PODS.some(p => (day.pods[p].assign || []).some(a => a && a.id));
+      let pct = null; if (any) try { const sc = plannerDayScore(wk, W, di); pct = sc ? sc.pct : null; } catch (e) {}
+      let issues = []; try { issues = checkDay(day, date, di, wk) || []; } catch (e) {}
+      const hard = issues.filter(x => x.hard), soft = issues.filter(x => !x.hard);
+      out.push(repDay(date) + ": " + nDay + " on days, " + nNight + " on nights" + (pct != null ? " · score " + pct + "%" : "")
+        + (unplaced.length ? " · NOT PLACED: " + unplaced.map(nm).join(", ") : ""));
+      for (const h of hard) out.push("    ! " + h.msg);
+      for (const s of soft.slice(0, 3)) out.push("    - " + s.msg);
+      if (soft.length > 3) out.push("    - and " + (soft.length - 3) + " smaller points");
+      toLook += hard.length + unplaced.length;
+    }
+  } finally { currentWeekKey = keepKey; }
+  const unconf = unconfirmedList().filter(s => upcomingShifts(s.id).some(u => u.date >= W && u.date <= addDays(W, 6)));
+  const written = !!(wk && wk.writtenAt);
+  const head = [];
+  head.push("Week of " + repDay(W) + ": " + (written ? "allocated" + (wk.writtenAt ? " (" + new Date(wk.writtenAt).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" }) + ")" : "") : "NOT allocated yet") + ", " + daysDone + " of 7 days with people in pods.");
+  head.push(toLook ? toLook + " thing" + (toLook === 1 ? "" : "s") + " to look at (marked ! below)." : "Nothing the checks object to.");
+  if (unconf.length) head.push("Not confirmed yet (drafted supernumerary until someone does): " + unconf.map(s => s.name).join(", ") + " — Rota team > Attention.");
+  return {
+    to: mailTo("tue"),
+    subject: "Pod Board: week of " + niceDate(W) + " — " + (!written ? "NOT allocated" : toLook ? "allocated, " + toLook + " to look at" : "allocated, no problems"),
+    text: head.join("\n") + "\n\n" + out.join("\n") + "\n\nrota.salford.icu"
+  };
+}
+/* FRIDAY: the week's changes made by hand, and what they did. The impact is measured the only
+   honest way there is: every pod move made by hand this week (the overrides record) is undone on
+   a copy, and the copy is priced against the board as it stands, by the planner's own price list
+   — so "+" is what the hand changes gained over leaving it, "-" what they cost. Changes that are
+   not pod moves (nights, phones, removals) are listed but not priced. */
+function manualReport(days){
+  days = days || 7;
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const auto = /^(sync|claude|allocate)/i;
+  const man = (data.log || []).filter(e => e && e.kind === "manual" && e.t >= since && !auto.test(e.who || ""));
+  const byWho = {};
+  for (const e of man) byWho[e.who || "unknown"] = (byWho[e.who || "unknown"] || 0) + 1;
+  const ov = (data.overrides || []).filter(o => o && o.t >= since && o.d && PODS.includes(o.from) && PODS.includes(o.to) && !auto.test(o.by || ""));
+  const groups = {};
+  for (const o of ov) (groups[mondayOf(o.d)] = groups[mondayOf(o.d)] || []).push(o);
+  let better = 0, worse = 0, net = 0;
+  const plus = {}, minus = {};
+  for (const [k, list] of Object.entries(groups)) {
+    const wk = (data.weeks || {})[k]; if (!wk || !wk.days) continue;
+    const clone = JSON.parse(JSON.stringify(wk));
+    const touched = new Set();
+    for (const o of list) {                          // newest first: undo in reverse order
+      const di = Math.round((Date.parse(o.d) - Date.parse(k)) / 86400000), cd = clone.days[di];
+      if (!cd || !cd.pods[o.to] || !cd.pods[o.from]) continue;
+      const a = (cd.pods[o.to].assign || []).find(x => x && x.id === o.id); if (!a) continue;
+      cd.pods[o.to].assign = cd.pods[o.to].assign.filter(x => x !== a);
+      cd.pods[o.from].assign.push({ id: o.id, shift: a.shift });
+      touched.add(di);
+    }
+    if (!touched.size) continue;
+    let L0, L1;
+    try { L0 = plannerLedger(clone, k); L1 = plannerLedger(wk, k); } catch (e) { continue; }
+    if (!L0 || !L1) continue;
+    for (const di of touched) {
+      const p0 = axDayPct(L0, di), p1 = axDayPct(L1, di);
+      if (p0 == null || p1 == null) continue;
+      net += p1 - p0; if (p1 > p0) better++; else if (p1 < p0) worse++;
+    }
+    for (const l of axDiff(L0, L1)) { const m = l.worse ? minus : plus; m[l.text] = (m[l.text] || 0) + l.w; }
+  }
+  const top = m => Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([t]) => "    " + t);
+  const out = [];
+  out.push(man.length + " change" + (man.length === 1 ? "" : "s") + " made by hand in the last " + days + " days"
+    + (man.length ? " — " + Object.entries(byWho).sort((a, b) => b[1] - a[1]).map(([w, n]) => w + " " + n).join(", ") : "") + ".");
+  if (ov.length) {
+    out.push("");
+    out.push("Pod moves made by hand (" + ov.length + "), against leaving the allocator's version:");
+    out.push("  " + better + " day" + (better === 1 ? "" : "s") + " scored better, " + worse + " worse, net " + (net >= 0 ? "+" : "") + Math.round(net) + " points.");
+    const P = top(plus), M = top(minus);
+    if (P.length) { out.push("  Gained:"); out.push(...P); }
+    if (M.length) { out.push("  Cost:"); out.push(...M); }
+  }
+  if (man.length) {
+    out.push(""); out.push("Every change:");
+    for (const e of man.slice().reverse()) {
+      const when = new Date(e.t).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+      out.push("  " + when + " · " + (e.who || "?") + " · " + e.msg + (e.on ? " [" + repDay(e.on) + "]" : ""));
+      if (Array.isArray(e.fx) && e.fx.length) out.push("      " + e.fx.slice(0, 4).join("; "));
+    }
+  }
+  return {
+    to: mailTo("fri"),
+    subject: "Pod Board: " + man.length + " hand change" + (man.length === 1 ? "" : "s") + " this week"
+      + (ov.length ? " — net " + (net >= 0 ? "+" : "") + Math.round(net) + " points" : ""),
+    text: out.join("\n") + "\n\nrota.salford.icu"
+  };
+}
 function isUnconfirmed(s){
   if (!s || s.active === false || s.placeholder || s.grade === "CON" || /zlocum/i.test(s.name || "")) return false;
   return s.adhoc ? !s.triaged : s.verified === false;
@@ -12172,6 +12290,19 @@ function renderSettings(){
       if (n && n.trim() && !team.includes(n.trim())) saveTeam(team.concat([n.trim()]), "Rota team: " + n.trim() + " added");
     };
     card.append(list, add); box.append(card); }
+  box.append(h("Emails"));
+  { const card = el("div", { class: "card" });
+    const row = (k, label) => {
+      const inp = el("input", { type: "text", value: mailTo(k).join(", "), disabled: !canEdit(), style: "width:100%;font-size:.86rem" });
+      inp.onchange = () => {
+        const list = inp.value.split(/[,;\s]+/).map(x => x.trim()).filter(x => /@/.test(x));
+        data.mailTo = Object.assign({}, data.mailTo || {}, { [k]: list });
+        save("Emails: " + label + " → " + (list.join(", ") || "default"));
+      };
+      return el("div", { style: "margin:.2rem 0 .7rem" }, el("div", { style: "font-size:.8rem;color:var(--muted);margin-bottom:.25rem" }, label), inp);
+    };
+    card.append(row("tue", "Tuesday — the week as written"), row("fri", "Friday — changes made by hand"));
+    box.append(card); }
   box.append(h("Pod rules"));
   /* ── "weeks trainees can see" IS NO LONGER HERE — 26.08.20 ────────────────────────────────
      Ali, looking at this list: "can all be removed from settings not sure it serves any purpose."
