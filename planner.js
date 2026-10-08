@@ -943,6 +943,35 @@
           else { if (cheapest == null || c - base < cheapest) cheapest = c - base; swapIn(byPod, hPod, lds[b], to, who); }
         }
       }
+      /* THE SPARE CAN COME TO THE PHONE, NOT ONLY THE PHONE TO THE SPARE — 26.10.08. Moving the
+         holder needs an A-D pod with two long days. When the spare long day sits on Pod E (two or
+         three long days there, every A-D pod on one), or the holder's own pod is the only place
+         they can be, nothing above can reach it — and that is exactly the day the rota team kept
+         fixing by hand: Ali, 26.10.08, "the main thing Cat does is move a second long day onto
+         the phone holder's pod". Measured on the live board: hand-edited days had the second
+         long day beside the phone on 33 of 52, the allocator's own on 8 of 32. So bring the
+         spare across: a long day from any pod holding two or more (Pod E included) swaps with a
+         short day standing beside the holder. Sizes do not change; the donor keeps a long day,
+         so no long-day rule can move; cover is checked by hand as above; same budget. */
+      if (!done && ldIn[hPod] < 2) {
+        var takers = (byPod[hPod] || []).filter(function (x) { return x !== who && on[di][x] !== "LD"; });
+        var donorsAt = PODS.slice().sort(function (a, b) { return ldIn[b] - ldIn[a]; });
+        for (var pk = 0; pk < donorsAt.length && !done && takers.length; pk++) {
+          var from = donorsAt[pk];
+          if (from === hPod || ldIn[from] < 2) continue;
+          var gives = (byPod[from] || []).filter(function (x) { return on[di][x] === "LD"; });
+          var hadH2 = covered(hPod), hadF = from === "E" ? false : covered(from);
+          for (var g = 0; g < gives.length && !done; g++) {
+            for (var t = 0; t < takers.length && !done; t++) {
+              swapIn(byPod, from, gives[g], hPod, takers[t]);
+              var c2 = weekCost(plan, on, home, staff, hist, isNew, cfg);
+              var ok2 = (!hadH2 || covered(hPod)) && (!hadF || covered(from));
+              if (ok2 && c2 <= base + (cfg.spareLDBudget || 0)) { base = c2; done = true; }
+              else { if (cheapest == null || c2 - base < cheapest) cheapest = c2 - base; swapIn(byPod, from, takers[t], hPod, gives[g]); }
+            }
+          }
+        }
+      }
       /* Every way of doubling up broke a rule (the budget sits under the cheapest rule, so a
          refusal at rule price is a rule). Say so, rather than leave it to look like a miss. */
       if (!done && ldIn[hPod] < 2 && cheapest != null && cheapest >= cfg.eLongDayEarly) spareLDUnreachable[di] = cheapest;

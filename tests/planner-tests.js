@@ -723,6 +723,30 @@ console.log("  " + days + " staffed days · " + unfixableLongDay + " long-day ga
   console.log("  phone holder beside the spare long day on " + did + " of " + could + " days that had one" + (forced ? " · " + forced + " where every swap broke a rule" : ""));
 }
 
+/* ...AND WHEREVER THE SPARE IS, POD E INCLUDED — 26.10.08. Ali: "the main thing Cat does is move a
+   second long day onto the phone holder's pod". The rule above only looked for the spare in A-D;
+   the allocator kept leaving it on Pod E (two or three long days there, the phone pod on one) and
+   the rota team moved it by hand. Any pod with two long days is a spare the phone can have. */
+{
+  let could = 0, did = 0, forced = 0, worst = [];
+  for (const { key, w } of planned) {
+    w.days.forEach((d, di) => {
+      if (!d.phone) return;
+      const ldIn = p => (d.pods[p] || []).filter(a => a.shift === "LD").length;
+      if (!PODS.some(p => ldIn(p) >= 2)) return;
+      const pod = PODS.find(p => idsIn(d, p).includes(d.phone));
+      if (!pod || pod === "E") return;
+      if (!(d.pods[pod] || []).some(a => a.id !== d.phone && a.shift !== "LD") && ldIn(pod) < 2) return;  // nobody to trade
+      could++;
+      if (ldIn(pod) >= 2) did++;
+      else if ((w.notes || []).some(n => n.di === di && n.kind === "spareLDUnreachable")) forced++;
+      else worst.push(key + "+" + di + ":" + pod + " " + PODS.map(p => p + ldIn(p)).join(""));
+    });
+  }
+  ok("a spare long day anywhere, Pod E included, ends up beside the phone", did + forced === could, did + " of " + could + " " + worst.slice(0, 6).join(" "));
+  console.log("  spare long day (Pod E included) beside the phone on " + did + " of " + could + (forced ? " · " + forced + " where every swap broke a rule" : ""));
+}
+
 /* THE SPARE LONG DAY BESIDE THE PHONE HOLDER — a preference, so this reports rather than fails
    unless it has gone backwards. It may never break a rule to get itself satisfied. */
 {
