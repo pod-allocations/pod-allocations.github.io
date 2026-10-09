@@ -1823,10 +1823,13 @@ const SEED = `(function(){
     })()`));
     ok("Tuesday goes to Ali and Cat", r.t.to.length === 2 && r.t.to.some(x => /Cathryn/i.test(x)), JSON.stringify(r.t.to));
     ok("...says the week is allocated", /allocated/.test(r.t.subject) && !/NOT allocated/.test(r.t.subject), r.t.subject);
-    ok("...and flags whoever is rostered but not placed, without their name by default", /NOT PLACED: someone/.test(r.t.text) && !/Rep r[a-d]/.test(r.t.text), r.t.text.slice(0, 300));
+    ok("...and flags whoever is rostered but not placed, without their name by default", /not in a pod — 1 person \(someone\)/.test(r.t.text) && !/Rep r[a-d]/.test(r.t.text + r.t.html), r.t.text.slice(0, 300));
     ok("...names go in only when Settings › Emails allows them",
        w.eval("(function(){ data.staff.push({ id: 'zz9', name: 'Rep Zed', grade: 'ST', active: true }); data.mailNames = true; const n = /Rep Zed/.test(mailScrub('NOT PLACED: Rep Zed')); data.mailNames = false; const off = mailScrub('Rep Zed and REP ZED'); data.staff = data.staff.filter(x => x.id !== 'zz9'); return n && off === 'someone and someone'; })()") === true);
     ok("Friday carries no names by default", !/Rep r[a-d]/.test(r.f.text), r.f.text.slice(0, 300));
+    ok("both come as styled HTML too, with the answer in the headline", /<table/.test(r.t.html) && /is allocated/.test(r.t.html) && /made by hand/.test(r.f.html));
+    const st = JSON.parse(w.eval("(function(){ const r = statusReport(); return JSON.stringify({ ok: r.ok, subject: r.subject, html: r.html.length }); })()"));
+    ok("the status email builds and says what is wrong in its subject", st.html > 500 && /Pod Board: /.test(st.subject), JSON.stringify(st));
     ok("Friday goes to Ali only", r.f.to.length === 1 && /Alistair/i.test(r.f.to[0]), JSON.stringify(r.f.to));
     ok("...counts hand changes and not the sync's", /^1 change made by hand/.test(r.f.text), r.f.text.slice(0, 120));
     ok("...and prices the pod move against leaving it", /scored better|worse, net/.test(r.f.text), r.f.text.slice(0, 300));
