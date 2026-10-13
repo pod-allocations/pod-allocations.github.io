@@ -5141,13 +5141,15 @@ function weekIssues(W){
         if (rostered) items.push({ day: mailDay(date), tone: "r", title: "Nobody in pods", detail: rostered + " rostered on days", key: date + "|blank" });
       } else {
         for (const h of issues.filter(x => x.hard)) { tone = "r"; items.push({ day: mailDay(date), tone: "r", title: h.msg, key: date + "|" + h.msg }); }
-        for (const s of issues.filter(x => !x.hard && !x.info)) { if (tone === "g") tone = "a"; items.push({ day: mailDay(date), tone: "a", title: s.msg, key: date + "|" + s.msg }); }
         if (unplaced.length) { if (tone === "g") tone = "a"; items.push({ day: mailDay(date), tone: "a", title: "Rostered but not in a pod: " + unplaced.length + (unplaced.length === 1 ? " person" : " people"), detail: unplaced.map(id => (staffById(id) || {}).name || id).join(", "), key: date + "|unplaced" }); }
       }
       days.push({ date, n, rostered, tone, pct });
     }
   } finally { currentWeekKey = keepKey; }
-  items.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === "r" ? -1 : 1));
+  const today = todayISO();
+  const live = items.filter(x => !x.key || x.key.slice(0, 10) >= today);
+  live.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === "r" ? -1 : 1));
+  items.length = 0; items.push(...live);
   return { days, items, daysDone, written: !!(wk && wk.writtenAt) || daysDone > 0,
            reds: items.filter(x => x.tone === "r").length, ambers: items.filter(x => x.tone === "a").length };
 }
@@ -5198,7 +5200,7 @@ function rotaReport(W){
     grid: { title: "People in pods, by day", cols: MAIL_COLS, keyChips: MAIL_KEY, rows: [].concat(
       W !== visibleFrom() ? [mailWeekRow(visibleFrom(), niceDate(visibleFrom()), "live", "live")] : [], [
       mailWeekRow(W, niceDate(W), written ? "written, live " + mailWhen(pub).replace(/,.*$/, "") : "not written", "check"),
-      mailWeekRow(addDays(W, 7), niceDate(addDays(W, 7)), "written " + mailWhen(new Date(addDays(W, Number(rule("writeDay"))) + "T12:00:00")).replace(/,.*$/, ""), "ahead")]) },
+      mailWeekRow(addDays(W, 7), niceDate(addDays(W, 7)), "due " + mailWhen(new Date(addDays(W, Number(rule("writeDay"))) + "T12:00:00")).replace(/,.*$/, ""), "ahead")]) },
     sections: [{ title: reds ? "Fix before Friday" : "To look at", rows: mailItemRows(items) }],
     buttons: [{ text: "Open " + niceDate(W) }].concat(unconf.length ? [{ text: "Confirm new starters", secondary: true }] : [])
   };
@@ -5334,15 +5336,13 @@ function liveReport(tueKeys){
     pill: reds ? [reds + " red", "r"] : ambers ? [ambers + " to look at", "a"] : ["nothing to do", "g"],
     sub: mailWhen(now),
     tiles: [pull,
-      { k: "Fixed since Tuesday", v: before.size ? fixed.length + " of " + [...before].filter(k => !/^c\|/.test(k)).length : "none flagged", s: before.size ? "flags cleared" : "", tone: "g" },
-      { k: "Hand changes", v: String(m.man.length), s: m.ov.length ? "net " + (m.netR >= 0 ? "+" : "−") + Math.abs(m.netR) + " points" : "this week", tone: m.netR < 0 ? "a" : "g" }],
+      { k: "Days covered", v: wi.days.filter(d => d.n).length + " of " + wi.days.filter(d => d.rostered || d.n).length, s: "people in pods", tone: wi.days.every(d => d.n || !d.rostered) ? "g" : "r" },
+      { k: "Hand changes", v: String(m.man.length), s: m.ov.length ? m.better + " days better, " + m.worse + " worse" : "this week", tone: m.worse > m.better ? "a" : "g" }],
     reqs: [[pull.ok, "Pull under 26 h"], [wi.daysDone > 0 && wi.days.every(d => d.n || !d.rostered), "Live week has people every day"],
-           [!wi.reds, wi.reds ? "Day check: " + wi.reds + " red" : "No reds"], [wi.ambers ? null : true, wi.ambers ? wi.ambers + " amber" : "No ambers"],
-           [cons.length ? null : true, cons.length ? "Consultants: " + cons.length + " to look at" : "Consultants clear"]],
+           [!wi.reds, wi.reds ? "Day check: " + wi.reds + " red" : "No reds"], [cons.length ? null : true, cons.length ? "Consultants: " + cons.length + " to look at" : "Consultants clear"]],
     grid: { title: "People in pods, by day", cols: MAIL_COLS, keyChips: MAIL_KEY, rows: [
       mailWeekRow(W, niceDate(W), "live", "check"),
-      mailWeekRow(addDays(W, 7), niceDate(addDays(W, 7)), "written " + mailWhen(new Date(addDays(W, Number(rule("writeDay"))) + "T12:00:00")).replace(/,.*$/, ""), "ahead")] },
-    bar: m.ov.length ? { title: "Hand changes: did they help?", g: m.better, m: m.same, r: m.worse } : null,
+      mailWeekRow(addDays(W, 7), niceDate(addDays(W, 7)), "due " + mailWhen(new Date(addDays(W, Number(rule("writeDay"))) + "T12:00:00")).replace(/,.*$/, ""), "ahead")] },
     sections: [{ title: "Still open", rows: mailItemRows(wi.items) }, { title: "Consultants", rows: mailItemRows(cons, 8) }, { title: "Since Tuesday", rows: fixedRows }],
     buttons: [{ text: "Open the board" }]
   };
