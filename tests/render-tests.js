@@ -1822,19 +1822,53 @@ const SEED = `(function(){
       return JSON.stringify({ t, f });
     })()`));
     ok("Tuesday goes to Ali and Cat", r.t.to.length === 2 && r.t.to.some(x => /Cathryn/i.test(x)), JSON.stringify(r.t.to));
-    ok("...says the week is allocated", /allocated/.test(r.t.subject) && !/NOT allocated/.test(r.t.subject), r.t.subject);
-    ok("...and flags whoever is rostered but not placed, without their name by default", /not in a pod — 1 person \(someone\)/.test(r.t.text) && !/Rep r[a-d]/.test(r.t.text + r.t.html), r.t.text.slice(0, 300));
+    ok("...says the week is written, with no dash in the subject", /written/.test(r.t.subject) && !/not written/.test(r.t.subject) && !/—/.test(r.t.subject), r.t.subject);
+    ok("...and flags whoever is rostered but not placed, without their name by default", /not in a pod: 1 person \(someone\)/.test(r.t.text) && !/Rep r[a-d]/.test(r.t.text + r.t.html), r.t.text.slice(0, 300));
     ok("...names go in only when Settings › Emails allows them",
        w.eval("(function(){ data.staff.push({ id: 'zz9', name: 'Rep Zed', grade: 'ST', active: true }); data.mailNames = true; const n = /Rep Zed/.test(mailScrub('NOT PLACED: Rep Zed')); data.mailNames = false; const off = mailScrub('Rep Zed and REP ZED'); data.staff = data.staff.filter(x => x.id !== 'zz9'); return n && off === 'someone and someone'; })()") === true);
     ok("Friday carries no names by default", !/Rep r[a-d]/.test(r.f.text), r.f.text.slice(0, 300));
-    ok("both come as styled HTML too, with the answer in the headline", /<table/.test(r.t.html) && /is allocated/.test(r.t.html) && /made by hand/.test(r.f.html));
+    ok("both come as styled HTML too, with the answer in the headline", /<table/.test(r.t.html) && / written/.test(r.t.html) && /made by hand/.test(r.f.html));
     const st = JSON.parse(w.eval("(function(){ const r = statusReport(); return JSON.stringify({ ok: r.ok, subject: r.subject, html: r.html.length }); })()"));
-    ok("the status email builds and says what is wrong in its subject", st.html > 500 && /Pod Board: /.test(st.subject), JSON.stringify(st));
+    ok("the status email builds and says what is wrong in its subject", st.html > 500 && /POD BOARD PROBLEM: /.test(st.subject), JSON.stringify(st));
     ok("Friday goes to Ali only", r.f.to.length === 1 && /Alistair/i.test(r.f.to[0]), JSON.stringify(r.f.to));
     ok("...counts hand changes and not the sync's", /^1 change made by hand/.test(r.f.text), r.f.text.slice(0, 120));
     ok("...and prices the pod move against leaving it", /scored better|worse, net/.test(r.f.text), r.f.text.slice(0, 300));
   }
 
+
+  /* ---- 26.10.13: the emails redone, consultants in Friday's, the blank-live-week gap ---------- */
+  console.log("\n-- emails 26.10.13 --");
+  {
+    const r = JSON.parse(w.eval(`(function(){
+      const out = {};
+      const keepTo = data.mailTo; data.mailTo = { tue: ["Alistair.Cranfield@nca.nhs.uk", "cathryn.latham@nca.nhs.uk"] };
+      out.tue = mailTo("tue"); data.mailTo = keepTo;
+      out.ago = mailAgo(Date.now() - 20 * 60000);
+      const M = mondayOf(todayISO()), d0 = addDays(M, 7), d1 = addDays(M, 8);
+      window.__mailCover = { days: {} };
+      window.__mailCover.days[d0] = { cur: { A: "WH", B: "KB", C: "SAF", D: "TW", E: "MD", wkend: false } };
+      window.__mailCover.days[d1] = { cur: { A: "WH", B: "KB", C: "RJH", D: "SAF", E: "VG", wkend: false } };
+      out.flags = consultantFlags(window.__mailCover, d0, d1);
+      const t1 = addDays(todayISO(), 1), t2 = addDays(todayISO(), 2);
+      window.__mailCover.days[t1] = window.__mailCover.days[d0]; window.__mailCover.days[t2] = window.__mailCover.days[d1];
+      const L = liveReport([addDays(M, 7) + "|Pod C has no long-day (8-8) person."]);
+      out.live = { to: L.to, subject: L.subject, consult: /Consultants: swap SAF and TW/.test(L.html), nodash: !/—/.test(L.subject) };
+      const keepWeeks = data.weeks; data.weeks = JSON.parse(JSON.stringify(keepWeeks || {}));
+      const wk = getWeek(M); wk.roster = wk.roster || {}; const t0 = addDays(M, 6);
+      wk.roster[t0] = { zz1: { code: "LD", kind: "day" } }; delete wk.writtenAt;
+      wk.days.forEach(d => PODS.forEach(p => { d.pods[p].assign = []; }));
+      const st = statusReport(); out.status = { ok: st.ok, subject: st.subject };
+      data.weeks = keepWeeks; window.__mailCover = null;
+      out.res = resolvedReport({ head: "Live week has blank days", at: new Date(Date.now() - 90 * 60000).toISOString(), first: new Date(Date.now() - 90 * 60000).toISOString() }).subject;
+      return JSON.stringify(out);
+    })()`));
+    ok("Cat's old address is corrected on the way out", r.tue.includes("Cathryn.Latham2@nca.nhs.uk") && !r.tue.some(a => /^cathryn\.latham@/i.test(a)), JSON.stringify(r.tue));
+    ok("'NaN days ago' is gone: a number reads as minutes ago", r.ago === "20 min ago", r.ago);
+    ok("the Monday 12 Oct consultant shape is flagged as a swap", r.flags.length === 1 && /swap SAF and TW/.test(r.flags[0].title) && /SAF is in Pod C .* Pod D/.test(r.flags[0].detail), JSON.stringify(r.flags));
+    ok("Friday's live email goes to Ali, carries the consultants, no dash in the subject", r.live.to.length === 1 && r.live.consult && r.live.nodash && /is live/.test(r.live.subject), JSON.stringify(r.live));
+    ok("a live day with people rostered and nobody in pods is a problem even without a written mark", r.status.ok === false && /POD BOARD PROBLEM: /.test(r.status.subject), JSON.stringify(r.status));
+    ok("the resolved email says so in its subject", /^Pod Board resolved: /.test(r.res), r.res);
+  }
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
   if (failures.length) { console.log("Failures:"); failures.forEach(f => console.log(" - " + f)); }
   process.exit(fail ? 1 : 0);

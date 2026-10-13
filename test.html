@@ -5010,7 +5010,7 @@ const NEWCOMER_FROM = "2026-10-06";
    to me with a list of manual changes … and overall positive and negative impacts". The sync
    (allocate_auto.py) calls these two and sends what they return; who gets each is a list in the
    store, edited on Settings › Emails (hard rule 1). */
-const MAIL_TO_DEFAULT = { tue: ["Alistair.Cranfield@nca.nhs.uk", "Cathryn.Latham@nca.nhs.uk"], fri: ["Alistair.Cranfield@nca.nhs.uk"] };
+const MAIL_TO_DEFAULT = { tue: ["Alistair.Cranfield@nca.nhs.uk", "Cathryn.Latham2@nca.nhs.uk"], fri: ["Alistair.Cranfield@nca.nhs.uk"] };
 /* NAMES STAY OUT UNTIL THE DPIA SAYS OTHERWISE — 26.10.08. The emails now go through an email
    service outside the Trust's Microsoft tenancy, which the DPIA has not yet approved. So, unless
    Settings › Emails says names may go, every staff name in an email is replaced before it leaves:
@@ -5024,7 +5024,10 @@ function mailScrub(text){
   for (const n of names) out = out.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "someone");
   return out;
 }
-function mailTo(k){ const m = (data && data.mailTo) || {}; return (Array.isArray(m[k]) && m[k].length) ? m[k] : MAIL_TO_DEFAULT[k]; }
+/* 26.10.13: Cat's address is Cathryn.Latham2@ (Ali). The store may still hold the old one, so it is
+   corrected on the way out rather than trusted. */
+function mailTo(k){ const m = (data && data.mailTo) || {}; const l = (Array.isArray(m[k]) && m[k].length) ? m[k] : MAIL_TO_DEFAULT[k];
+  return l.map(a => /^cathryn\.latham@nca\.nhs\.uk$/i.test(String(a).trim()) ? "Cathryn.Latham2@nca.nhs.uk" : a); }
 function repDay(iso){ return DAYNAMES[(new Date(iso + "T12:00:00").getDay() + 6) % 7].slice(0, 3) + " " + niceDate(iso); }
 /* ══ EMAILS THAT READ AT A GLANCE — 26.10.09 ═════════════════════════════════════════════════
    Ali, of the plain-text status email: "totally useless. mock up how email information should
@@ -5043,7 +5046,7 @@ function mailHtml(o){
   const st = t => '<div style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:' + C.muted + ';margin:16px 0 8px">' + mailEsc(t) + '</div>';
   let h = '<div style="background:' + C.bg + ';padding:18px 10px;' + F + 'color:' + C.ink + '">'
     + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#fff;border-radius:10px;border-collapse:separate"><tr><td style="padding:22px 24px 6px">'
-    + '<div style="font-size:11px;font-weight:800;letter-spacing:.12em;color:' + C.blue + ';text-transform:uppercase;margin-bottom:10px">Pod Board · ' + mailEsc(o.brand || "") + '</div>'
+    + '<div style="font-size:11px;font-weight:800;letter-spacing:.12em;color:' + (o.brandTone ? C[o.brandTone][0] : C.blue) + ';text-transform:uppercase;margin-bottom:10px">Pod Board · ' + mailEsc(o.brand || "") + '</div>'
     + '<div style="font-size:21px;font-weight:700;line-height:1.25">' + mailEsc(o.head) + (o.pill ? ' ' + pill(o.pill[0], o.pill[1]) : '') + '</div>'
     + (o.sub ? '<div style="color:' + C.muted + ';margin-top:5px;font-size:14px;line-height:1.45">' + mailEsc(o.sub) + '</div>' : '')
     + '</td></tr><tr><td style="padding:4px 24px 18px">';
@@ -5052,6 +5055,7 @@ function mailHtml(o){
     for (const t of o.tiles) { const c = C[t.tone || "m"]; h += '<td width="' + Math.floor(100 / o.tiles.length) + '%" style="border:1px solid ' + c[2] + ';background:' + c[3] + ';border-radius:8px;padding:10px 12px;vertical-align:top"><div style="font-size:12px;color:' + C.muted + '">' + mailEsc(t.k) + '</div><div style="font-size:16px;font-weight:700;margin-top:2px">' + mailEsc(t.v) + '</div><div style="font-size:12px;color:' + C.muted + ';margin-top:1px">' + mailEsc(t.s || "") + '</div></td>'; }
     h += '</tr></table>';
   }
+  if (o.reqs && o.reqs.length) h += '<div style="margin-top:12px">' + o.reqs.map(([v, txt]) => { const tone = v === true ? "g" : v === false ? "r" : "a"; const solid = tone === "r"; return '<span style="display:inline-block;border-radius:7px;padding:4px 9px;font-size:12.5px;font-weight:650;margin:0 4px 4px 0;background:' + (solid ? C.r[0] : C[tone][1]) + ';color:' + (solid ? '#fff' : C[tone][0]) + '">' + (v === true ? '✓ ' : '! ') + mailEsc(txt) + '</span>'; }).join("") + '</div>';
   if (o.chips && o.chips.length) h += (o.chipsTitle ? st(o.chipsTitle) : '') + o.chips.map(c => '<span style="display:inline-block;background:' + C.hair + ';border-radius:6px;padding:2px 8px;font-size:12px;font-weight:650;margin:0 4px 4px 0">' + mailEsc(c) + '</span>').join("");
   if (o.bar) {
     const tot = (o.bar.g + o.bar.m + o.bar.r) || 1, w = n => Math.round(100 * n / tot);
@@ -5069,11 +5073,12 @@ function mailHtml(o){
       h += '<tr><td style="border-top:1px solid ' + C.hair + ';padding:7px 0;font-weight:650;width:120px">' + mailEsc(r.label) + (r.small ? '<div style="font-weight:500;color:' + C.muted + ';font-size:11px">' + mailEsc(r.small) + '</div>' : '') + '</td>';
       for (const c of r.cells) {
         const v = c && typeof c === "object" ? c : { v: c };
-        h += '<td align="center" style="border-top:1px solid ' + C.hair + ';padding:7px 2px">' + (v.tone ? '<span style="display:inline-block;min-width:30px;padding:3px 0;border-radius:6px;font-weight:650;background:' + C[v.tone][1] + ';color:' + C[v.tone][0] + '">' + mailEsc(v.v) + '</span>' : mailEsc(v.v == null ? "" : v.v)) + '</td>';
+        h += '<td align="center" style="border-top:1px solid ' + C.hair + ';padding:7px 2px">' + (v.tone ? '<span style="display:inline-block;min-width:30px;padding:3px 0;border-radius:6px;font-weight:650;background:' + (v.tone === "r" ? C.r[0] : C[v.tone][1]) + ';color:' + (v.tone === "r" ? "#fff" : C[v.tone][0]) + '">' + mailEsc(v.v) + '</span>' : mailEsc(v.v == null ? "" : v.v)) + '</td>';
       }
       h += '</tr>';
     }
     h += '</table>';
+    if (o.grid.keyChips) h += '<div style="margin-top:8px">' + o.grid.keyChips.map(([txt, tone]) => '<span style="display:inline-block;border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:600;margin:0 4px 4px 0;background:' + C[tone][1] + ';color:' + C[tone][0] + '">' + mailEsc(txt) + '</span>').join("") + '</div>';
     if (o.grid.key) h += '<div style="font-size:12px;color:' + C.muted + ';margin-top:6px">' + mailEsc(o.grid.key) + '</div>';
   }
   if (o.two) {
@@ -5097,67 +5102,118 @@ function mailHtml(o){
 function mailDay(iso){ return DAYNAMES[(new Date(iso + "T12:00:00").getDay() + 6) % 7].slice(0, 3) + " " + Number(iso.slice(8, 10)); }
 function mailWhen(d){ return new Date(d).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
 function mailHM(d){ return new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); }
-function mailAgo(d){ const m = Math.max(0, Math.round((Date.now() - Date.parse(d)) / 60000)); return m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " hour" + (Math.round(m / 60) === 1 ? "" : "s") + " ago" : Math.round(m / 1440) + " days ago"; }
+function mailAgo(d){ const ms = typeof d === "number" ? d : d instanceof Date ? d.getTime() : Date.parse(d); const m = Math.max(0, Math.round((Date.now() - ms) / 60000)); return m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " hour" + (Math.round(m / 60) === 1 ? "" : "s") + " ago" : Math.round(m / 1440) + " days ago"; }
 /* People in pods on a day (the status grid's number), and the rostered count for a week not yet written. */
 function mailPodCount(day){ return day ? new Set(PODS.flatMap(p => (day.pods[p].assign || []).filter(a => a && a.id).map(a => a.id))).size : 0; }
 function mailRostered(wkKey, di){ const r = ((data.weeks || {})[wkKey] || {}).roster || {}; const d = r[addDays(wkKey, di)] || {}; return Object.values(d).filter(v => v && v.kind === "day").length; }
 function mailOut(o, text){ return { to: o.to, subject: o.subject, text: mailScrub(text), html: mailScrub(mailHtml(o)) }; }
-/* TUESDAY: the week just written. */
-function rotaReport(W){
-  W = W || mondayOf(writableTo());
+/* ══ THE WEEK'S EMAILS, REDONE — 26.10.13 ═══════════════════════════════════════════════════════
+   Ali: "Im getting loads and loads of emails about pod board allocations. most of them garbage".
+   Agreed on the "Pod Board Emails" page the same morning: two a week, and faults only.
+     · Tuesday, an hour after the week is written, to Ali and Cat: the week to check before it
+       goes public, with the board's own day check (reds and ambers) listed by day and pod.
+     · Friday, after the 07:00 publish, to Ali: the week now live, what was fixed since Tuesday,
+       what is still open, the hand changes, and the consultants (Cover) for the next fortnight.
+     · A problem email only when something is wrong, and a resolved email when it clears.
+   The Monday "all good" email is gone: Friday is the heartbeat. Every email: tiles, a strip of
+   requirements met or not, the weeks as a grid coloured by those requirements, then only what
+   needs a person. No explanatory footers. */
+function weekIssues(W){
   const wk = (data.weeks || {})[W];
-  const nm = id => ((staffById(id) || {}).name || id);
-  const days = [], night = [], score = [], checks = [], textLines = [];
+  const days = [], items = [];
   let daysDone = 0;
   const keepKey = currentWeekKey; currentWeekKey = W;
   try {
     for (let di = 0; di < 7; di++) {
       const date = addDays(W, di), day = wk && wk.days ? wk.days[di] : null;
-      if (!day) { days.push("–"); night.push("–"); score.push({ v: "–", tone: "r" }); checks.push({ day: mailDay(date), tone: "r", title: "Not on the board" }); continue; }
+      const rostered = mailRostered(W, di);
+      if (!day) { days.push({ date, n: 0, rostered, tone: rostered ? "r" : "m" }); if (rostered) items.push({ day: mailDay(date), tone: "r", title: "Not on the board", key: date + "|none" }); continue; }
       let pool = {}; try { pool = poolFor(day, date) || {}; } catch (e) {}
       const placed = new Set([...dayAllAssigned(day), ...nightTeamOf(day.night), day.night && day.night.phone].filter(Boolean));
       const ids = Object.keys(pool);
-      days.push(ids.filter(id => pool[id].kind === "day").length);
-      night.push(ids.filter(id => pool[id].kind === "night").length);
-      const unplaced = ids.filter(id => !placed.has(id) && !(typeof inFairfield === "function" && inFairfield(day, date, id)));
-      const any = PODS.some(p => (day.pods[p].assign || []).some(a => a && a.id));
-      if (any) daysDone++;
-      let pct = null; if (any) try { const sc = plannerDayScore(wk, W, di); pct = sc ? sc.pct : null; } catch (e) {}
-      score.push(pct == null ? { v: "–", tone: "m" } : { v: pct, tone: pct >= 85 ? "g" : pct >= 70 ? "a" : "r" });
-      let issues = []; try { issues = checkDay(day, date, di, wk) || []; } catch (e) {}
-      if (!any) checks.push({ day: mailDay(date), tone: "r", title: "Nobody allocated", detail: ids.length + " rostered" });
-      else {
-        for (const h of issues.filter(x => x.hard)) checks.push({ day: mailDay(date), tone: "r", title: h.msg });
-        if (unplaced.length) checks.push({ day: mailDay(date), tone: "a", title: "Rostered but not in a pod — " + unplaced.length + (unplaced.length === 1 ? " person" : " people"), detail: unplaced.map(nm).join(", ") });
-        if (pct != null && pct < 70) checks.push({ day: mailDay(date), tone: "a", title: "Low score (" + pct + ")", detail: "Worth a look on Look ahead" });
+      const unplaced = ids.filter(id => !placed.has(id) && pool[id].kind === "day" && !(typeof inFairfield === "function" && inFairfield(day, date, id)));
+      const n = mailPodCount(day);
+      if (n) daysDone++;
+      let pct = null; if (n) try { const sc = plannerDayScore(wk, W, di); pct = sc ? sc.pct : null; } catch (e) {}
+      let issues = []; try { issues = n ? (checkDay(day, date, di, wk) || []) : []; } catch (e) {}
+      let tone = "g";
+      if (!n) {
+        tone = rostered ? "r" : "m";
+        if (rostered) items.push({ day: mailDay(date), tone: "r", title: "Nobody in pods", detail: rostered + " rostered on days", key: date + "|blank" });
+      } else {
+        for (const h of issues.filter(x => x.hard)) { tone = "r"; items.push({ day: mailDay(date), tone: "r", title: h.msg, key: date + "|" + h.msg }); }
+        for (const s of issues.filter(x => !x.hard && !x.info)) { if (tone === "g") tone = "a"; items.push({ day: mailDay(date), tone: "a", title: s.msg, key: date + "|" + s.msg }); }
+        if (unplaced.length) { if (tone === "g") tone = "a"; items.push({ day: mailDay(date), tone: "a", title: "Rostered but not in a pod: " + unplaced.length + (unplaced.length === 1 ? " person" : " people"), detail: unplaced.map(id => (staffById(id) || {}).name || id).join(", "), key: date + "|unplaced" }); }
       }
+      days.push({ date, n, rostered, tone, pct });
     }
   } finally { currentWeekKey = keepKey; }
-  const unconf = unconfirmedList().filter(s => upcomingShifts(s.id).some(u => u.date >= W && u.date <= addDays(W, 6)));
-  if (unconf.length) checks.push({ day: mailDay(W), tone: "a", title: unconf.length + " new starter" + (unconf.length === 1 ? "" : "s") + " not yet confirmed", detail: "Drafted supernumerary until someone confirms them. " + unconf.map(s => s.name).join(", ") });
-  const written = !!(wk && wk.writtenAt);
-  const pub = weekPublishMoment(W);
-  const n = checks.length;
-  const o = {
-    to: mailTo("tue"), brand: "week written",
-    subject: "Pod Board: week of " + niceDate(W) + " " + (!written ? "NOT allocated" : "allocated — " + (n ? n + " thing" + (n === 1 ? "" : "s") + " to check" : "nothing to check")),
-    head: "Week of " + niceDate(W) + (written ? " is allocated" : " is NOT allocated"),
-    pill: !written ? ["needs doing", "r"] : n ? [n + " to check", "a"] : ["nothing to check", "g"],
-    sub: daysDone + " of 7 days have people in pods. Goes live to residents " + mailWhen(pub) + ".",
-    grid: { cols: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], rows: [
-      { label: "On days", cells: days }, { label: "On nights", cells: night }, { label: "Score", cells: score }] },
-    sections: [{ title: "To check", rows: checks }],
-    buttons: [{ text: "Open week of " + niceDate(W) }].concat(unconf.length ? [{ text: "Confirm new starters", secondary: true }] : []),
-    foot: "Sent the Tuesday the week is written. Recipients: Rota team › Settings › Emails."
-  };
-  textLines.push(o.head + " — " + o.sub, "");
-  ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach((d, i) => textLines.push(d + ": " + days[i] + " days, " + night[i] + " nights, score " + score[i].v));
-  if (checks.length) { textLines.push("", "To check:"); for (const c of checks) textLines.push("  " + c.day + " — " + c.title + (c.detail ? " (" + c.detail + ")" : "")); }
-  textLines.push("", BOARD_URL);
-  return mailOut(o, textLines.join("\n"));
+  items.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === "r" ? -1 : 1));
+  return { days, items, daysDone, written: !!(wk && wk.writtenAt) || daysDone > 0,
+           reds: items.filter(x => x.tone === "r").length, ambers: items.filter(x => x.tone === "a").length };
 }
-/* FRIDAY: the week's hand changes, priced against undoing them. */
-function manualReport(days){
+const MAIL_COLS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function mailWeekRow(W, label, small, mode){
+  /* mode "live": the week as it stands; "check": coloured by the day check; "ahead": rostered, grey */
+  if (mode === "ahead") return { label, small, cells: MAIL_COLS.map((_, di) => ({ v: mailRostered(W, di), tone: "m" })) };
+  const wi = weekIssues(W);
+  return { label, small, cells: wi.days.map(d => ({ v: d.n, tone: mode === "check" ? d.tone : (d.n ? "g" : d.rostered ? "r" : "m") })) };
+}
+const MAIL_KEY = [["clear", "g"], ["amber", "a"], ["red", "r"], ["rostered, not written", "m"]];
+function mailPullTile(){
+  const pullAt = data.lastSync ? Date.parse(data.lastSync) : NaN;
+  const ok = !isNaN(pullAt) && (Date.now() - pullAt) < 26 * 3600000;
+  return { k: "Pulled from Allocate", v: isNaN(pullAt) ? "never" : mailHM(pullAt), s: isNaN(pullAt) ? "" : mailAgo(pullAt), tone: ok ? "g" : "r", ok };
+}
+function mailItemRows(items, max){
+  const rows = items.slice(0, max || 12);
+  if (items.length > rows.length) rows.push({ tone: "m", title: (items.length - rows.length) + " more on the board" });
+  return rows;
+}
+/* TUESDAY: the week just written, to Ali and Cat. */
+function rotaReport(W){
+  W = W || mondayOf(writableTo());
+  const wk = (data.weeks || {})[W];
+  const wi = weekIssues(W);
+  const unconf = unconfirmedList().filter(s => upcomingShifts(s.id).some(u => u.date >= W && u.date <= addDays(W, 6)));
+  const items = wi.items.slice();
+  if (unconf.length) items.push({ day: mailDay(W), tone: "a", title: unconf.length + " new starter" + (unconf.length === 1 ? "" : "s") + " not yet confirmed", detail: "Drafted supernumerary until someone confirms them. " + unconf.map(s => s.name).join(", "), key: W + "|unconf" });
+  const written = wi.written, pub = weekPublishMoment(W), pull = mailPullTile();
+  const writtenAt = wk && wk.writtenAt ? new Date(wk.writtenAt) : null;
+  const reds = items.filter(x => x.tone === "r").length, ambers = items.filter(x => x.tone === "a").length;
+  const daysToGo = Math.max(0, Math.round((pub - Date.now()) / 86400000));
+  const o = {
+    to: mailTo("tue"), brand: "Tuesday check",
+    subject: !written ? "POD BOARD PROBLEM: " + niceDate(W) + " not written at " + String(rule("writeHour")).padStart(2, "0") + ":00"
+           : "Pod Board: " + niceDate(W) + " written, " + (reds ? reds + " to fix before Friday" : ambers ? ambers + " to look at" : "nothing to fix"),
+    head: niceDate(W) + (written ? " written" : " not written"),
+    pill: !written ? ["needs doing", "r"] : reds ? [reds + " to fix", "r"] : ambers ? [ambers + " to look at", "a"] : ["nothing to fix", "g"],
+    sub: mailWhen(Date.now()),
+    tiles: [pull,
+      { k: "Written", v: writtenAt ? mailHM(writtenAt) : "not yet", s: writtenAt ? mailWhen(writtenAt).replace(/,.*$/, "") : "due " + String(rule("writeHour")).padStart(2, "0") + ":00", tone: written ? "g" : "r" },
+      pub.getTime() <= Date.now() ? { k: "Live to residents", v: "now", s: "since " + mailWhen(pub).replace(/,.*$/, ""), tone: reds ? "r" : "g" }
+                                   : { k: "Goes live", v: mailWhen(pub).replace(/^\w+ \d+ \w+, /, "Fri "), s: daysToGo ? daysToGo + " day" + (daysToGo === 1 ? "" : "s") + " to fix" : "today", tone: reds ? "a" : "g" }],
+    reqs: [[pull.ok, "Pull under 26 h"], [written, "Written by " + String(rule("writeHour")).padStart(2, "0") + ":00"],
+           [wi.daysDone === wi.days.filter(d => d.rostered).length || wi.daysDone === 7, "People in every day"],
+           [reds ? false : ambers ? null : true, reds ? "Day check: " + reds + " red" : ambers ? "Day check: " + ambers + " amber" : "Day check clear"]],
+    grid: { title: "People in pods, by day", cols: MAIL_COLS, keyChips: MAIL_KEY, rows: [].concat(
+      W !== visibleFrom() ? [mailWeekRow(visibleFrom(), niceDate(visibleFrom()), "live", "live")] : [], [
+      mailWeekRow(W, niceDate(W), written ? "written, live " + mailWhen(pub).replace(/,.*$/, "") : "not written", "check"),
+      mailWeekRow(addDays(W, 7), niceDate(addDays(W, 7)), "written " + mailWhen(new Date(addDays(W, Number(rule("writeDay"))) + "T12:00:00")).replace(/,.*$/, ""), "ahead")]) },
+    sections: [{ title: reds ? "Fix before Friday" : "To look at", rows: mailItemRows(items) }],
+    buttons: [{ text: "Open " + niceDate(W) }].concat(unconf.length ? [{ text: "Confirm new starters", secondary: true }] : [])
+  };
+  const text = [o.head + ". Goes live " + mailWhen(pub) + ".", "",
+    ...MAIL_COLS.map((d, i) => d + ": " + wi.days[i].n + " in pods of " + wi.days[i].rostered + " rostered"),
+    ...(items.length ? ["", "To check:", ...items.map(c => "  " + c.day + ": " + c.title + (c.detail ? " (" + c.detail + ")" : ""))] : []),
+    "", BOARD_URL].join("\n");
+  const r = mailOut(o, text);
+  r.week = W; r.issueKeys = items.map(x => x.key).filter(Boolean);
+  return r;
+}
+/* The week's hand changes, priced against undoing them (Friday). Numbers only; manualReport and
+   liveReport both draw from here. */
+function manualStats(days){
   days = days || 7;
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const auto = /^(sync|claude|allocate)/i;
@@ -5199,23 +5255,102 @@ function manualReport(days){
   const chips = who.map(([w, c], i) => (mailNamesOn() ? w : "Person " + String.fromCharCode(65 + i)) + " · " + c);
   const big = dayDelta.filter(x => x.d).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 4)
     .map(x => ({ day: mailDay(x.date), tone: x.d > 0 ? "g" : "r", title: (x.d > 0 ? "+" : "−") + Math.abs(Math.round(x.d)) + " points", detail: x.moves + " pod move" + (x.moves === 1 ? "" : "s") + " by hand" }));
-  const netR = Math.round(net);
+  return { days, man, ov, chips, better, worse, same, netR: Math.round(net), gained: top(plus), cost: top(minus), big };
+}
+/* The hand-change email on its own: kept for Preview and Settings; Friday now carries it inside liveReport. */
+function manualReport(days){
+  const m = manualStats(days);
   const o = {
     to: mailTo("fri"), brand: "the week by hand",
-    subject: "Pod Board: " + man.length + " hand change" + (man.length === 1 ? "" : "s") + " this week" + (ov.length ? " — net " + (netR >= 0 ? "+" : "−") + Math.abs(netR) + " points" : ""),
-    head: man.length + " change" + (man.length === 1 ? "" : "s") + " made by hand",
-    pill: ov.length ? ["net " + (netR >= 0 ? "+" : "−") + Math.abs(netR) + " points", netR > 0 ? "g" : netR < 0 ? "a" : "m"] : ["no pod moves", "m"],
-    sub: ov.length ? "Pod moves made by hand, against leaving the allocator's version — scored by the rules it uses." : "No pod moves by hand in the last " + days + " days.",
-    chipsTitle: man.length ? "Who" : null, chips,
-    bar: ov.length ? { title: "Did they help?", g: better, m: same, r: worse } : null,
-    two: ov.length ? [["Gained", top(plus)], ["Cost", top(minus)]] : null,
-    sections: [{ title: "Biggest days", rows: big }],
-    buttons: [{ text: "See every change in the log" }],
-    foot: "Only pod moves are scored. Night, phone and removal changes are in the log."
+    subject: "Pod Board: " + m.man.length + " hand change" + (m.man.length === 1 ? "" : "s") + " this week" + (m.ov.length ? ", net " + (m.netR >= 0 ? "+" : "−") + Math.abs(m.netR) + " points" : ""),
+    head: m.man.length + " change" + (m.man.length === 1 ? "" : "s") + " made by hand",
+    pill: m.ov.length ? ["net " + (m.netR >= 0 ? "+" : "−") + Math.abs(m.netR) + " points", m.netR > 0 ? "g" : m.netR < 0 ? "a" : "m"] : ["no pod moves", "m"],
+    sub: m.ov.length ? "Pod moves made by hand, against leaving the allocator's version, scored by the rules it uses." : "No pod moves by hand in the last " + m.days + " days.",
+    chipsTitle: m.man.length ? "Who" : null, chips: m.chips,
+    bar: m.ov.length ? { title: "Did they help?", g: m.better, m: m.same, r: m.worse } : null,
+    two: m.ov.length ? [["Gained", m.gained], ["Cost", m.cost]] : null,
+    sections: [{ title: "Biggest days", rows: m.big }],
+    buttons: [{ text: "See every change in the log" }]
   };
-  const text = [o.head + (ov.length ? " — " + better + " days better, " + worse + " worse, net " + netR + " points." : "."), "",
-    "Who: " + (chips.join(", ") || "nobody"), "", "Gained: " + (top(plus).join("; ") || "nothing"), "Cost: " + (top(minus).join("; ") || "nothing"), "",
-    ...man.slice().reverse().map(e => "  " + mailWhen(e.t) + " · " + (e.who || "?") + " · " + e.msg), "", BOARD_URL].join("\n");
+  const text = [o.head + (m.ov.length ? ": " + m.better + " days scored better, " + m.worse + " worse, net " + m.netR + " points." : "."), "",
+    "Who: " + (m.chips.join(", ") || "nobody"), "", "Gained: " + (m.gained.join("; ") || "nothing"), "Cost: " + (m.cost.join("; ") || "nothing"), "",
+    ...m.man.slice().reverse().map(e => "  " + mailWhen(e.t) + " · " + (e.who || "?") + " · " + e.msg), "", BOARD_URL].join("\n");
+  return mailOut(o, text);
+}
+/* ══ CONSULTANTS IN THE SAME EMAIL — 26.10.13 ═══════════════════════════════════════════════════
+   Ali: "for consultants can you combine into the same email for me please" and, of Mon 12 Oct,
+   "tom wright and SAF having to swap on the day as the consistency you suggested was rubbish ...
+   make sure stuff like that highlighted in the email". Cover (window.__mailCover, read by the sync
+   just before the emails are built) is checked for the days already given out:
+     · a same-side flip: somebody on C one day and D the next (or A then B) when swapping them
+       with the other person on that side that day would keep both in one pod — exactly the
+       Monday case, and what SAF fixed by hand on the day;
+     · a published day the rota changed afterwards (pubChanged) that nobody has told the team about.
+   Cover's allocator now repairs flips itself on days not yet given out (consultant_rota.py,
+   same-side swap repair), so anything listed here was already published. */
+function consultantFlags(cover, from, to){
+  const out = [];
+  if (!cover || !cover.days) return out;
+  const pods = d => (cover.days[d] && (cover.days[d].cur || cover.days[d].auto)) || null;
+  const podOn = (d, ini) => { const c = pods(d); if (!c || !ini) return null; for (const p of "ABCD") if (c[p] === ini) return p; return null; };
+  const breaks = (d, ini, pod) => [-1, 1].reduce((n, k) => { const q = podOn(addDays(d, k), ini); return n + (q && q !== pod ? 1 : 0); }, 0);
+  const flips = {};   // one suggestion per overnight change of pod: the swap that fixes it best
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const c = pods(d); if (!c) continue;
+    for (const ch of (cover.days[d].pubChanged || []))
+      out.push({ day: mailDay(d), tone: "r", title: "Consultants: Pod " + ch.pod + " is now " + (ch.to || "nobody") + ", was " + (ch.from || "nobody"), detail: "The rota changed after this day went out. Tell the team.", key: "c|" + d + "|" + ch.pod + "|" + ch.to });
+    if (c.wkend) continue;
+    for (const [p1, p2] of [["A", "B"], ["C", "D"]]) {
+      const x = c[p1], y = c[p2]; if (!x || !y) continue;
+      const gain = (breaks(d, x, p1) + breaks(d, y, p2)) - (breaks(d, x, p2) + breaks(d, y, p1));
+      if (gain <= 0) continue;
+      let who = x, from_ = p1, tgt = p2, other = [addDays(d, -1), addDays(d, 1)].find(n => podOn(n, x) === p2);
+      if (!other) { who = y; from_ = p2; tgt = p1; other = [addDays(d, -1), addDays(d, 1)].find(n => podOn(n, y) === p1); }
+      const id = who + "|" + [d, other || d].sort().join("|");
+      const item = { gain, day: mailDay(d), tone: "a", title: "Consultants: swap " + x + " and " + y + " (Pods " + p1 + " and " + p2 + ")",
+        detail: who + " is in Pod " + from_ + " on " + mailDay(d) + (other ? " and Pod " + tgt + " on " + mailDay(other) : "") + ". Swapping keeps " + who + " in Pod " + tgt + (other ? " both days." : "."),
+        key: "c|" + d + "|" + x + "|" + y };
+      if (!flips[id] || gain > flips[id].gain) flips[id] = item;
+    }
+  }
+  for (const f of Object.values(flips)) { delete f.gain; out.push(f); }
+  return out;
+}
+/* FRIDAY: the week now live, after the 07:00 publish, to Ali. */
+function liveReport(tueKeys){
+  const now = Date.now();
+  const L = visibleFrom(), W = (now >= weekPublishMoment(addDays(L, 7)).getTime()) ? addDays(L, 7) : L;
+  const wi = weekIssues(W), pull = mailPullTile(), m = manualStats(7);
+  const before = new Set(Array.isArray(tueKeys) ? tueKeys : []);
+  const nowKeys = new Set(wi.items.map(x => x.key));
+  const fixed = [...before].filter(k => !nowKeys.has(k) && /^\d{4}-\d\d-\d\d\|/.test(k));
+  const cons = consultantFlags(window.__mailCover || null, todayISO(), addDays(W, 6));
+  const open = wi.items.concat(cons);
+  const reds = open.filter(x => x.tone === "r").length, ambers = open.filter(x => x.tone === "a").length;
+  const fixedRows = fixed.slice(0, 6).map(k => { const [d, msg] = k.split("|"); return { day: mailDay(d), tone: "g", title: "Fixed: " + (msg === "blank" ? "nobody in pods" : msg === "unplaced" ? "rostered but not in a pod" : msg === "low" ? "low score" : msg) }; });
+  const o = {
+    to: mailTo("fri"), brand: "Live", brandTone: "g",
+    subject: "Pod Board: " + niceDate(W) + " is live" + (reds ? ", " + reds + " red" : ambers ? ", " + ambers + " to look at" : ", nothing to do"),
+    head: niceDate(W) + " is live",
+    pill: reds ? [reds + " red", "r"] : ambers ? [ambers + " to look at", "a"] : ["nothing to do", "g"],
+    sub: mailWhen(now),
+    tiles: [pull,
+      { k: "Fixed since Tuesday", v: before.size ? fixed.length + " of " + [...before].filter(k => !/^c\|/.test(k)).length : "none flagged", s: before.size ? "flags cleared" : "", tone: "g" },
+      { k: "Hand changes", v: String(m.man.length), s: m.ov.length ? "net " + (m.netR >= 0 ? "+" : "−") + Math.abs(m.netR) + " points" : "this week", tone: m.netR < 0 ? "a" : "g" }],
+    reqs: [[pull.ok, "Pull under 26 h"], [wi.daysDone > 0 && wi.days.every(d => d.n || !d.rostered), "Live week has people every day"],
+           [!wi.reds, wi.reds ? "Day check: " + wi.reds + " red" : "No reds"], [wi.ambers ? null : true, wi.ambers ? wi.ambers + " amber" : "No ambers"],
+           [cons.length ? null : true, cons.length ? "Consultants: " + cons.length + " to look at" : "Consultants clear"]],
+    grid: { title: "People in pods, by day", cols: MAIL_COLS, keyChips: MAIL_KEY, rows: [
+      mailWeekRow(W, niceDate(W), "live", "check"),
+      mailWeekRow(addDays(W, 7), niceDate(addDays(W, 7)), "written " + mailWhen(new Date(addDays(W, Number(rule("writeDay"))) + "T12:00:00")).replace(/,.*$/, ""), "ahead")] },
+    bar: m.ov.length ? { title: "Hand changes: did they help?", g: m.better, m: m.same, r: m.worse } : null,
+    sections: [{ title: "Still open", rows: mailItemRows(wi.items) }, { title: "Consultants", rows: mailItemRows(cons, 8) }, { title: "Since Tuesday", rows: fixedRows }],
+    buttons: [{ text: "Open the board" }]
+  };
+  const text = [o.head + ". " + (reds ? reds + " red, " : "") + ambers + " to look at.", "",
+    ...MAIL_COLS.map((d, i) => d + ": " + wi.days[i].n + " in pods"),
+    ...(open.length ? ["", "Open:", ...open.map(c => "  " + c.day + ": " + c.title + (c.detail ? " (" + c.detail + ")" : ""))] : []),
+    "", "Hand changes this week: " + m.man.length, "", BOARD_URL].join("\n");
   return mailOut(o, text);
 }
 /* NEW STARTERS nobody has confirmed — the day before the week is written, and 48 h before a first shift. */
@@ -5250,55 +5385,71 @@ function newcomerReport(){
   r.sig = lines.slice().sort().join("|"); r.dayBefore = dayBefore;
   return r;
 }
-/* STATUS: is the board alive? Sent when something is wrong, and on Monday morning. */
+/* STATUS: only when something is wrong. A live or next week with people rostered and nobody in
+   pods is red whether or not it carries a "written" mark: a stale board saving over the store can
+   take the mark away with the people (the 22 Sept and 13 Oct shape), and grey would hide it. */
 function statusReport(){
-  const now = Date.now(), bad = [], warn = [];
+  const now = Date.now(), bad = [];
+  const pull = mailPullTile();
   const pullAt = data.lastSync ? Date.parse(data.lastSync) : NaN;
   const pullH = isNaN(pullAt) ? null : (now - pullAt) / 3600000;
   const ukHour = new Date().getHours();
   if (pullH == null) bad.push({ tone: "r", title: "Allocate has never synced" });
   else if (pullH > 4 && ukHour >= 8 && ukHour <= 22) bad.push({ tone: "r", title: "No pull from Allocate for " + Math.round(pullH) + " hours", detail: "Changes in Optima since " + mailHM(pullAt) + " are not on the board." });
-  const live = visibleFrom(), nextW = addDays(live, 7), afterW = addDays(live, 14);
+  const live = visibleFrom(), nextW = addDays(live, 7);
+  const nextPub = weekPublishMoment(nextW).getTime();
+  const nextDue = weekIsWritable(nextW);
   const rows = [];
-  const weekRow = (k, label) => {
-    const wk = (data.weeks || {})[k], cells = [];
-    const written = !!(wk && wk.writtenAt) || (wk && wk.days && wk.days.some(d => mailPodCount(d) > 0));
-    for (let di = 0; di < 7; di++) {
-      const c = written ? mailPodCount(wk.days[di]) : mailRostered(k, di);
-      const rostered = mailRostered(k, di);
-      cells.push({ v: c, tone: written ? (c === 0 && rostered > 0 ? "r" : "g") : "m" });
-      if (written && c === 0 && rostered > 0 && k <= nextW) bad.push({ day: mailDay(addDays(k, di)), tone: "r", title: "Nobody in pods", detail: rostered + " rostered on days" });
-    }
-    rows.push({ label: niceDate(k), small: label(written), cells });
-    return written;
+  const scan = (k, label, mustHave, isLive) => {
+    const wi = weekIssues(k);
+    rows.push({ label: niceDate(k), small: label, cells: wi.days.map(d => ({ v: wi.written || mustHave ? d.n : d.rostered, tone: (wi.written || mustHave) ? (d.n ? "g" : d.rostered ? "r" : "m") : "m" })) });
+    if (!mustHave && !wi.written) return;
+    for (const d of wi.days) if (!d.n && d.rostered && d.date >= todayISO())
+      bad.push({ day: mailDay(d.date), tone: "r", title: (isLive ? "Live week: nobody in pods" : "Nobody in pods"), detail: d.rostered + " rostered on days" });
   };
-  weekRow(live, () => "live");
-  const nextPub = weekPublishMoment(nextW);
-  const nextWritten = weekRow(nextW, w => (w ? "allocated · " : "not written · ") + (now < nextPub ? "live " + mailWhen(nextPub).replace(/,.*$/, "") : "live"));
-  if (!nextWritten && weekIsWritable(nextW)) bad.push({ tone: "r", title: "Week of " + niceDate(nextW) + " should be written and isn't" });
-  weekRow(afterW, w => w ? "allocated" : "written " + mailWhen(new Date(addDays(nextW, Number(rule("writeDay"))) + "T" + String(rule("writeHour")).padStart(2, "0") + ":00:00")).replace(/,.*$/, ""));
-  const problems = bad.concat(warn);
+  scan(live, "live", true, true);
+  scan(nextW, now >= nextPub ? "live" : nextDue ? "written, live " + mailWhen(nextPub).replace(/,.*$/, "") : "not written yet", nextDue, now >= nextPub);
+  const cons = consultantFlags(window.__mailCover || null, todayISO(), addDays(todayISO(), 2));
+  const problems = bad.concat(cons.filter(c => c.tone === "r"));
   const ok = !problems.length;
+  const first = problems[0] || {};
+  const liveBlank = problems.some(p => /^Live week/.test(p.title));
   const o = {
-    to: mailTo("fri"), brand: "status",
-    subject: ok ? "Pod Board: all good — " + niceDate(nextW) + " " + (nextWritten ? "allocated" : "written " + mailWhen(new Date(addDays(live, Number(rule("writeDay"))) + "T12:00:00")).replace(/,.*$/, ""))
-                : "Pod Board: ⚠ " + problems[0].title,
-    head: ok ? "All good" : problems.length === 1 ? problems[0].title : problems.length + " things need a look",
-    pill: ok ? ["nothing to do", "g"] : ["needs a look", "r"],
+    to: mailTo("fri"), brand: "Problem", brandTone: "r",
+    subject: "POD BOARD PROBLEM: " + (liveBlank ? "the live week has days with nobody in pods" : (first.day ? first.day + ", " : "") + (first.title || "check the board")),
+    head: liveBlank ? "Live week has blank days" : problems.length === 1 ? first.title : problems.length + " things need a look",
+    pill: liveBlank ? ["residents see it now", "r"] : ["needs a look", "r"],
     sub: mailWhen(now),
-    tiles: [
-      { k: "Pulled from Allocate", v: isNaN(pullAt) ? "never" : mailHM(pullAt), s: isNaN(pullAt) ? "" : mailAgo(pullAt), tone: pullH != null && pullH <= 4 ? "g" : "r" },
-      { k: "Board last saved", v: data.savedAt ? mailHM(data.savedAt) : "—", s: data.savedAt ? mailAgo(data.savedAt) : "", tone: "g" },
-      { k: "Live to residents", v: "w/c " + niceDate(live), s: niceDate(nextW) + " from " + mailWhen(nextPub).replace(/^\w+ /, ""), tone: "g" }],
-    grid: { title: "People in pods, by day", cols: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], rows, key: "Green: allocated. Grey: rostered, not written yet. Red: rostered but nobody in pods." },
+    tiles: [pull, { k: "Board last saved", v: data.savedAt ? mailHM(data.savedAt) : "never", s: (data.savedBy || "name not set"), tone: "m" },
+      { k: "Live to residents", v: niceDate(live), s: niceDate(nextW) + " from " + mailWhen(nextPub).replace(/,.*$/, ""), tone: liveBlank ? "r" : "g" }],
+    reqs: [[pull.ok, "Pull under 26 h"], [!problems.some(p => /Live week/.test(p.title)), "Live week has people"], [!problems.some(p => p.title === "Nobody in pods"), "Next week has people"]],
+    grid: { title: "People in pods, by day", cols: MAIL_COLS, keyChips: [["in pods", "g"], ["blank", "r"], ["not written yet", "m"]], rows },
     sections: [{ title: "Needs a look", rows: problems }],
-    buttons: ok ? [] : [{ text: "Open the board" }],
-    foot: "Checked: the pull ran, written weeks have people in pods, the live week is not blank."
+    buttons: [{ text: "Open the board" }]
   };
-  const r = mailOut(o, o.head + " — " + o.sub + "\n\n" + rows.map(x => x.label + " (" + x.small + "): " + x.cells.map(c => c.v).join(" ")).join("\n")
-    + (problems.length ? "\n\n" + problems.map(p => "  ! " + (p.day ? p.day + " " : "") + p.title + (p.detail ? " — " + p.detail : "")).join("\n") : "") + "\n\n" + BOARD_URL);
-  r.ok = ok; r.sig = problems.map(p => (p.day || "") + p.title).sort().join("|");
+  const r = mailOut(o, o.head + ": " + o.sub + "\n\n" + rows.map(x => x.label + " (" + x.small + "): " + x.cells.map(c => c.v).join(" ")).join("\n")
+    + (problems.length ? "\n\n" + problems.map(p => "  ! " + (p.day ? p.day + " " : "") + p.title + (p.detail ? ": " + p.detail : "")).join("\n") : "") + "\n\n" + BOARD_URL);
+  r.ok = ok; r.sig = problems.map(p => (p.day || "") + p.title).sort().join("|"); r.head = o.head;
   return r;
+}
+/* RESOLVED: once, the first check after a problem clears. */
+function resolvedReport(prev){
+  prev = prev || {};
+  const since = Date.parse(prev.first || prev.at || 0) || null;
+  const mins = since ? Math.round((Date.now() - since) / 60000) : null;
+  const dur = mins == null ? "" : mins < 60 ? mins + " min" : Math.floor(mins / 60) + " h " + (mins % 60) + " min";
+  const live = visibleFrom();
+  const o = {
+    to: mailTo("fri"), brand: "Resolved", brandTone: "g",
+    subject: "Pod Board resolved: " + (prev.head || "back to normal"),
+    head: "Back to normal", pill: dur ? ["lasted " + dur, "g"] : ["resolved", "g"],
+    sub: mailWhen(Date.now()),
+    tiles: [{ k: "Was", v: prev.head || "a problem", s: since ? "from " + mailWhen(since) : "", tone: "m" },
+      { k: "Board last saved", v: data.savedAt ? mailHM(data.savedAt) : "never", s: data.savedBy || "name not set", tone: "g" },
+      mailPullTile()],
+    grid: { cols: MAIL_COLS, rows: [mailWeekRow(live, niceDate(live), "live", "live")] }
+  };
+  return mailOut(o, "Back to normal. Was: " + (prev.head || "a problem") + (dur ? ", for " + dur : "") + ".\n\n" + BOARD_URL);
 }
 function isUnconfirmed(s){
   if (!s || s.active === false || s.placeholder || s.grade === "CON" || /zlocum/i.test(s.name || "")) return false;
