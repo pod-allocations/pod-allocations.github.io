@@ -3700,7 +3700,11 @@ function renderStaff(){
       style: "border:0;background:transparent;cursor:pointer;color:var(--muted);padding:0 .35rem 0 0;font-size:.8rem" }, "▸");
     tr.append(el("td", { class: "namecell", title: s.name }, twist, s.name,
       (s.profile && (s.profile.about || s.profile.photo)) ? el("span", { class: "pill", style: "margin-left:.3rem", title: "Has a profile" }, "profile") : "",
-      !active ? el("span",{class:"pill expired"}," expired") : ""));
+      /* 26.10.19: a December starter is "historic" by the four-week rule only because their first
+         shift is beyond it, so they read "expired" on the Future tab (Ali: "Benjamin Bearpark
+         expired what does expired mean?"). Somebody who has not arrived yet says when they do. */
+      isFutureStarter(s, today) ? el("span",{class:"pill", style:"margin-left:.3rem", title:"First shift on the rota"}, "starts " + niceDate(s.start && s.start > today ? s.start : (firstRosteredDay(s.id) || today)))
+        : !active ? el("span",{class:"pill expired"}," left") : ""));
     tr.append(el("td", {}, s.grade ? el("span", { class: "pill grade" }, s.grade) : el("span", { class: "pill grade-empty" }, "no grade")));
     for (const [k, word, why] of SK_COLS) {
       /* No tooltip here on purpose. On or off is the whole message, and eleven of them per row
