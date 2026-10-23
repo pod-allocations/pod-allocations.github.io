@@ -145,7 +145,7 @@
   };
 
   /* ── A PERSON KEPT TO CERTAIN PODS FOR A WHILE — 26.10.23 ───────────────────────────────
-     Ali: "a request that cath latham is not allocated to pod E for 3 months ... only a-c ... start
+     Ali: "a request that cath latham is not allocated to pod E for 3 months ... start
      that from the next rota write for 3 months and then automatically stop that after 3 months".
      One entry per person: the pods they may be in, and the dates it applies (inclusive). Outside
      those dates the entry does nothing, so it stops on its own and needs no tidying. A staff record
@@ -154,8 +154,8 @@
      every rule), repaired after the phone and long-day passes, kept out of Pod E at night, never
      chosen by the day repair, and flagged red by the board's day check if a hand puts them there. */
   var POD_LIMITS = {
-    CathrynLatham2: { pods: "ABC", from: "2026-11-02", until: "2027-02-01",
-      why: "Requested 23 Oct 2026: not Pod E, Pods A to C only, for three months" }
+    CathrynLatham2: { pods: "ABCD", from: "2026-11-02", until: "2027-02-01",
+      why: "Requested 23 Oct 2026: not Pod E, for three months (Pod D is fine, Ali 23 Oct)" }
   };
   function podLimitOf(s) {
     if (!s) return null;
