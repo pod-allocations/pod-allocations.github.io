@@ -1699,7 +1699,7 @@ body.sideways .chip{padding:.2rem .4rem .2rem .3rem !important;font-size:.72rem 
 
 <script src="core.js?v=20260810-04"></script>
 <script src="strength.js?v=20260815-09"></script>
-<script src="planner.js?v=20261008-02"></script>
+<script src="planner.js?v=20261023-01"></script>
 <script src="podcost.js?v=20261006-01"></script>
 <script src="k.js"></script>
 <script>/*ROTA_DATA_START*/window.ROTA_DATA = null;/*ROTA_DATA_END*/</script>
@@ -3703,6 +3703,9 @@ function renderStaff(){
       /* 26.10.19: a December starter is "historic" by the four-week rule only because their first
          shift is beyond it, so they read "expired" on the Future tab (Ali: "Benjamin Bearpark
          expired what does expired mean?"). Somebody who has not arrived yet says when they do. */
+      (typeof Planner !== "undefined" && Planner && Planner.podLimitOf && Planner.podLimitOf(s) && !(Planner.podLimitOf(s).until < today))
+        ? el("span", { class: "pill", style: "margin-left:.3rem", title: Planner.podLimitOf(s).why || "" },
+            "Pods " + Planner.podLimitOf(s).pods.split("").join(", ") + " only, " + niceDate(Planner.podLimitOf(s).from) + " to " + niceDate(Planner.podLimitOf(s).until)) : "",
       isFutureStarter(s, today) ? el("span",{class:"pill", style:"margin-left:.3rem", title:"First shift on the rota"}, "starts " + niceDate(s.start && s.start > today ? s.start : (firstRosteredDay(s.id) || today)))
         : !active ? el("span",{class:"pill expired"}," left") : ""));
     tr.append(el("td", {}, s.grade ? el("span", { class: "pill grade" }, s.grade) : el("span", { class: "pill grade-empty" }, "no grade")));
@@ -5821,7 +5824,7 @@ function reholdNight(wk, di, wkKey, opts){
   try {
     h = Planner.holdNight(team, pick, last, Planner.staffMap(data.staff),
       { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK, teamChanged: !!opts.changed,
-        tomorrow: nightTeamOf(nightAt(wk, wkKey, di + 1)) });
+        tomorrow: nightTeamOf(nightAt(wk, wkKey, di + 1)), nightIso: addDays(wkKey, di) });
   } catch (e) { return null; }
   nt.phone = pick || null;
   nt.AB = h.AB.slice(); nt.CDE = h.CDE.slice(); nt.E = h.E.slice(); nt.F = (h.F || []).slice();
@@ -7799,6 +7802,16 @@ function checkDay(day, dateISO, di, wk){
   if (!hasContent) return [{ hard: false, info: true, empty: true, msg: "Nothing allocated yet." }];
   const dayIds = dayAllAssigned(day);
   const { perPod } = dayCountables(day);
+
+  /* KEPT OUT OF A POD FOR A WHILE — 26.10.23 (Planner POD_LIMITS / staff podLimit). The planner and
+     the repairs never put them there; this catches a hand that does, and puts it in the Tuesday email. */
+  if (typeof Planner !== "undefined" && Planner && Planner.podAllowed) {
+    const lim = id => { const s = staffById(id); const L = s && Planner.podLimitOf(s); return L ? "Pods " + L.pods.split("").join(", ") + " only until " + niceDate(L.until) : ""; };
+    for (const p of PODS) for (const a of (day.pods[p].assign || []))
+      if (a && a.id && !Planner.podAllowed(staffById(a.id), dateISO, p)) H(name(a.id) + " is on Pod " + p + ": " + lim(a.id) + ".");
+    for (const id of (day.night.E || []).filter(Boolean))
+      if (!Planner.podAllowed(staffById(id), dateISO, "E")) H("Night: " + name(id) + " is covering Pod E: " + lim(id) + ".");
+  }
 
   if (!day.phone) H("No day referral-phone holder allocated.");
   else {
