@@ -139,9 +139,36 @@
     nightBalanceSides: true,  // keep A&B and C-D-E within one of each other
     restarts: 16,
     maxEvals: 6000,
+    podLimitBreach: 60000,    // somebody in a pod they are kept out of (POD_LIMITS): above every rule
     podMin: 2,                // A-D
     podEMin: 1
   };
+
+  /* ── A PERSON KEPT TO CERTAIN PODS FOR A WHILE — 26.10.23 ───────────────────────────────
+     Ali: "a request that cath latham is not allocated to pod E for 3 months ... only a-c ... start
+     that from the next rota write for 3 months and then automatically stop that after 3 months".
+     One entry per person: the pods they may be in, and the dates it applies (inclusive). Outside
+     those dates the entry does nothing, so it stops on its own and needs no tidying. A staff record
+     can carry the same shape as `podLimit`, which wins over this list.
+     Enforced everywhere a pod is chosen: priced out of the week planner (podLimitBreach, above
+     every rule), repaired after the phone and long-day passes, kept out of Pod E at night, never
+     chosen by the day repair, and flagged red by the board's day check if a hand puts them there. */
+  var POD_LIMITS = {
+    CathrynLatham2: { pods: "ABC", from: "2026-11-02", until: "2027-02-01",
+      why: "Requested 23 Oct 2026: not Pod E, Pods A to C only, for three months" }
+  };
+  function podLimitOf(s) {
+    if (!s) return null;
+    return s.podLimit || POD_LIMITS[s.id] || null;
+  }
+  /* Night seats are "AB", "CDE", "E" and "F" (floating): only Pod E is a pod a limit can close. */
+  function podAllowed(s, iso, pod) {
+    var L = podLimitOf(s);
+    if (!L || !iso || !pod) return true;
+    if (L.from && iso < L.from) return true;
+    if (L.until && iso > L.until) return true;
+    return String(L.pods || "").indexOf(pod) >= 0;
+  }
 
   // ── small helpers ───────────────────────────────────────────────────────────────────────
   function addDays(iso, n) {
@@ -343,6 +370,7 @@
           if (di === 5) satPod[id] = p;
           if (di === 6) sunPod[id] = p;
 
+          if (cfg.weekKey && !podAllowed(s, addDays(cfg.weekKey, di), p)) cost += cfg.podLimitBreach;
           if (p === "E") {
             cost += (hist.eDays[id] || 0) * cfg.eUnfair;
             if (s.airway) cost += cfg.airwayOnE;
@@ -653,7 +681,7 @@
       else if (s === "AB") AB.push(id);
       else if (s === "CDE") CDE.push(id);
       // whoever covered Pod E keeps it — six or more on, when it was not the holder
-      else if (s === "E" && mode === "six" && id !== last.phone && !E.length && seat !== "E") E.push(id);
+      else if (s === "E" && mode === "six" && id !== last.phone && !E.length && seat !== "E" && podAllowed(S(id), cfg.nightIso, "E")) E.push(id);
       else { spare.push(id); isNew[id] = true; }
     }
     /* Who stands alone on Pod E when it is not the phone holder: not airway-trained if that can be
@@ -661,7 +689,7 @@
        the phone and never have to leave E), then the most senior — they are on their own. */
     var canPhone = function (y) { return !!(S(y).phone || S(y).phoneHolder); };
     var eChoice = function (cands) {
-      cands = cands.filter(function (y) { return y !== pick; });
+      cands = cands.filter(function (y) { return y !== pick && podAllowed(S(y), cfg.nightIso, "E"); });
       cands.sort(function (a, b) { return (isAir(a) ? 1 : 0) - (isAir(b) ? 1 : 0) || (canPhone(a) ? 1 : 0) - (canPhone(b) ? 1 : 0) ||
         rank(a) - rank(b) || byName(a, b); });
       return cands[0] || null;
@@ -796,7 +824,7 @@
 
       var rT = roster[addDays(weekKey, di + 1)], tomorrow = null;
       if (rT) { tomorrow = []; for (var tid in rT) if (rT[tid].kind === "night" && !S(tid).supernum) tomorrow.push(tid); }
-      var sides = holdNight(team, pick, last, staff, Object.assign({}, cfg, { tomorrow: tomorrow }));
+      var sides = holdNight(team, pick, last, staff, Object.assign({}, cfg, { tomorrow: tomorrow, nightIso: iso }));
       var night = { phone: pick, AB: sides.AB, CDE: sides.CDE, E: sides.E, F: sides.F, super: sup };
       out.push(night);
       last = cleanNight(night); lastPhone2 = lastPhone; lastPhone = pick;
@@ -1156,8 +1184,52 @@
   }
 
   // ── the entry point: plan one week ──────────────────────────────────────────────────────
+  /* The phone and long-day passes above trade people between pods after the search has finished,
+     and none of them knows about POD_LIMITS. So: anybody left in a pod they are kept out of is
+     moved, or swapped with somebody on the same shift, to whichever allowed pod costs the week
+     least. The phone holder is never the one swapped in, so the phone stays where it was put. */
+  function honourPodLimits(plan, on, home, staff, hist, isNew, cfg, phone) {
+    if (!cfg.weekKey) return plan;
+    var S = function (id) { return staff[id] || {}; };
+    for (var di = 0; di < 7; di++) {
+      var byPod = plan[di], iso = addDays(cfg.weekKey, di);
+      for (var pi = 0; pi < PODS.length; pi++) {
+        var p = PODS[pi], list = (byPod[p] || []).slice();
+        for (var li = 0; li < list.length; li++) {
+          var id = list[li];
+          if (podAllowed(S(id), iso, p)) continue;
+          var best = null, bestCost = Infinity;
+          for (var qi = 0; qi < PODS.length; qi++) {
+            var q = PODS[qi];
+            if (q === p || !podAllowed(S(id), iso, q)) continue;
+            // a straight move
+            byPod[p].splice(byPod[p].indexOf(id), 1); byPod[q].push(id);
+            var c0 = weekCost(plan, on, home, staff, hist, isNew, cfg);
+            if (c0 < bestCost) { bestCost = c0; best = { to: q, with: null }; }
+            byPod[q].pop(); byPod[p].push(id);
+            // a swap with somebody on the same shift who may stand in p
+            var others = (byPod[q] || []).slice();
+            for (var oi = 0; oi < others.length; oi++) {
+              var y = others[oi];
+              if (on[di][y] !== on[di][id] || (phone && phone[di] === y) || !podAllowed(S(y), iso, p)) continue;
+              swapIn(byPod, p, id, q, y);
+              var c1 = weekCost(plan, on, home, staff, hist, isNew, cfg);
+              if (c1 < bestCost) { bestCost = c1; best = { to: q, with: y }; }
+              swapIn(byPod, p, y, q, id);
+            }
+          }
+          if (!best) continue;
+          if (best.with) swapIn(byPod, p, id, best.to, best.with);
+          else { byPod[p].splice(byPod[p].indexOf(id), 1); byPod[best.to].push(id); }
+        }
+      }
+    }
+    return plan;
+  }
+
   function planWeek(input) {
     var cfg = Object.assign({}, CFG, input.cfg || {});
+    cfg.weekKey = input.weekKey;
     var staff = input.staff || {};
     var hist = input.history || blankHistory();
     var d = dutiesFor(input.weekKey, input.roster || {}, staff, cfg);
@@ -1182,6 +1254,7 @@
        it costs nothing against the week as it stood BEFORE the phone pass spent anything. */
     plan = spareLongDayToPhone(plan, d.on, home, staff, hist, d.isNew, cfg, phone, before);
     plan = spreadLongDays(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
+    plan = honourPodLimits(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
     var nights = planNights(input.weekKey, input.roster || {}, staff, hist, cfg, input.prevNight, input.prevPhone2);
     var supers = placeSupers(plan, d.supers, staff, hist);
 
@@ -1245,7 +1318,7 @@
   function repairDay(input) {
     var cfg = Object.assign({}, CFG, input.cfg || {});
     var staff = input.staff || {}, S = function (id) { return staff[id] || {}; };
-    var di = input.dayIndex, day = input.day;
+    var di = input.dayIndex, day = input.day, iso = input.date || null;
     var on = input.on || {};                    // id -> "LD" | "SD", counted staff only
     var home = input.home || {};
     var podsThisWeek = input.podsThisWeek || {}; // id -> { A:true, ... } from the OTHER six days
@@ -1268,7 +1341,8 @@
     for (var i = 0; i < ids.length; i++) {
       var id = ids[i];
       if (placed[id]) continue;
-      var want = PODS.filter(function (q) { return byPod[q].length < cap[q]; });
+      var want = PODS.filter(function (q) { return byPod[q].length < cap[q] && podAllowed(S(id), iso, q); });
+      if (!want.length) want = PODS.filter(function (q) { return podAllowed(S(id), iso, q); });
       if (!want.length) want = PODS.slice();
       want.sort(function (a, b) {
         return need(b, id) - need(a, id) ||
@@ -1337,6 +1411,7 @@
       return out;
     }
     function legal(id, to) {
+      if (!podAllowed(S(id), iso, to)) return false;
       var seen = podsThisWeek[id] || {}, from = placed[id];
       var count = 0;
       for (var q = 0; q < PODS.length; q++) if (seen[PODS[q]] || byPod[PODS[q]].indexOf(id) >= 0) count++;
@@ -1351,6 +1426,19 @@
       byPod[to].push(id);
       placed[id] = to;
       moves.push({ id: id, from: from, to: to, why: "repair" });
+    }
+
+    // 2b · anybody standing in a pod they are kept out of (POD_LIMITS) moves first, whatever the
+    //      move cap says: it is a request about the person, not a preference about the day.
+    for (var pl = 0; pl < PODS.length; pl++) {
+      var pp = PODS[pl], stay = byPod[pp].slice();
+      for (var sl = 0; sl < stay.length; sl++) {
+        var sid = stay[sl];
+        if (podAllowed(S(sid), iso, pp)) continue;
+        var to2 = PODS.filter(function (q) { return podAllowed(S(sid), iso, q); })
+          .sort(function (a, b) { return byPod[a].length - byPod[b].length; })[0];
+        if (to2) apply(sid, to2);
+      }
     }
 
     var guard = 0;
@@ -1440,7 +1528,8 @@
       m[s.id] = {
         id: s.id, name: s.name, grade: s.grade, start: s.start,
         airway: !!s.airway, transfer: !!s.transfer, neuro: !!s.neuro,
-        phone: !!(s.phoneHolder || s.phone), supernum: !!s.supernum
+        phone: !!(s.phoneHolder || s.phone), supernum: !!s.supernum,
+        podLimit: podLimitOf(s)
       };
     }
     return m;
@@ -1560,7 +1649,7 @@
     var day = { pods: {} };
     for (var pk = 0; pk < PODS.length; pk++)
       day.pods[PODS[pk]] = (((wk.days[di].pods[PODS[pk]] || {}).assign) || []).filter(function (a) { return a.id; });
-    var fixed = repairDay({ dayIndex: di, day: day, on: on, staff: map,
+    var fixed = repairDay({ dayIndex: di, date: iso, day: day, on: on, staff: map,
       home: wk.plannerHome || (opts.history || {}).home || {},
       podsThisWeek: podsThisWeek, movesThisWeek: movesThisWeek, cfg: cfg });
     pourInto(wk.days[di], fixed.pods);
@@ -1584,5 +1673,8 @@
   root.planNights = planNights;
   root.weekCost = weekCost;
   root.addDays = addDays;
+  root.podAllowed = podAllowed;
+  root.podLimitOf = podLimitOf;
+  root.POD_LIMITS = POD_LIMITS;
 })(typeof module !== "undefined" && module.exports ? module.exports
    : (typeof window !== "undefined" ? (window.Planner = {}) : this));
