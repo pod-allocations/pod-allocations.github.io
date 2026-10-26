@@ -2654,7 +2654,7 @@ async function syncLatest(){
   if (!data || EDIT_MODE || dirty) return false;
   const cur = await readMaster();
   if (cur && cur.savedAt && cur.savedAt !== loadedSavedAt) {
-    loadData(cur);
+    loadData(cur, { keepView: true });
     toast("Rota updated to the latest");
     return true;
   }
@@ -3108,7 +3108,29 @@ async function newFile(){
   $("#welcome").style.display = "none";
   toast("New rota — add your staff on the Staff list tab, then Save");
 }
-function loadData(d){
+/* THE DAY ON SCREEN SURVIVES A REFRESH — 26.10.26. A colleague: viewing a day ahead on a phone,
+   "you scroll down and it gets itself in a tiffy and then reloads and goes back to today". Two
+   causes, both fixed here:
+     · the background check (syncLatest, every three minutes and whenever the tab comes back)
+       loads the newer copy through loadData, which always set the week back to this one, so the
+       redraw put mobileDay back on today. A refresh now keeps the week and day being looked at.
+     · a real reload (iOS pull to refresh, the app being woken) started from today. The week and
+       day are kept for this tab in sessionStorage for 30 minutes and put back on load. */
+const VIEW_KEY = "podView";
+function rememberView(){
+  try { sessionStorage.setItem(VIEW_KEY, JSON.stringify({ w: currentWeekKey, d: mobileDay, at: Date.now() })); } catch(e){}
+}
+function recalledView(){
+  try {
+    const v = JSON.parse(sessionStorage.getItem(VIEW_KEY) || "null");
+    if (!v || !v.w || Date.now() - (v.at || 0) > 30 * 60000) return null;
+    if (v.w < mondayOf(todayISO()) || !(data.weeks || {})[v.w]) return null;
+    return v;
+  } catch(e){ return null; }
+}
+function loadData(d, opts){
+  opts = opts || {};
+  const keepWeek = opts.keepView ? currentWeekKey : null, keepDay = mobileDay;
   if (!d || typeof d !== "object" || !Array.isArray(d.staff)) { uiAlert("That file doesn't look like a rota file. Look for " + DATA_FILE_NAME + " in the shared folder.", { title: "Wrong file" }); return; }
   data = d;
   data.weeks = data.weeks || {}; data.log = data.log || []; data.ignoredNames = data.ignoredNames || [];
@@ -3162,6 +3184,8 @@ function loadData(d){
   undoStack = []; redoStack = []; lastState = JSON.stringify(data);
   pruneOldWeeks();
   currentWeekKey = mondayOf(todayISO());
+  const back = (keepWeek && (data.weeks || {})[keepWeek]) ? { w: keepWeek, d: keepDay } : (opts.keepView ? null : recalledView());
+  if (back) { currentWeekKey = back.w; mobileDay = Math.min(6, Math.max(0, back.d | 0)); lastWeekShown = back.w; }
   $("#welcome").style.display = "none";
   renderAll();
   updateSaveState("saved");
@@ -4392,6 +4416,7 @@ function renderWeekInner(){
     mobileDay = di >= 0 ? di : 0;
   }
   lastWeekShown = currentWeekKey;
+  rememberView();
   const dayIssues = [];
   wk.days.forEach((day, di) => {
     const dateISO = addDays(currentWeekKey, di);
