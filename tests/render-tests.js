@@ -1869,6 +1869,29 @@ const SEED = `(function(){
     ok("a live day with people rostered and nobody in pods is a problem even without a written mark", r.status.ok === false && /POD BOARD PROBLEM: /.test(r.status.subject), JSON.stringify(r.status));
     ok("the resolved email says so in its subject", /^Pod Board resolved: /.test(r.res), r.res);
   }
+
+  /* ---- 26.10.26: the day on screen survives the background refresh and a reload ------------- */
+  console.log("\n-- view kept across a refresh --");
+  {
+    const r = JSON.parse(w.eval(`(function(){
+      const next = addDays(mondayOf(todayISO()), 7);
+      getWeek(next);
+      currentWeekKey = next; renderWeek(); mobileDay = 3; renderWeek();
+      loadData(JSON.parse(JSON.stringify(data)), { keepView: true });
+      const a = { w: currentWeekKey, d: mobileDay, next };
+      mobileDay = 4; renderWeek();
+      lastWeekShown = null;
+      loadData(JSON.parse(JSON.stringify(data)));
+      const b = { w: currentWeekKey, d: mobileDay };
+      try { sessionStorage.removeItem(VIEW_KEY); } catch(e){}
+      loadData(JSON.parse(JSON.stringify(data)));
+      const c = { w: currentWeekKey };
+      return JSON.stringify({ a, b, c, today: mondayOf(todayISO()) });
+    })()`));
+    ok("the background refresh keeps the week and day being looked at", r.a.w === r.a.next && r.a.d === 3, JSON.stringify(r.a));
+    ok("a reload in the same tab comes back to the same week and day", r.b.w === r.a.next && r.b.d === 4, JSON.stringify(r.b));
+    ok("with nothing remembered, the board opens on this week", r.c.w === r.today, JSON.stringify(r.c));
+  }
   console.log("\n=== " + pass + " passed, " + fail + " failed ===");
   if (failures.length) { console.log("Failures:"); failures.forEach(f => console.log(" - " + f)); }
   process.exit(fail ? 1 : 0);
