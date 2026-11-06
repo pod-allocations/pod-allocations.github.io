@@ -139,6 +139,13 @@
     nightBalanceSides: true,  // keep A&B and C-D-E within one of each other
     restarts: 16,
     maxEvals: 6000,
+    /* THE WEEKEND WARD ROUND -- 26.11.06. What the pass below may cost the week to put a senior
+       resident on one of the 24-hour consultant's two pods: anything up to, never including, the
+       cheapest rule (eLongDayEarly, 3000), so it can spend any preference and never break airway
+       cover, a long day in every pod, the phone off Pod E or a third pod. */
+    wardRoundBudget: 2900,
+    wardRoundSamePerson: 300,   // a lead who led yesterday is worth this much to keep for Sunday
+    wardRoundFallback: ["SCF", "ICM"],  // when nobody ticked for it is free, any of these grades
     podLimitBreach: 60000,    // somebody in a pod they are kept out of (POD_LIMITS): above every rule
     podMin: 2,                // A-D
     podEMin: 1
@@ -1188,6 +1195,84 @@
      and none of them knows about POD_LIMITS. So: anybody left in a pod they are kept out of is
      moved, or swapped with somebody on the same shift, to whichever allowed pod costs the week
      least. The phone holder is never the one swapped in, so the phone stays where it was put. */
+  /* ── THE WEEKEND WARD ROUND — 26.11.06 ───────────────────────────────────────────────────
+     Ali: "for weekend on calls theres a request that the most senior trainee who is not holding
+     the phone on at the weekend to take one of the pods of the 24 hr consultant so they can
+     essentially lead the ward round". The 24-hour consultant covers a pair, A&B or C&D, and
+     rounds on both; one of the two is led by a senior resident under their supervision.
+
+     WHO: anybody with the "Ward round under supervision" skill (staff.wardRound), set by hand on
+     the staff list. If none of them is on and free of the day phone, any SCF or ICM trainee
+     (cfg.wardRoundFallback; Ali: "if one of those marked not availabel just use any of the oter
+     SCFs / ICM"). If neither, nothing changes.
+
+     WHEN: weekends and bank holidays, which the board knows from Cover and passes as cfg.wrPods
+     ({ dayIndex: ["C","D"] }). The planner knows nothing about consultants itself, and no pair
+     means no rule, so the tests and any caller that does not pass it are untouched.
+
+     HOW HARD: a strong preference (Ali). Already met, nothing moves. Otherwise the cheapest move
+     or same-shift swap that brings a lead in is taken, if it costs the week less than
+     wardRoundBudget, which sits below every rule: it never buys a pod without airway, a pod without
+     a long day, the phone on Pod E or a third pod. The phone holder is never moved for it. A lead
+     who led the day before is preferred, so Saturday and Sunday usually have the same person. */
+  function wardRoundPass(plan, on, home, staff, hist, isNew, cfg, phone) {
+    var wr = cfg.wrPods || {};
+    var S = function (id) { return staff[id] || {}; };
+    var fb = cfg.wardRoundFallback || [];
+    var prevLead = null, prevDi = -2;
+    for (var di = 0; di < 7; di++) {
+      var pair = wr[di], m = on[di], byPod = plan[di];
+      if (!pair || pair.length !== 2 || !m || !Object.keys(m).length) continue;
+      var held = phone && phone[di];
+      var podOf = function (id) {
+        for (var pi = 0; pi < PODS.length; pi++) if ((byPod[PODS[pi]] || []).indexOf(id) >= 0) return PODS[pi];
+        return null;
+      };
+      var placed = Object.keys(m).filter(function (id) { return id !== held && podOf(id); });
+      var tier = placed.filter(function (id) { return !!S(id).wardRound; });
+      if (!tier.length) tier = placed.filter(function (id) { return fb.indexOf(S(id).grade) >= 0; });
+      if (!tier.length) { prevLead = null; continue; }
+      var yesterday = (prevDi === di - 1) ? prevLead : null;
+      var already = tier.filter(function (id) { return pair.indexOf(podOf(id)) >= 0; });
+      if (already.length) {
+        prevLead = already.indexOf(yesterday) >= 0 ? yesterday : already[0]; prevDi = di;
+        continue;
+      }
+      var base = weekCost(plan, on, home, staff, hist, isNew, cfg), best = null;
+      for (var ti = 0; ti < tier.length; ti++) {
+        var id = tier[ti], from = podOf(id);
+        if (!from) continue;
+        var bonus = id === yesterday ? (cfg.wardRoundSamePerson || 0) : 0;
+        for (var qi = 0; qi < pair.length; qi++) {
+          var q = pair[qi];
+          /* A plain move changes two pods' long-day counts; out of the phone holder's pod it could
+             take away the spare long day the phone rule puts beside them, which weekCost does not
+             see. Swaps are like for like on shift, so every pod keeps its long days. */
+          if (!(held && from === podOf(held) && m[id] === "LD")) {
+            byPod[from].splice(byPod[from].indexOf(id), 1); byPod[q].push(id);
+            var c0 = weekCost(plan, on, home, staff, hist, isNew, cfg) - base;
+            if (!best || c0 - bonus < best.score) best = { score: c0 - bonus, delta: c0, id: id, from: from, to: q, with: null };
+            byPod[q].pop(); byPod[from].push(id);
+          }
+          var others = (byPod[q] || []).slice();
+          for (var oi = 0; oi < others.length; oi++) {
+            var y = others[oi];
+            if (y === held || m[y] !== m[id] || tier.indexOf(y) >= 0) continue;
+            swapIn(byPod, from, id, q, y);
+            var c1 = weekCost(plan, on, home, staff, hist, isNew, cfg) - base;
+            if (!best || c1 - bonus < best.score) best = { score: c1 - bonus, delta: c1, id: id, from: from, to: q, with: y };
+            swapIn(byPod, from, y, q, id);
+          }
+        }
+      }
+      if (!best || best.delta >= (cfg.wardRoundBudget || 0)) { prevLead = null; continue; }
+      if (best.with) swapIn(byPod, best.from, best.id, best.to, best.with);
+      else { byPod[best.from].splice(byPod[best.from].indexOf(best.id), 1); byPod[best.to].push(best.id); }
+      prevLead = best.id; prevDi = di;
+    }
+    return plan;
+  }
+
   function honourPodLimits(plan, on, home, staff, hist, isNew, cfg, phone) {
     if (!cfg.weekKey) return plan;
     var S = function (id) { return staff[id] || {}; };
@@ -1255,6 +1340,7 @@
     plan = spareLongDayToPhone(plan, d.on, home, staff, hist, d.isNew, cfg, phone, before);
     plan = spreadLongDays(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
     plan = honourPodLimits(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
+    plan = wardRoundPass(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
     var nights = planNights(input.weekKey, input.roster || {}, staff, hist, cfg, input.prevNight, input.prevPhone2);
     var supers = placeSupers(plan, d.supers, staff, hist);
 
@@ -1668,6 +1754,7 @@
   root.capsFor = capsFor;
   root.homePods = homePods;
   root.superPodFor = superPodFor;
+  root.wardRoundPass = wardRoundPass;
   root.holdNight = holdNight;
   root.staffMap = staffMap;
   root.planNights = planNights;

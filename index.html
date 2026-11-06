@@ -1699,7 +1699,7 @@ body.sideways .chip{padding:.2rem .4rem .2rem .3rem !important;font-size:.72rem 
 
 <script src="core.js?v=20260810-04"></script>
 <script src="strength.js?v=20260815-09"></script>
-<script src="planner.js?v=20261023-01"></script>
+<script src="planner.js?v=20261106-01"></script>
 <script src="podcost.js?v=20261006-01"></script>
 <script src="k.js"></script>
 <script>/*ROTA_DATA_START*/window.ROTA_DATA = null;/*ROTA_DATA_END*/</script>
@@ -3334,6 +3334,10 @@ const FLAGS = [
   ["phoneShadow","Phone shadow (learning)","rule","#8A5A00","Still learning the phone — can only carry it on a day when a phone supervisor is also on, and never at night."],
   ["transfer","Transfer trained","rule","#085041","Trained to escort transfers off the unit. The checks aim for enough transfer-trained cover on the day shift."],
   ["neuro","Neuro placement","rule","#6A2C91","On a neuro placement — auto-fill aims to keep more of their shifts on Pods C & D."],
+  /* 26.11.06, Ali: the most senior resident not holding the phone takes one of the 24-hour
+     consultant's two pods at weekends and bank holidays and leads its ward round. Set by hand:
+     the board has no ICM stage, and "senior enough" is a judgement, not a grade. */
+  ["wardRound","Ward round under supervision","rule","#1F4E79","At weekends and bank holidays auto-fill puts one of these on a pod of the 24-hour consultant's, to lead that pod's ward round under supervision. If none is on, any SCF or ICM trainee."],
   ["supernum","Supernumerary — never counted","rule","#72243E","Doesn't count towards pod numbers (e.g. supernumerary or purely learning)."],
   ["picc","PICC line","find","","Trained to insert PICC lines. Deliberately not a board icon — asked for a few times a week, not read off every pod. Use Who can… to see who is on today."],
   /* ── ACCREDITED, NEVER IN TRAINING ───────────────────────────────────────────────────────
@@ -3438,6 +3442,8 @@ function applyGradeDefaults(s){
    per-icon nudging. `currentColor` throughout: the cell decides on or off by setting colour, so
    there is never a second grey copy of each icon to keep in step. */
 const SK_ICON = {
+  /* A clipboard with a tick: the ward round's list, signed off. Drawn in the set's own stroke. */
+  wardRound: '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="6" width="18" height="23" rx="2.4"/><path d="M12 6V4.6c0-.9.7-1.6 1.6-1.6h4.8c.9 0 1.6.7 1.6 1.6V6"/><path d="M11.5 18l3.2 3.2 6-6.4"/></svg>',
   /* Macintosh blade seated ACROSS the top of the handle and tapering to the tip. Four goes at
      this: the first curved the wrong way, the second butted into the handle's side, the third
      had parallel edges instead of a taper. */
@@ -3474,7 +3480,7 @@ const SK_COL = { airway: "#0C447C", phoneHolder: "#27500A", phoneSupervisor: "#1
   /* Darkened from the ultrasound portal's own Heart accent (#FF453A) so the two systems agree at
      a glance while still reading on this page's paper background. */
   echo: "#B3261E",
-  supernum: "#72243E", nights: "#444441", fgh: "#854F0B", fghNights: "#633806" };
+  supernum: "#72243E", nights: "#444441", fgh: "#854F0B", fghNights: "#633806", wardRound: "#1F4E79" };
 /* Column order and the word under each icon, in ONE list so the header, the body, the sort and
    the filters can never disagree about which columns exist or what they are called. The third
    item is the hover text, which is the only explanation on the page (hard rule 2). */
@@ -3487,6 +3493,7 @@ const SK_COLS = [
   ["picc", "PICC", "Trained to insert PICC lines"],
   ["echo", "Echo", "Accredited in FUSIC Heart — from the ultrasound portal, nightly"],
   ["neuro", "Neuro", "On a neuro placement — auto-fill leans them towards Pods C and D"],
+  ["wardRound", "WR", "Leads a weekend ward round on a pod of the 24-hour consultant's, under supervision"],
   ["supernum", "Extra", "Supernumerary — never counted towards pod numbers"],
   ["nights", "Nights", "Available to be put on night shifts"],
   ["fgh", "FGH", "Covers Fairfield General on days"],
@@ -10675,6 +10682,20 @@ function autoFillDay(wk, di, wkKey, opts){
 
    `data.plannerHistory` is what carries Pod E fairness, the phone rota and the home-pod rotation
    from one week to the next. It lives in the store and is saved with the rota. */
+/* THE WEEKEND WARD ROUND — 26.11.06. For each day of the week Cover marks as a weekend or bank
+   holiday, the pair of pods (A&B or C&D) the 24-hour consultant holds. The planner puts a ward
+   round lead on one of them (Planner.wardRoundPass). Cover not answered, or a day whose on-call
+   does not hold a clean pair: no entry, so no rule, and the week is written exactly as before. */
+function wardRoundPods(k){
+  const out = {}, days = coverDays();
+  for (let di = 0; di < 7; di++) {
+    const c = ((days[addDays(k, di)] || {}).cur) || null;
+    if (!c || !c.wkend || !c.oncall) continue;
+    const held = ["A", "B", "C", "D"].filter(p => c[p] === c.oncall).sort().join("");
+    if (held === "AB" || held === "CD") out[di] = held.split("");
+  }
+  return out;
+}
 function fillWeekWithPlanner(wk, key){
   const k = key || currentWeekKey;
   /* THE WRITE GATE. A week is allocated once, at 14:00 on the Tuesday of the week before, and
@@ -10698,7 +10719,7 @@ function fillWeekWithPlanner(wk, key){
   const prevPhone2 = prevWk && prevWk.days && prevWk.days[5] && prevWk.days[5].night ? (prevWk.days[5].night.phone || null) : null;
   try {
     const r = Planner.writeWeek(wk, plannerStaff(), { history: data.plannerHistory, weekKey: k, prevNight, prevPhone2,
-      cfg: { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK } });
+      cfg: { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK, wrPods: wardRoundPods(k) } });
     /* WRITTEN WHOLE — the stamp the sync reads (allocate_auto.py). A future week without it has
        not been written as a week, however many of its days somebody has filled, and the sync
        writes it whole; a week with it is left to the day-by-day repairs. Ali, 26.09.29: "if part

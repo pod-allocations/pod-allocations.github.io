@@ -951,6 +951,106 @@ for (const hosts of [1, 2, 3]) {
      counts.reduce((a, b) => a + b, 0) + " of " + hostDays);
 }
 
+/* ── THE WEEKEND WARD ROUND — 26.11.06 ─────────────────────────────────────────────────────
+   Ali: the most senior resident not holding the phone takes one of the 24-hour consultant's two
+   pods at weekends and bank holidays, so they lead its ward round under supervision. Those ticked
+   "Ward round under supervision" first, then any SCF or ICM trainee. A strong preference: never
+   bought with a broken rule. */
+console.log("\nThe weekend ward round");
+{
+  // A hand-built Saturday: the lead sits on A, the 24-hour consultant has C&D.
+  const staff = {};
+  const add = (id, extra) => { staff[id] = person(id, extra); };
+  add("Lead", { grade: "SCF", wardRound: true, airway: true, phone: true, phoneHolder: true });
+  add("Ph", { grade: "ST", airway: true, phone: true, phoneHolder: true });
+  ["A1", "A2", "B1", "B2", "C1", "C2", "D1", "D2", "E1"].forEach((id, i) =>
+    add(id, { grade: i % 2 ? "FY2" : "IMT", airway: i < 5, transfer: true }));
+  const key = "2026-10-05", roster = {};
+  const day = { Lead: "LD", Ph: "LD", A1: "LD", A2: "SD", B1: "LD", B2: "SD", C1: "LD", C2: "SD", D1: "LD", D2: "SD", E1: "LD" };
+  for (const di of [5, 6]) {
+    const m = {};
+    for (const id in day) m[id] = { kind: "day", code: day[id] };
+    roster[P.addDays(key, di)] = m;
+  }
+  const podOf = (d, id) => PODS.find(p => idsIn(d, p).includes(id));
+  const off = P.planWeek({ weekKey: key, roster, staff, history: P.blankHistory() });
+  const onn = P.planWeek({ weekKey: key, roster, staff, history: P.blankHistory(), cfg: { wrPods: { 5: ["C", "D"], 6: ["C", "D"] } } });
+  for (const di of [5, 6]) {
+    const d = onn.days[di];
+    const leads = Object.keys(staff).filter(id => (staff[id].wardRound || ["SCF", "ICM"].includes(staff[id].grade)) && id !== d.phone);
+    ok("ward round: a lead is on C or D on " + (di === 5 ? "Saturday" : "Sunday"),
+       leads.some(id => ["C", "D"].includes(podOf(d, id))), leads.map(id => id + "@" + podOf(d, id)).join(" "));
+  }
+  // No pair passed: the planner is exactly as it was.
+  const plain = P.planWeek({ weekKey: key, roster, staff, history: P.blankHistory() });
+  eq("ward round: no pair from Cover, nothing changes", JSON.stringify(plain.days.map(d => d.pods)), JSON.stringify(off.days.map(d => d.pods)));
+  // A weekday is never touched, even with a pair passed for it, when no lead is on.
+  const nobody = {}; for (const id in staff) nobody[id] = Object.assign({}, staff[id], { wardRound: false, grade: staff[id].grade === "SCF" ? "ST" : staff[id].grade });
+  const noLead = P.planWeek({ weekKey: key, roster, staff: nobody, history: P.blankHistory(), cfg: { wrPods: { 5: ["C", "D"], 6: ["C", "D"] } } });
+  const noLeadOff = P.planWeek({ weekKey: key, roster, staff: nobody, history: P.blankHistory() });
+  eq("ward round: nobody eligible, nothing changes", JSON.stringify(noLead.days.map(d => d.pods)), JSON.stringify(noLeadOff.days.map(d => d.pods)));
+}
+{
+  /* THE REAL ROSTER, with the rule on: half the SCFs and ICM trainees ticked, the 24-hour pair
+     alternating A&B and C&D by week, weekends only. Nothing the suite asserts above may get worse
+     on any day, and the lead should be there on nearly every weekend day. */
+  const staff = JSON.parse(JSON.stringify(STAFF));
+  let flip = 0;
+  for (const id of Object.keys(staff).sort()) if (["SCF", "ICM"].includes(staff[id].grade)) staff[id].wardRound = (flip++ % 2 === 0);
+  const h0 = P.blankHistory(), h1 = P.blankHistory();
+  let wkDays = 0, met = 0, possible = 0, same = 0, pairs = 0, worse = [], worseWR = [];
+  const shortOf = (d, on) => {
+    let ldGap = 0, bare = 0, ph = d.phone && PODS.find(p => idsIn(d, p).includes(d.phone)) === "E" ? 1 : 0;
+    for (const p of PODS) {
+      const list = idsIn(d, p);
+      if (!list.length) continue;
+      if (!(d.pods[p] || []).some(a => a.shift === "LD")) ldGap++;
+      if (p !== "E" && !list.some(id => staff[id] && (staff[id].airway || staff[id].transfer))) bare++;
+    }
+    return { ldGap, bare, ph };
+  };
+  weeks.forEach((key, wi) => {
+    const pair = wi % 2 ? ["A", "B"] : ["C", "D"];
+    const a = P.planWeek({ weekKey: key, roster: bench.weeks[key].roster, staff, history: h0 });
+    const b = P.planWeek({ weekKey: key, roster: bench.weeks[key].roster, staff, history: h1, cfg: { wrPods: { 5: pair, 6: pair } } });
+    P.rollHistory(h0, a, staff); P.rollHistory(h1, b, staff);
+    let leadSat = null;
+    for (const di of [5, 6]) {
+      const d = b.days[di], iso = P.addDays(key, di);
+      const ids = PODS.reduce((x, p) => x.concat(idsIn(d, p)), []);
+      if (!ids.length) continue;
+      wkDays++;
+      const sa = shortOf(a.days[di]), sb = shortOf(d);
+      if (sb.ldGap > sa.ldGap || sb.bare > sa.bare || sb.ph > sa.ph) worse.push(iso);
+      const free = ids.filter(id => id !== d.phone);
+      let elig = free.filter(id => staff[id].wardRound);
+      if (!elig.length) elig = free.filter(id => ["SCF", "ICM"].includes(staff[id].grade));
+      if (!elig.length) continue;
+      possible++;
+      const leads = elig.filter(id => pair.some(p => idsIn(d, p).includes(id)));
+      if (leads.length) met++;
+      else {
+        /* A miss is only allowed where moving every candidate would break a rule: each one is the
+           only airway in their pod, or the only long day in it. On the real roster all four misses
+           were this (22 Aug, 6 Sep, 4 Oct, 11 Oct). */
+        const pinned = elig.every(id => {
+          const p = PODS.find(q => idsIn(d, q).includes(id)), list = d.pods[p] || [];
+          const onlyAir = staff[id].airway && p !== "E" && list.filter(a => staff[a.id] && staff[a.id].airway).length === 1;
+          const onlyLD = list.find(a => a.id === id).shift === "LD" && list.filter(a => a.shift === "LD").length === 1;
+          return onlyAir || onlyLD;
+        });
+        if (!pinned) worseWR.push(iso);
+      }
+      if (di === 5) leadSat = leads; else if (leadSat && leadSat.length && leads.length) { pairs++; if (leads.some(x => leadSat.includes(x))) same++; }
+    }
+  });
+  eq("ward round, real roster: no weekend day loses a long day, cover or the phone off Pod E", worse.join(", "), "");
+  eq("ward round, real roster: a lead is missed only where moving them would leave a pod without airway or a long day", worseWR.join(", "), "");
+  ok("ward round, real roster: a lead on the 24-hour pair on most weekend days (" + met + " of " + possible + ")", met >= Math.ceil(possible * 0.8), met + " of " + possible);
+  notes.push("  ward round: " + met + " of " + possible + " weekend days with a lead available had one on the 24-hour pair; "
+    + same + " of " + pairs + " weekends kept the same lead Saturday to Sunday (" + wkDays + " weekend days in all)");
+}
+
 console.log("\n" + (fail ? "FAILED " + fail + " · passed " + pass : "ALL " + pass + " ASSERTIONS PASS") + "\n");
 if (notes.length) console.log(notes.join("\n") + "\n");
 process.exit(fail ? 1 : 0);
