@@ -981,6 +981,24 @@ console.log("\nThe weekend ward round");
     ok("ward round: a lead is on C or D on " + (di === 5 ? "Saturday" : "Sunday"),
        leads.some(id => ["C", "D"].includes(podOf(d, id))), leads.map(id => id + "@" + podOf(d, id)).join(" "));
   }
+  /* THE BOARD'S WAY IN. The board hands writeWeek an ARRAY of staff records, which staffMap copies
+     field by field; the first build forgot to copy wardRound, so on the live board the ticked
+     people were invisible and only the SCF/ICM fallback ever applied. Every case above passes a
+     map and walks straight past that copy, which is why it was not caught here. */
+  const arr = Object.keys(staff).map(id => Object.assign({}, staff[id], { phoneHolder: staff[id].phone }));
+  // ticked, but not an SCF or ICM and not phone-trained: only the skill can make them the lead
+  arr.forEach(x => { if (x.id === "Lead") { x.grade = "ST"; x.phoneHolder = false; x.phone = false; } });
+  /* Both pairs in turn, so whichever side the Lead would have landed on anyway, one of the two
+     runs needs the pass to move them. */
+  for (const pr of [["A", "B"], ["C", "D"]]) {
+    const wkB = { key, roster, days: [] };
+    P.writeWeek(wkB, arr, { weekKey: key, cfg: { wrPods: { 5: pr, 6: pr } } });
+    for (const di of [5, 6]) {
+      const d = wkB.days[di];
+      const at = PODS.find(p => ((d.pods[p] || {}).assign || []).some(a => a.id === "Lead"));
+      ok("ward round via writeWeek: the ticked ST leads on " + pr.join("&") + " (" + di + ")", pr.includes(at), "Lead@" + at);
+    }
+  }
   // No pair passed: the planner is exactly as it was.
   const plain = P.planWeek({ weekKey: key, roster, staff, history: P.blankHistory() });
   eq("ward round: no pair from Cover, nothing changes", JSON.stringify(plain.days.map(d => d.pods)), JSON.stringify(off.days.map(d => d.pods)));

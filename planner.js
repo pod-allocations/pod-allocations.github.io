@@ -1615,6 +1615,7 @@
         id: s.id, name: s.name, grade: s.grade, start: s.start,
         airway: !!s.airway, transfer: !!s.transfer, neuro: !!s.neuro,
         phone: !!(s.phoneHolder || s.phone), supernum: !!s.supernum,
+        wardRound: !!s.wardRound,   // 26.11.06 -- without this the skill never reached the planner
         podLimit: podLimitOf(s)
       };
     }
