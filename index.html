@@ -10837,6 +10837,37 @@ function planDayFix(di){
       normalizeNight(day);
     }
   }
+  /* ── THE DAY PHONE, when the repair has left it empty ──────────────────────────────────────
+     Planner.fixDay drops the phone when its holder is no longer on, and never picks a new one,
+     so a holder coming off a written day left the phone empty until a person noticed. Found
+     26.11.13: a holder came off Thu 19 Nov, the sync's repair cleared Pod E's reds, and the
+     day went out with nobody on the phone. Same rules as the planner's own pick: somebody
+     trained, on a long day, standing in a pod that is not E; at most twice in the week and not
+     three days running unless that leaves nobody; then whoever has held it least for the long
+     days they have worked, the fuller pod first among equals. Nobody moves for it. */
+  if (!day.phone) {
+    const inPod = id => PODS.find(p => (day.pods[p].assign || []).some(a => a.id === id && a.shift === "LD"));
+    const placedLD = PODS.flatMap(p => (day.pods[p].assign || []).filter(a => a.id && a.shift === "LD").map(a => a.id));
+    const cands = [...new Set(placedLD)].map(staffById).filter(s => s && canHoldPhone(s) && !isPhoneShadow(s)
+      && !isSupernumerary(s) && !skillHeldBack(s.id, "phoneHolder", dateISO) && inPod(s.id) !== "E");
+    if (cands.length) {
+      const phoneOn = k => (k >= 0 && k < 7 && k !== di && wk.days[k]) ? wk.days[k].phone : null;
+      const weekN = {}; for (let k = 0; k < 7; k++) { const pid = phoneOn(k); if (pid) weekN[pid] = (weekN[pid] || 0) + 1; }
+      const threeRunning = id => (phoneOn(di-1) === id && phoneOn(di-2) === id) || (phoneOn(di-1) === id && phoneOn(di+1) === id)
+                              || (phoneOn(di+1) === id && phoneOn(di+2) === id);
+      const PMAX = (planCfg().phoneMaxPerWeek) || (Planner.CFG && Planner.CFG.phoneMaxPerWeek) || 2;
+      let pool2 = cands.filter(s => (weekN[s.id] || 0) < PMAX && !threeRunning(s.id));
+      if (!pool2.length) pool2 = cands.filter(s => (weekN[s.id] || 0) < PMAX);
+      if (!pool2.length) pool2 = cands;
+      pool2 = settledFirst(pool2, dateISO);
+      const phoneHist = phoneHistWindow(), ldAvail = ldAvailWindow();
+      const rate = id => (phoneHist[id] || 0) / ((ldAvail[id] || 0) + 1);
+      const podSize = id => { const p = inPod(id); return p ? (day.pods[p].assign || []).filter(a => a.id).length : 0; };
+      pool2.sort((a, b) => ((weekN[a.id] || 0) - (weekN[b.id] || 0)) || (rate(a.id) - rate(b.id))
+                        || (podSize(b.id) - podSize(a.id)) || a.name.localeCompare(b.name));
+      day.phone = pool2[0].id; day.phoneSup = null;
+    }
+  }
   if (!day.phone) unresolved.push("No trained long-day phone holder is rostered — the phone is left unallocated.");
 
   /* ── the diff, byte-for-byte the same shape the cards and the log already read ───────────── */

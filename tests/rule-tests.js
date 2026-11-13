@@ -1428,6 +1428,69 @@ async function main() {
     ok("with only one airway person on the unit it moves nobody", airA === 1, "A=" + airA);
   }
 
+  /* ══ THE DAY PHONE AFTER ITS HOLDER COMES OFF — 26.11.13 ════════════════════════════════════
+     Found live on Thu 19 Nov: the holder came off the Optima rota, the repair cleared the pods'
+     reds and left the phone empty, because Planner.fixDay drops a holder who is no longer on and
+     never picks another. The repair now picks one: trained, on a long day, not in Pod E, not a
+     shadow, and nobody moves for it. Built with a roster, so the planner path is the one graded. */
+  console.log("The day phone after its holder comes off");
+  {
+    const { wk, day, dateISO } = seedDay(api, 3, [
+      { shift: "LD", airway: true,  phoneHolder: true },   // 0  the holder, now off the rota
+      { shift: "SD", airway: true },                        // 1  A
+      { shift: "SD", airway: false },                       // 2  A
+      { shift: "LD", airway: true,  phoneHolder: true },   // 3  B - trained, long day: should get it
+      { shift: "SD", airway: false },                       // 4  B
+      { shift: "LD", airway: true,  phoneShadow: true },   // 5  C - a shadow, never the holder
+      { shift: "SD", airway: false },                       // 6  C
+      { shift: "SD", airway: true,  phoneHolder: true },   // 7  D - trained but a short day
+      { shift: "LD", airway: false },                       // 8  D
+      { shift: "LD", airway: true,  phoneHolder: true }    // 9  E - trained, but Pod E
+    ]);
+    const m = day.extras.map(x => x.id);
+    const put = (q, ids) => { day.pods[q].assign = ids.map(i => ({ id: m[i], shift: day.extras[i].code })); };
+    put("A", [1,2]); put("B", [3,4]); put("C", [5,6]); put("D", [7,8]); put("E", [9]);
+    day.extras = day.extras.filter(x => x.id !== m[0]);
+    wk.roster = {}; wk.roster[dateISO] = {};
+    for (const x of day.extras) wk.roster[dateISO][x.id] = { kind: "day", code: x.code };
+    day.phone = m[0];
+    const plan = api.planDayFix(3);
+    const ph = plan.fixed ? plan.fixed.phone : null;
+    const phPod = ph ? podOf(api, plan.fixed, ph) : null;
+    const phShift = ph && phPod ? (plan.fixed.pods[phPod].assign.find(a => a.id === ph) || {}).shift : null;
+    ok("a holder who has come off is replaced, not left empty", !!ph && ph !== m[0], "phone=" + ph);
+    ok("...by somebody trained on a long day, outside Pod E, and not a shadow",
+       ph === m[3] || (ph && api.staffById(ph).phoneHolder && phShift === "LD" && phPod !== "E" && ph !== m[5]),
+       "phone=" + ph + " pod=" + phPod + " shift=" + phShift);
+    ok("...and the change is listed, so the log and Fix this day say who got it",
+       (plan.changes || []).some(c => c.icon === "phone" && /^Phone/.test(c.text)));
+  }
+  {
+    /* Nobody trained on a long day outside Pod E: the phone stays empty and says so, rather than
+       going to a short day or a shadow. */
+    const { wk, day, dateISO } = seedDay(api, 4, [
+      { shift: "LD", airway: true,  phoneShadow: true },   // 0  A
+      { shift: "SD", airway: true,  phoneHolder: true },   // 1  A - short day
+      { shift: "LD", airway: true },                        // 2  B
+      { shift: "SD", airway: false },                       // 3  B
+      { shift: "LD", airway: true },                        // 4  C
+      { shift: "SD", airway: false },                       // 5  C
+      { shift: "LD", airway: true },                        // 6  D
+      { shift: "SD", airway: false },                       // 7  D
+      { shift: "LD", airway: false }                        // 8  E
+    ]);
+    const m = day.extras.map(x => x.id);
+    const put = (q, ids) => { day.pods[q].assign = ids.map(i => ({ id: m[i], shift: day.extras[i].code })); };
+    put("A", [0,1]); put("B", [2,3]); put("C", [4,5]); put("D", [6,7]); put("E", [8]);
+    wk.roster = {}; wk.roster[dateISO] = {};
+    for (const x of day.extras) wk.roster[dateISO][x.id] = { kind: "day", code: x.code };
+    day.phone = null;
+    const plan = api.planDayFix(4);
+    ok("with nobody trained on a long day, the phone stays empty and the repair says so",
+       !(plan.fixed && plan.fixed.phone) && (plan.unresolved || []).some(u => /phone/.test(u)),
+       "phone=" + (plan.fixed && plan.fixed.phone));
+  }
+
   /* ══ THE PUBLICATION WINDOW AND THE WRITE GATE — ratified by Ali, 26.08.20 ══════════════════
      The week starting next Monday is allocated at 14:00 on the Tuesday of the week before, sits
      on Look ahead behind the rota-team password, and goes public at 07:00 on the Friday. Nothing
