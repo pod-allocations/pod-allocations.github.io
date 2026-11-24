@@ -9861,6 +9861,7 @@ function sweepInvalidPhones(){
   const dead = id => gone(id) || inactive(id);
   let n = 0;
   const touched = [];
+  const nightLost = [];   // [weekKey, di, who held it] for every night phone released here
   for (const [key, w] of Object.entries(data.weeks)) {
     w.days.forEach((d, di) => {
       let hit = false;
@@ -9872,7 +9873,7 @@ function sweepInvalidPhones(){
       const keepSh = sh.filter(id => isPhoneShadow(staffById(id)) && !dead(id));
       if (keepSh.length !== sh.length) { d.shadow = keepSh; n += sh.length - keepSh.length; }
       if (d.night) {
-        if (d.night.phone && (!phoneOK(d.night.phone) || dead(d.night.phone))) { d.night.phone = null; n++; hit = true; }
+        if (d.night.phone && (!phoneOK(d.night.phone) || dead(d.night.phone))) { nightLost.push([key, di, d.night.phone]); d.night.phone = null; n++; hit = true; }
         for (const k of ["AB", "CDE", "E", "F", "super"]) {
           const before = (d.night[k] || []).filter(Boolean);
           const after = before.filter(id => !gone(id));
@@ -9894,6 +9895,34 @@ function sweepInvalidPhones(){
   for (const [key, di] of touched) {
     const w = data.weeks[key];
     if (w) { try { autoFillDay(w, di, key, { phonesOnly: true }); } catch (e) {} }
+  }
+  /* A NEW NIGHT HOLDER IS RE-SEATED, NOT JUST HANDED THE PHONE — 26.11.24. Alzin Pranish's phone
+     tick came off on 18 Nov, the day after w/c 23 Nov was written with Alzin holding the phone on
+     Friday and Sunday nights, alone on Pod E. This sweep cleared both nights and autoFillDay
+     (phonesOnly) gave the phone to Bruce and Nellie, but phonesOnly returns before any seating,
+     so with five on the new holders stayed on A&B and C&D while Alzin sat on Pod E without the
+     phone. Saturday was left with Bruce holding it two nights running. Nothing was logged, and
+     nobody knew until Ali looked. So every night whose phone this sweep released now goes through
+     the night rule (reholdNightsFrom: this night, then the rest of its run where it needs it),
+     and the change is written to the log as an automatic move with the reason. */
+  if (nightLost.length && typeof reholdNightsFrom === "function") {
+    const today = todayISO();
+    const nm = id => ((staffById(id) || {}).name || id);
+    for (const [key, di, was] of nightLost) {
+      const date = addDays(key, di);
+      if (date < today || !dayIsWritable(date)) continue;
+      const nt = (((data.weeks[key] || {}).days || [])[di] || {}).night;
+      if (!nt) continue;
+      let ch = [];
+      try { ch = reholdNightsFrom(key, di, { today, changed: false }) || []; } catch (e) { ch = []; }
+      const why = nm(was) + " can no longer hold the phone";
+      logEntry(nm(was) + " off the night phone (" + dayShort(di) + "); " + (nt.phone ? nm(nt.phone) + " takes it" : "nobody qualified to take it"),
+        "auto", date, null, { act: "move", subj: nt.phone ? nm(nt.phone) : nm(was), from: nm(was), to: "night phone", night: true, why });
+      for (const c of ch)
+        if (c.moved && c.moved.length)
+          logEntry("Night re-seated (" + dayShort(c.di) + "): " + c.moved.map(m => nm(m.id) + " " + (m.from || "-") + " to " + (m.to || "-")).join(", "),
+            "auto", c.date, null, { act: "fix", label: "Night re-seated", why });
+    }
   }
   return n;
 }

@@ -83,6 +83,8 @@ function loadApp() {
     normalizeNight: typeof normalizeNight !== "undefined" ? normalizeNight : null,
     reholdNight: typeof reholdNight !== "undefined" ? reholdNight : null,
     reholdNightsFrom: typeof reholdNightsFrom !== "undefined" ? reholdNightsFrom : null,
+    sweepInvalidPhones: typeof sweepInvalidPhones !== "undefined" ? sweepInvalidPhones : null,
+    nightShapeBad: typeof nightShapeBad !== "undefined" ? nightShapeBad : null,
     actingUpFor: typeof actingUpFor !== "undefined" ? actingUpFor : null,
     actUpChip: typeof actUpChip !== "undefined" ? actUpChip : null,
     whereIsPerson: typeof whereIsPerson !== "undefined" ? whereIsPerson : null,
@@ -820,6 +822,30 @@ async function main() {
       JSON.stringify({ movers, n1: d0.night.phone, n2: d1.night.phone }));
     const msgs = api.checkDay(d1, api.addDays(api.getWeekKey(), 1), 1, wk).filter(x => x.hard && /^Night/.test(x.msg)).map(x => x.msg).join(" | ");
     ok("run of nights, six on: no red flag on the night", msgs === "", msgs);
+  }
+  {
+    /* A PHONE TICK COMES OFF AFTER THE WEEK IS WRITTEN — 26.11.24, w/c 23 Nov. Five on Friday to
+       Sunday; the third holder held Friday and Sunday, alone on Pod E. Their tick is removed. The
+       sweep must hand the phone on AND re-seat: every night the new holder alone on Pod E, two a
+       side, never the same holder two nights running, and the change in the log. */
+    const five = [{ phoneHolder: true }, { phoneHolder: true }, { phoneHolder: true }, {}, {}]
+      .map(p => Object.assign({ shift: "N", nights: true, airway: true }, p));
+    const { wk, made } = seedNightRun(api, [4, 5, 6], five);
+    const [H1, H2, H3, X, Y] = made.map(s => s.id);
+    const set = (di, ph, E, AB, CDE) => Object.assign(wk.days[di].night, { phone: ph, E, AB, CDE, F: [], super: [] });
+    set(4, H3, [H3], [H1, X], [H2, Y]);
+    set(5, H1, [H1], [H3, X], [H2, Y]);
+    set(6, H3, [H3], [H1, X], [H2, Y]);
+    const logBefore = api.data.log.length;
+    made[2].phoneHolder = false;
+    api.sweepInvalidPhones();
+    const n = [4, 5, 6].map(di => wk.days[di].night);
+    ok("phone tick off: every night has a holder who can hold it", n.every(x => x.phone && x.phone !== H3), JSON.stringify(n));
+    ok("phone tick off: each holder is alone on Pod E", n.every(x => JSON.stringify(x.E) === JSON.stringify([x.phone])), JSON.stringify(n));
+    ok("phone tick off: two a side every night", n.every(x => x.AB.length === 2 && x.CDE.length === 2), JSON.stringify(n));
+    ok("phone tick off: never the same holder two nights running", n[0].phone !== n[1].phone && n[1].phone !== n[2].phone, JSON.stringify(n.map(x => x.phone)));
+    ok("phone tick off: no night is the wrong shape", n.every(x => !api.nightShapeBad(x)), JSON.stringify(n));
+    ok("phone tick off: the change is logged", api.data.log.slice(0, api.data.log.length - logBefore).some(e => /off the night phone/.test(e.msg)));
   }
   {
     /* THE SYNC TAKES SOMEBODY OFF A NIGHT — the w/c 5 Oct fault. Six on for three nights; Optima
