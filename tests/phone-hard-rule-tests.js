@@ -10,7 +10,7 @@ const RUNS = +process.env.RUNS || 3000;
 let seed = +process.env.SEED || 7;
 const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
 let pass = 0, fail = 0; const fails = [];
-const stat = { days: 0, holderDays: 0, notFullest: 0, noSpare: 0, noLD: 0, noCover: 0, eBig: 0, pods: 0, people: 0, unmetReported: 0 };
+const stat = { eUnder: 0, days: 0, holderDays: 0, notFullest: 0, noSpare: 0, noLD: 0, noCover: 0, eBig: 0, pods: 0, people: 0, unmetReported: 0 };
 const grades = ["FY2", "IMT", "ST", "ICM", "SCF", "ACCP", "JCF"];
 for (let r = 0; r < RUNS; r++) {
   const staff = {}, n = 18 + Math.floor(rnd() * 10);
@@ -26,7 +26,7 @@ for (let r = 0; r < RUNS; r++) {
     ids.forEach((id, k) => { m[id] = { kind: "day", code: (k < 5 + Math.floor(rnd() * 3) || (we && k % 2 === 0)) ? "LD" : "SD" }; });
     roster[P.addDays(key, di)] = m;
   }
-  const out = P.planWeek({ weekKey: key, roster, staff, history: P.blankHistory() });
+  const out = P.planWeek({ weekKey: key, roster, staff, history: P.blankHistory(), cfg: { restarts: +process.env.RESTARTS || 2 } });
   const seen = {};
   out.days.forEach((d, di) => {
     stat.days++;
@@ -35,6 +35,8 @@ for (let r = 0; r < RUNS; r++) {
     for (const p of PODS) if (sz(p) && !ld(p)) stat.noLD++;
     for (const p of AD) if (sz(p) && !(d.pods[p] || []).some(a => staff[a.id].airway || staff[a.id].transfer)) stat.noCover++;
     if (sz("E") > Math.max(...AD.map(sz))) stat.eBig++;
+    const tot = PODS.reduce((t, p) => t + sz(p), 0);
+    if (tot >= 11 && sz("E") < 2) { stat.eUnder++; fail++; if (fails.length < 8) fails.push(key + " day " + di + " Pod E " + sz("E") + " with " + tot + " on"); }
     if (!d.phone) return;
     stat.holderDays++;
     const h = PODS.find(p => (d.pods[p] || []).some(a => a.id === d.phone));
@@ -50,6 +52,7 @@ for (let r = 0; r < RUNS; r++) {
 }
 console.log("phone-hard-rule: " + RUNS + " random weeks, " + stat.holderDays + " holder days");
 console.log("  holder not in the fullest pod: " + stat.notFullest + " · holder without the spare long day: " + stat.noSpare);
+console.log("  Pod E under two with 11+ on: " + stat.eUnder);
 console.log("  pods with no long day: " + stat.noLD + " · A-D pods with no cover: " + stat.noCover + " · E biggest: " + stat.eBig);
 console.log("  pods per person per week: " + (stat.pods / stat.people).toFixed(3));
 fails.forEach(f => console.log("  FAIL " + f));

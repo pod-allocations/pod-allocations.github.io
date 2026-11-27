@@ -1736,7 +1736,7 @@ const GRADES = ["CON","ACCP","SCF","JCF","RCF","ST","CT","ACCS","IMT","FY1","FY2
    and the pods are left EMPTY, and one week is written each Sunday as it enters the window. A week
    therefore gets written once, under the algorithm of that night, and there is never a backlog of
    weeks carrying an older model. Both still editable in Settings — hard rule 1. */
-const RULE_DEFAULTS = { podMin: 2, podEMin: 1, nightMin: 4, transferAim: 4, neuroTarget: 70, retentionDays: 400,
+const RULE_DEFAULTS = { podMin: 2, podEMin: 1, podETwoFrom: 11, nightMin: 4, transferAim: 4, neuroTarget: 70, retentionDays: 400,
                         /* Nights (Ali, 26.09.29): five on, the phone holder alone on Pod E. From this
                            many on, somebody else covers E and the holder floats, in no pod (26.09.30: "when
                            6 on make a separate category floating phone holder"). "If >4 all pods should
@@ -1819,6 +1819,15 @@ function weekClockPassed(dayK, hourK){
   const d = new Date(), day = (d.getDay() + 6) % 7;      // 0 = Monday
   const wantDay = rule(dayK), wantHour = rule(hourK);
   return day > wantDay || (day === wantDay && d.getHours() >= wantHour);
+}
+/* Pod E's minimum for a day with `total` counted people: two once podETwoFrom are on (Ali, 25 Nov 2026). */
+function eMinFor(total){ const from = +rule("podETwoFrom") || 0; return (from && total >= from) ? Math.max(2, rule("podEMin")) : rule("podEMin"); }
+/* Pods each person stands in on the OTHER days of the week, for the hard day rules' never-a-third-pod check. */
+function weekPodsExcept(wk, di){
+  const m = {};
+  (wk.days || []).forEach((d, k) => { if (k === di || !d) return; PODS.forEach(p => ((d.pods[p] || {}).assign || []).forEach(a => {
+    if (!a.id) return; const cur = m[a.id] || ""; if (!cur.includes(p)) m[a.id] = cur + p; })); });
+  return m;
 }
 function publishedWeeks(){ return weekClockPassed("publishDay", "publishHour") ? 2 : 1; }
 /* ── WHEN A GIVEN WEEK WENT PUBLIC — 26.08.21, for the change log ──────────────────────────────
@@ -7876,8 +7885,11 @@ function checkDay(day, dateISO, di, wk){
     if (!(abAir && cdeAir)) S("Two airway-trained on nights — aim one in A & B and one in C, D & E.");
   }
 
+  /* POD E HAS TWO ONCE ELEVEN ARE ON. Ali, 25 Nov 2026: "Poddy can't have only one person ... it
+     needs to have a minimum of two if there's 11 or more people, and it needs to be baked in." */
+  const dayTotal = PODS.reduce((t, p) => t + perPod[p].length, 0);
   for (const p of PODS) {
-    const min = p === "E" ? rule("podEMin") : rule("podMin");
+    const min = p === "E" ? eMinFor(dayTotal) : rule("podMin");
     if (perPod[p].length < min) H("Pod " + p + " has " + perPod[p].length + " countable staff — minimum " + min + " (supernumeraries don't count).");
     const hasLD = day.pods[p].assign.some(a => a.id && a.shift === "LD" && countsInNumbers(a.id));
     if (!hasLD) H("Pod " + p + " has no long-day (8-8) person.");
@@ -7983,9 +7995,18 @@ function checkDay(day, dateISO, di, wk){
     // Only worth raising when a pod is genuinely bigger. On an even day — 3/3/3/3/2 — there is no
     // busiest pod, so this fired wherever the holder happened to stand and buried the ambers that
     // actually needed looking at.
-    if (hPod && maxCount - perPod[hPod].length >= 2)
-      S("Phone holder is in Pod " + hPod + " with " + perPod[hPod].length + ", while Pod " +
-        PODS.find(p => perPod[p].length === maxCount) + " has " + maxCount + " — aim to put them where there's the most cover.");
+    /* A HARD RULE SINCE 25 Nov 2026 (Ali, after Fiona Wallace found the holder in a pod of two
+       beside pods of three: "needs to be a hard rule that cannot be broken"). Any gap at all is a
+       red, and so is a holder without the spare long day when there is one. */
+    if (hPod && hPod !== "E" && maxCount - perPod[hPod].length >= 1)
+      H("Phone holder is in Pod " + hPod + " with " + perPod[hPod].length + ", while Pod " +
+        PODS.find(p => perPod[p].length === maxCount) + " has " + maxCount + ". The holder goes in the fullest pod.");
+    const ldIn = p => day.pods[p].assign.filter(a => a.id && a.shift === "LD" && countsInNumbers(a.id)).length;
+    const holderLD = hPod && day.pods[hPod].assign.some(a => a.id === day.phone && a.shift === "LD");
+    const staffed = PODS.filter(p => perPod[p].length).length;
+    const totalLD = PODS.reduce((t, p) => t + ldIn(p), 0);
+    if (hPod && hPod !== "E" && holderLD && totalLD > staffed && ldIn(hPod) < 2)
+      H("There's a spare long day, but it isn't in Pod " + hPod + " with the phone holder.");
   }
   return issues;
 }
@@ -10685,6 +10706,13 @@ function autoFillDay(wk, di, wkKey, opts){
     }
   }
   nightAirwayFix();
+  /* THE HARD DAY RULES (25 Nov 2026) hold on this path too: the phone holder in the fullest pod with
+     the spare long day, and Pod E at two once eleven are on. */
+  try {
+    if (typeof Planner !== "undefined" && Planner && Planner.holdBoardDay)
+      Planner.holdBoardDay(day, plannerStaff(), { date: addDays(key, di), weekPods: weekPodsExcept(wk, di),
+        cfg: { eTwoFrom: Number(rule("podETwoFrom")) || 11, podEMin: Number(rule("podEMin")) || 1, podMin: Number(rule("podMin")) || 2 } });
+  } catch (e) { /* keep the day as it stands */ }
   /* ONE NIGHT RULE, NOT TWO — 26.09.29. This day-by-day path grew its own copy of the night rules
      (the trade, the balance, the airway swap) and when six-on changed (the holder joins a side, Ali)
      the copy came out 2 against 4. So when this function arranged the night from nothing, the sides
@@ -10748,7 +10776,7 @@ function fillWeekWithPlanner(wk, key){
   const prevPhone2 = prevWk && prevWk.days && prevWk.days[5] && prevWk.days[5].night ? (prevWk.days[5].night.phone || null) : null;
   try {
     const r = Planner.writeWeek(wk, plannerStaff(), { history: data.plannerHistory, weekKey: k, prevNight, prevPhone2,
-      cfg: { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK, wrPods: wardRoundPods(k) } });
+      cfg: { nightPhoneInSideAt: Number(rule("nightPhoneInSideAt")), gradeRank: GRADE_RANK, wrPods: wardRoundPods(k), eTwoFrom: Number(rule("podETwoFrom")) || 11 } });
     /* WRITTEN WHOLE — the stamp the sync reads (allocate_auto.py). A future week without it has
        not been written as a week, however many of its days somebody has filled, and the sync
        writes it whole; a week with it is left to the day-by-day repairs. Ali, 26.09.29: "if part
@@ -10898,6 +10926,17 @@ function planDayFix(di){
     }
   }
   if (!day.phone) unresolved.push("No trained long-day phone holder is rostered — the phone is left unallocated.");
+
+  /* ── THE HARD RULES (25 Nov 2026): the holder in the fullest pod with the spare long day, and
+     Pod E at two once eleven are on. Fix this day and the sync's repair both come through here. */
+  try {
+    const hold = Planner.holdBoardDay ? Planner.holdBoardDay(day, plannerStaff(),
+      { date: dateISO, weekPods: weekPodsExcept(wk, di), cfg: { eTwoFrom: Number(rule("podETwoFrom")) || 11, podEMin: Number(rule("podEMin")) || 1, podMin: Number(rule("podMin")) || 2 } }) : null;
+    const say = { phoneNotFullest: "The phone holder can't be put in the fullest pod without breaking cover or a long day.",
+                  phoneNoSpareLD: "The spare long day can't be put with the phone holder without breaking cover or a long day.",
+                  eUnderTwo: "Pod E can't have two without breaking cover or a long day." };
+    if (hold) hold.unmet.forEach(r => unresolved.push(say[r] || r));
+  } catch (e) {}
 
   /* ── the diff, byte-for-byte the same shape the cards and the log already read ───────────── */
   const changes = [];
@@ -11262,7 +11301,7 @@ function planDayFixLegacy(di){
         for (var z = 0; z < PODS.length; z++) {
           var qq = PODS[z];
           if (cnt(day, qq) && !cnt(trial, qq)) { legal = false; break; }
-          if (cnt(trial, qq) < cnt(day, qq) && cnt(trial, qq) < (qq === "E" ? rule("podEMin") : rule("podMin"))) { legal = false; break; }
+          if (cnt(trial, qq) < cnt(day, qq) && cnt(trial, qq) < (qq === "E" ? eMinFor(PODS.reduce((t, x) => t + cnt(day, x), 0)) : rule("podMin"))) { legal = false; break; }
           if (lds(day, qq) && !lds(trial, qq)) { legal = false; break; }
         }
         if (!legal) continue;
@@ -12771,7 +12810,7 @@ function renderSettings(){
 
      The stored number is untouched and still read, so a board that has one keeps it. Recorded in
      JOBS.md as a deliberate narrowing of hard rule 1 rather than left to be discovered. */
-  const nums = [["podMin","staff per pod, minimum",""],["podEMin","Pod E minimum",""],
+  const nums = [["podMin","staff per pod, minimum",""],["podEMin","Pod E minimum",""],["podETwoFrom","Pod E has two once this many are on",""],
     ["nightMin","night team minimum",""],["nightPhoneInSideAt","nights: the phone holder floats, and someone else covers E, from","on"],["transferAim","transfer-trained on days, aim for",""],
     ["neuroTarget","neuro shifts on Pods C/D","%"],["retentionDays","keep past weeks for","days"]];
   const grid = el("div", { style: "display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.55rem" });

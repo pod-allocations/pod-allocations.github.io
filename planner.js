@@ -148,7 +148,29 @@
     wardRoundFallback: ["SCF", "ICM"],  // when nobody ticked for it is free, any of these grades
     podLimitBreach: 60000,    // somebody in a pod they are kept out of (POD_LIMITS): above every rule
     podMin: 2,                // A-D
-    podEMin: 1
+    podEMin: 1,
+    /* RULES FROM 25 NOV 2026 (Ali). Priced above every preference and just under the third-pod rule
+       (10000), so the search never buys one with a third pod; phoneHardRule then makes them hold
+       outright, again without a third pod, a lost long day or lost cover. */
+    eTwoFrom: 11,             // Pod E has two once this many are on ("Poddy can't have only one")
+    eUnderTwo: 9000,
+    phoneNotFullest: 0,       // 0 in the search on purpose: priced, the phone passes' budgets bought third pods
+                              // with it (13-week bench: 6). phoneHardRule enforces it outright instead.   // the day phone holder in a pod smaller than the fullest of A-D
+    phoneNoSpareLD: 0,        // the same    // a spare long day on the day, and not in the holder's pod
+    /* POD E DRIFT. 13 weeks to 30 Nov 2026 on the live board: non-airway people's fair share of
+       Pod E is about 30%, and they ran from 14% to 50%. eUnfair (2 a decayed E day) was too weak
+       to matter in the week search. Each E day now costs eDrift for every point the person is
+       already over their fair share across their stay, and earns it back for every point under,
+       so the search fills E from whoever is furthest behind. */
+    eDrift: 20,               // swept on the 13-week bench: 0 gave non-airway E shares of 0-54% (sd 15.7), 4 gave 17-55%, 10 gave 17-39%, 20 gives 21-37% (sd 4.2)
+    eDriftHome: 8,
+    eDriftMin: 10,            // shifts on record before a person's share is trusted
+    eDriftCap: 30,            // points either way
+    /* THE WEEKEND HOLD (ratified): Saturday's pod holds into Sunday, with at most one swap, the
+       phone holder never the one who moves. */
+    weekendMove: 0,
+    weekendExtraMove: 250,
+    weekendPhoneDonor: 600
   };
 
   /* ── A PERSON KEPT TO CERTAIN PODS FOR A WHILE — 26.10.23 ───────────────────────────────
@@ -301,6 +323,7 @@
           if (S(id).grade === "ACCP") { if (!accp[p]) sc += 10; else sc -= 12 * accp[p]; }
           if (carried[id] === p) sc += 14;        // last week's pod — see MONDAY REMEMBERS SUNDAY
           if (p === "E") sc -= (hist.eDays[id] || 0) * 3;
+          if (p === "E") sc -= cfg.eDriftHome * eDriftPoints(id, staff, hist, cfg);
           /* THE ROTATION, over the whole stay — and it runs across A-D only for airway-trained
              people, who are deliberately kept off Pod E. Rotating them onto E for fairness put an
              airway person there on 16% of days and cost more than the fairness was worth. */
@@ -346,6 +369,33 @@
   /* ── 3 · WHAT A WEEK COSTS ───────────────────────────────────────────────────────────────
      Called tens of thousands of times by the search, so it keeps its allocations down: no Sets,
      no sorts, and the per-person pod list is a string because a week has five pods in it. */
+  /* Points over (positive) or under (negative) a person's fair share of Pod E across their stay.
+     Airway-trained people are kept off E on purpose and score nothing here. */
+  function eDriftPoints(id, staff, hist, cfg) {
+    var s = staff[id] || {};
+    if (s.airway || !cfg._eFair) return 0;
+    var seen = (hist.podDays || {})[id];
+    if (!seen) return 0;
+    var n = 0;
+    for (var i = 0; i < PODS.length; i++) n += seen[PODS[i]] || 0;
+    if (n < cfg.eDriftMin) return 0;
+    var pts = 100 * ((seen.E || 0) / n - cfg._eFair);
+    return Math.max(-cfg.eDriftCap, Math.min(cfg.eDriftCap, pts));
+  }
+  /* Pod E's fair share for somebody not airway-trained: Pod E's seats over the non-airway people on,
+     averaged over the week's days. */
+  function eFairFor(on, staff) {
+    var sum = 0, days = 0;
+    for (var di = 0; di < on.length; di++) {
+      var ids = Object.keys(on[di]), nonAir = 0;
+      if (ids.length < 5) continue;
+      for (var i = 0; i < ids.length; i++) if (!(staff[ids[i]] || {}).airway) nonAir++;
+      if (!nonAir) continue;
+      sum += Math.min(1, capsFor(ids.length).E / nonAir); days++;
+    }
+    return days ? sum / days : 0;
+  }
+
   function weekCost(plan, on, home, staff, hist, isNew, cfg) {
     var cost = 0, podsOf = {}, lastPod = {}, moves = {}, neuroCD = {}, neuroTot = {};
     var S = function (id) { return staff[id] || {}; };
@@ -406,6 +456,27 @@
         if (v < mn) mn = v;
       }
       if (mx - mn > 1) cost += cfg.spread * (mx - mn - 1);
+      if (ids.length >= cfg.eTwoFrom && size.E < 2) cost += cfg.eUnderTwo * (2 - size.E);
+      var ph = cfg._phone && cfg._phone[di];
+      if (ph) {
+        var hp = null;
+        for (var hq = 0; hq < AD.length; hq++) if ((byPod[AD[hq]] || []).indexOf(ph) >= 0) { hp = AD[hq]; break; }
+        if (hp) {
+          var mxAD = 0, ldN = 0, staffed = 0, hLD = 0;
+          for (var hz = 0; hz < PODS.length; hz++) {
+            var pz = PODS[hz], lz = byPod[pz] || [];
+            if (pz !== "E" && size[pz] > mxAD) mxAD = size[pz];
+            if (size[pz]) staffed++;
+            for (var hl = 0; hl < lz.length; hl++) if (m[lz[hl]] === "LD") { ldN++; if (pz === hp) hLD++; }
+          }
+          if (size[hp] < mxAD) cost += cfg.phoneNotFullest * (mxAD - size[hp]);
+          if (m[ph] === "LD" && ldN > staffed && hLD < 2) cost += cfg.phoneNoSpareLD;
+        }
+      }
+      if (size.E) {
+        var eList = byPod.E;
+        for (var ei = 0; ei < eList.length; ei++) cost += cfg.eDrift * eDriftPoints(eList[ei], staff, hist, cfg);
+      }
       if (size.E === mx && size.E > mn) cost += cfg.eBiggest;
       /* WHERE A POD CANNOT BE STAFFED, THE GAP GOES ON POD E, because Pod E is the smallest
          (docs/POD-STRENGTH-ALGORITHM.md). Found 26.08.20 on Wednesday 5 August, a seven-person
@@ -423,10 +494,15 @@
 
     /* THE WEEKEND. Somebody on both days should keep the same pod; if the numbers will not allow
        it, A-B and C-D are the moves that keep a crew together and anything else is priced. */
+    var wMoved = 0;
     for (var wid in satPod) {
       if (sunPod[wid] === undefined || sunPod[wid] === satPod[wid]) continue;
+      wMoved++;
+      cost += cfg.weekendMove;
       if (PAIR[satPod[wid]] !== sunPod[wid]) cost += cfg.weekendCross;
+      if (cfg._phone && cfg._phone[6] === wid) cost += cfg.weekendPhoneDonor;
     }
+    if (wMoved > 2) cost += cfg.weekendExtraMove * (wMoved - 2);
 
     /* 60-70% of a neuro trainee's shifts on C and D, PER PERSON — a band, not a maximum.
        Charging per shift off C/D just drives it to 100%, which is not what was asked for and
@@ -1313,83 +1389,172 @@
   }
 
 
-  /* ── HARD RULE, 25.11.26: THE PHONE HOLDER STANDS IN THE FULLEST POD, WITH THE SPARE LONG DAY ──
+  /* ── HARD RULES, 25.11.26: THE PHONE HOLDER, THE SPARE LONG DAY, POD E'S TWO ───────────────────
      Ali, 25 Nov 2026, after Fiona Wallace found the holder in a pod of two beside pods of three on
-     Tue 1 and Wed 2 Dec: "needs to be a hard rule that cannot be broken". phoneToBusiest is an aim
-     with a budget, so it could lose to continuity. This runs LAST and is not priced against
-     anything: on every day with a day holder, (1) the holder's pod is as big as the biggest of A-D,
-     and (2) if the holder is on a long day and any pod carries a second long day, the holder's
-     pod carries one too. It tries every single move into the holder's pod and every same-shift
-     swap of the holder, keeps only those that leave every pod with a long day, every A-D pod with
-     airway or transfer if it had it, nobody on a pod they're barred from, E at least one and never
-     the biggest; and of those takes the cheapest by weekCost. Repeats until both hold. */
-  function phoneHardRule(plan, on, home, staff, hist, isNew, cfg, phone) {
+     Tue 1 and Wed 2 Dec: "needs to be a hard rule that cannot be broken"; and "Poddy can't have
+     only one person ... a minimum of two if there's 11 or more people".
+     The phone passes before this only ever swapped like for like, so they could never make the
+     holder's pod bigger, and the busiest-pod move was a priced aim that lost to continuity.
+     On one day, until all three hold or nothing more can be done:
+       1 the holder's pod is as big as the biggest of A-D;
+       2 if there are more long days than staffed pods and the holder is on one, the holder's pod
+         has two;
+       3 with eTwoFrom or more on, Pod E has at least two.
+     It tries every single move and every same-shift swap with the holder, keeps only those that
+     leave every pod its long day, every A-D pod its airway or transfer cover, A-D at podMin,
+     E never the biggest and nobody in a pod they are barred from, and takes the one that breaks
+     fewest of the three, then the cheapest by `price`. byPod is { A: [ids] ... }, on is
+     { id: "LD"|"SD" } for counted staff. Returns the list of rules it could not meet. */
+  function holdDayRules(byPod, on, staff, holder, iso, cfg, price, weekPods) {
     var S = function (id) { return staff[id] || {}; };
-    var unmet = [];
-    for (var di = 0; di < 7; di++) {
-      var who = phone && phone[di];
-      if (!who) continue;
-      var byPod = plan[di], iso = cfg.weekKey ? addDays(cfg.weekKey, di) : null;
-      var podOf = function (id) { for (var i = 0; i < PODS.length; i++) if ((byPod[PODS[i]] || []).indexOf(id) >= 0) return PODS[i]; return null; };
-      var ld = function (p) { var n = 0, l = byPod[p] || []; for (var k = 0; k < l.length; k++) if (on[di][l[k]] === "LD") n++; return n; };
-      var cov = function (p) { var l = byPod[p] || []; for (var k = 0; k < l.length; k++) if (S(l[k]).airway || S(l[k]).transfer) return true; return false; };
-      var ok = function () {
-        var h = podOf(who); if (!h || h === "E") return true;
-        var max = 0; for (var i = 0; i < AD.length; i++) max = Math.max(max, (byPod[AD[i]] || []).length);
-        if ((byPod[h] || []).length < max) return false;
-        if (on[di][who] === "LD" && ld(h) < 2) { for (var j = 0; j < PODS.length; j++) if (ld(PODS[j]) >= 2) return false; }
-        return true;
-      };
-      var allowed = function (id, p) {
-        var s = S(id);
-        if (s.neuro && p !== "C" && p !== "D") return false;
-        if (iso && typeof podAllowed === "function" && !podAllowed(s, iso, p)) return false;
-        return true;
-      };
-      var safe = function (before) {
-        var e = (byPod.E || []).length, maxAD = 0;
-        for (var i = 0; i < PODS.length; i++) {
-          var p = PODS[i], n = (byPod[p] || []).length;
-          if (before[p].n > 0 && n === 0) return false;
-          if (n > 0 && before[p].ld > 0 && ld(p) === 0) return false;
-          if (p !== "E" && before[p].cov && !cov(p)) return false;
-          if (p !== "E" && before[p].n >= 2 && n < 2) return false;
-          if (p !== "E") maxAD = Math.max(maxAD, n);
+    var sz = function (p) { return (byPod[p] || []).length; };
+    var ld = function (p) { var n = 0, l = byPod[p] || []; for (var k = 0; k < l.length; k++) if (on[l[k]] === "LD") n++; return n; };
+    var cov = function (p) { var l = byPod[p] || []; for (var k = 0; k < l.length; k++) if (S(l[k]).airway || S(l[k]).transfer) return true; return false; };
+    var podOf = function (id) { for (var i = 0; i < PODS.length; i++) if ((byPod[PODS[i]] || []).indexOf(id) >= 0) return PODS[i]; return null; };
+    var total = 0; for (var t0 = 0; t0 < PODS.length; t0++) total += sz(PODS[t0]);
+    var eMin = total >= cfg.eTwoFrom ? 2 : cfg.podEMin;
+    var broken = function () {
+      var out = [];
+      var h = holder ? podOf(holder) : null;
+      if (h && h !== "E") {
+        var mx = 0; for (var i = 0; i < AD.length; i++) mx = Math.max(mx, sz(AD[i]));
+        if (sz(h) < mx) out.push("phoneNotFullest");
+        if (on[holder] === "LD" && ld(h) < 2) {
+          var lds = 0, staffed = 0;
+          for (var j = 0; j < PODS.length; j++) { lds += ld(PODS[j]); if (sz(PODS[j])) staffed++; }
+          if (lds > staffed) out.push("phoneNoSpareLD");
         }
-        if (before.E.n > 0 && e === 0) return false;
-        if (e > maxAD) return false;
-        return true;
+      }
+      if (total >= cfg.eTwoFrom && sz("E") < 2) out.push("eUnderTwo");
+      return out;
+    };
+    var allowed = function (id, p) {
+      var s = S(id);
+      if (iso && !podAllowed(s, iso, p)) return false;
+      // never a third pod in the week: weekPods[id] holds the pods they stand in on the OTHER days
+      var w = weekPods && weekPods[id];
+      if (w && w.indexOf(p) < 0 && w.length >= 2) return false;
+      return true;
+    };
+    var safe = function (before) {
+      var maxAD = 0;
+      for (var i = 0; i < PODS.length; i++) {
+        var p = PODS[i], n = sz(p);
+        if (before[p].n > 0 && n === 0) return false;
+        if (n > 0 && before[p].ld > 0 && ld(p) === 0) return false;
+        if (p !== "E" && before[p].cov && !cov(p)) return false;
+        if (p !== "E" && n < Math.min(cfg.podMin, before[p].n)) return false;
+        if (p === "E" && n < Math.min(eMin, before[p].n)) return false;
+        if (p !== "E") maxAD = Math.max(maxAD, n);
+      }
+      if (sz("E") > maxAD) return false;
+      if (sz("E") === maxAD && sz("E") > 0 && before.E.n < before.maxAD) return false;   // E never made level with the biggest
+      for (var k2 = 0; k2 < AD.length; k2++)                                            // nor bigger than any of A-D
+        if (sz(AD[k2]) < sz("E") && before[AD[k2]].n >= before.E.n) return false;
+      return true;
+    };
+    var move = function (x, from, to) { byPod[from].splice(byPod[from].indexOf(x), 1); byPod[to].push(x); };
+    /* When they cannot all hold, the holder in the fullest pod matters most (it is what people
+       notice), then Pod E's two, then the spare long day. A change is only kept if it lowers this. */
+    var W = { phoneNotFullest: 4, eUnderTwo: 2, phoneNoSpareLD: 1 };
+    var score = function (list) { var t = 0; for (var i = 0; i < list.length; i++) t += W[list[i]] || 1; return t; };
+    for (var guard = 0; guard < 8; guard++) {
+      var now = broken();
+      if (!now.length) return [];
+      var nowScore = score(now);
+      var before = {};
+      before.maxAD = 0;
+      for (var i = 0; i < PODS.length; i++) { var q0 = PODS[i]; before[q0] = { n: sz(q0), ld: ld(q0), cov: cov(q0) }; if (q0 !== "E") before.maxAD = Math.max(before.maxAD, sz(q0)); }
+      var best = null, bestBad = nowScore, bestCost = Infinity;
+      var consider = function (desc) {
+        if (!safe(before)) return;
+        var bad = score(broken());
+        if (bad >= nowScore || bad > bestBad) return;
+        var c = price();
+        if (bad < bestBad || c < bestCost) { bestBad = bad; bestCost = c; best = desc; }
       };
-      for (var guard = 0; guard < 6 && !ok(); guard++) {
-        var h = podOf(who), before = {};
-        for (var i = 0; i < PODS.length; i++) { var q0 = PODS[i]; before[q0] = { n: (byPod[q0] || []).length, ld: ld(q0), cov: cov(q0) }; }
-        var best = null, bestCost = Infinity, c;
-        for (var qi = 0; qi < PODS.length; qi++) {
-          var q = PODS[qi]; if (q === h) continue;
-          var list = (byPod[q] || []).slice();
-          for (var li = 0; li < list.length; li++) {
-            var x = list[li];
-            if (x === who || !allowed(x, h)) continue;
-            // move x from q into the holder's pod
-            byPod[q].splice(byPod[q].indexOf(x), 1); byPod[h].push(x);
-            if (ok() && safe(before)) { c = weekCost(plan, on, home, staff, hist, isNew, cfg); if (c < bestCost) { bestCost = c; best = { t: "move", x: x, q: q }; } }
-            byPod[h].pop(); byPod[q].push(x);
-            // swap the holder with x (same shift) when q is A-D
-            if (q !== "E" && on[di][x] === on[di][who] && allowed(who, q) && allowed(x, h)) {
-              swapIn(byPod, h, who, q, x);
-              if (ok() && safe(before)) { c = weekCost(plan, on, home, staff, hist, isNew, cfg); if (c < bestCost) { bestCost = c; best = { t: "swap", x: x, q: q }; } }
-              swapIn(byPod, h, x, q, who);
+      var h = holder ? podOf(holder) : null;
+      for (var qi = 0; qi < PODS.length; qi++) {
+        var q = PODS[qi], list = (byPod[q] || []).slice();
+        for (var li = 0; li < list.length; li++) {
+          var x = list[li];
+          for (var ti = 0; ti < PODS.length; ti++) {
+            var to = PODS[ti];
+            if (to === q || x === holder || !allowed(x, to)) continue;
+            move(x, q, to); consider({ t: "move", x: x, q: q, to: to }); move(x, to, q);
+          }
+          // swap x with somebody in the holder's pod (brings a spare long day in without changing sizes)
+          if (h && h !== "E" && q !== h && x !== holder) {
+            var hl = (byPod[h] || []).slice();
+            for (var yi = 0; yi < hl.length; yi++) {
+              var y = hl[yi];
+              if (y === holder || on[y] === on[x] || !allowed(x, h) || !allowed(y, q)) continue;
+              move(x, q, h); move(y, h, q); consider({ t: "pair", x: x, q: q, y: y, h: h });
+              move(y, q, h); move(x, h, q);
             }
           }
+          if (h && h !== "E" && q !== h && q !== "E" && x !== holder && on[x] === on[holder] &&
+              allowed(holder, q) && allowed(x, h)) {
+            move(holder, h, q); move(x, q, h); consider({ t: "swap", x: x, q: q, h: h });
+            move(x, h, q); move(holder, q, h);
+          }
         }
-        if (!best) break;
-        if (best.t === "move") { byPod[best.q].splice(byPod[best.q].indexOf(best.x), 1); byPod[h].push(best.x); }
-        else swapIn(byPod, h, who, best.q, best.x);
       }
-      if (!ok()) unmet.push(di);
+      if (!best) break;                     // nothing makes it better: stop rather than wander
+      if (best.t === "move") move(best.x, best.q, best.to);
+      else if (best.t === "pair") { move(best.x, best.q, best.h); move(best.y, best.h, best.q); }
+      else { move(holder, best.h, best.q); move(best.x, best.q, best.h); }
+    }
+    return broken();
+  }
+  function phoneHardRule(plan, on, home, staff, hist, isNew, cfg, phone) {
+    var unmet = [];
+    for (var di = 0; di < 7; di++) {
+      if (!Object.keys(on[di]).length) continue;
+      var wp = {};
+      for (var dj = 0; dj < 7; dj++) {
+        if (dj === di) continue;
+        for (var pj = 0; pj < PODS.length; pj++) (plan[dj][PODS[pj]] || []).forEach(function (id) {
+          var cur = wp[id] || ""; if (cur.indexOf(PODS[pj]) < 0) wp[id] = cur + PODS[pj];
+        });
+      }
+      var left = holdDayRules(plan[di], on[di], staff, phone && phone[di], cfg.weekKey ? addDays(cfg.weekKey, di) : null, cfg,
+        function () { return weekCost(plan, on, home, staff, hist, isNew, cfg); }, wp);
+      if (left.length) unmet.push({ day: di, rules: left });
     }
     plan.phoneRuleUnmet = unmet;
     return plan;
+  }
+  /* The same, for one board-shaped day ({ pods: { A: { assign: [{id, shift}] } }, phone }), so Fix
+     this day and the sync's repair keep the rules too. Moves the fewest people it can. */
+  function holdBoardDay(day, staffList, opts) {
+    opts = opts || {};
+    var cfg = Object.assign({}, CFG, opts.cfg || {});
+    var staff = staffMap(staffList), byPod = {}, on = {}, orig = {}, extra = {}, objOf = {};
+    for (var i = 0; i < PODS.length; i++) {
+      var p = PODS[i]; byPod[p] = []; extra[p] = [];
+      ((day.pods[p] || {}).assign || []).forEach(function (a) {
+        if (!a.id || (staff[a.id] || {}).supernum) { extra[p].push(a); return; }
+        byPod[p].push(a.id); objOf[a.id] = a; on[a.id] = String(a.shift || "").toUpperCase().indexOf("LD") === 0 ? "LD" : "SD"; orig[a.id] = p;
+      });
+    }
+    var price = function () {
+      var c = 0;
+      for (var q = 0; q < PODS.length; q++) (byPod[PODS[q]] || []).forEach(function (id) {
+        if (orig[id] !== PODS[q]) c += 100;
+        if (PODS[q] === "E" && (staff[id] || {}).airway) c += 40;
+      });
+      return c;
+    };
+    var left = holdDayRules(byPod, on, staff, day.phone || null, opts.date || null, cfg, price, opts.weekPods || null);
+    var moved = [];
+    for (var k = 0; k < PODS.length; k++) {
+      var pp = PODS[k];
+      byPod[pp].forEach(function (id) { if (orig[id] !== pp) moved.push({ id: id, from: orig[id], to: pp }); });
+      day.pods[pp] = day.pods[pp] || {};
+      day.pods[pp].assign = byPod[pp].map(function (id) { return objOf[id]; }).concat(extra[pp]);
+    }
+    return { moved: moved, unmet: left };
   }
 
   function planWeek(input) {
@@ -1398,6 +1563,7 @@
     var staff = input.staff || {};
     var hist = input.history || blankHistory();
     var d = dutiesFor(input.weekKey, input.roster || {}, staff, cfg);
+    cfg._eFair = eFairFor(d.on, staff);
     var home = homePods(d.on, staff, hist, cfg);
     var plan = improve(seed(d.on, home, 0), d.on, home, staff, hist, d.isNew, cfg);
     var best = weekCost(plan, d.on, home, staff, hist, d.isNew, cfg);
@@ -1410,6 +1576,7 @@
       if (c < best) { best = c; plan = alt; }
     }
     var phone = pickPhone(plan, d.on, staff, hist, cfg, input.weekKey);
+    cfg._phone = phone;
     var before = weekCost(plan, d.on, home, staff, hist, d.isNew, cfg);
     /* The holder doubles up with the spare long day (a rule), then stands where there is most
        cover (R06, a preference). */
@@ -1421,7 +1588,7 @@
     plan = spreadLongDays(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
     plan = honourPodLimits(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
     plan = wardRoundPass(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
-    plan = phoneHardRule(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
+    if (cfg.holdRules !== false) plan = phoneHardRule(plan, d.on, home, staff, hist, d.isNew, cfg, phone);
     var nights = planNights(input.weekKey, input.roster || {}, staff, hist, cfg, input.prevNight, input.prevPhone2);
     var supers = placeSupers(plan, d.supers, staff, hist);
 
@@ -1827,6 +1994,8 @@
 
   root.writeWeek = writeWeek;
   root.fixDay = fixDay;
+  root.holdBoardDay = holdBoardDay;
+  root.holdDayRules = holdDayRules;
   root.PODS = PODS;
   root.CFG = CFG;
   root.planWeek = planWeek;
